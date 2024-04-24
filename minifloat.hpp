@@ -179,6 +179,11 @@ public:
     return (_bits & MAX_MAGNITUDE) > ((1U << E) - 1U) << M;
   }
 
+  /** \brief Implicit lossless conversion to float
+    *
+    * The conversion is only enabled if it is proven to be lossless at compile
+    * time.  If the conversion is lossy, the user must explicitly cast to float.
+    */
   template <bool ENABLE =
     std::numeric_limits<float>::radix == RADIX &&
     std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
@@ -200,9 +205,11 @@ public:
     return detail::bit_cast<float>(sign << 31 | (magnitude + bias));
   }
 
-  [[nodiscard, gnu::const]]
-  explicit operator std::enable_if_t<!std::is_convertible_v<Minifloat, float>, float>() const noexcept;
-
+  /** \brief Implicit lossless conversion to double
+    *
+    * The conversion is only enabled if it is proven to be lossless at compile
+    * time.  If the conversion is lossy, the user must explicitly cast to double.
+    */
   template <bool ENABLE =
     std::numeric_limits<double>::radix == RADIX &&
     std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
@@ -223,6 +230,25 @@ public:
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
     return detail::bit_cast<double>(sign << 63 | (magnitude + bias));
   }
+
+  /** \brief Explicit lossy conversion to float
+    *
+    * This variant makes use of the lossless implicit conversion to double.
+    */
+  [[nodiscard, gnu::const]]
+  explicit operator std::enable_if_t<
+    !std::is_convertible<Minifloat, float>::value &&
+    std::is_convertible<Minifloat, double>::value,
+    float>() const noexcept
+  {
+    return static_cast<double>(*this);
+  }
+
+  [[nodiscard, gnu::const]]
+  explicit operator std::enable_if_t<
+    !std::is_convertible<Minifloat, float>::value &&
+    !std::is_convertible<Minifloat, double>::value,
+    float>() const noexcept;
   
   [[nodiscard, gnu::const]]
   explicit operator std::enable_if_t<!std::is_convertible_v<Minifloat, double>, double>() const noexcept;
