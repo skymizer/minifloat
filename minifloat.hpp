@@ -179,15 +179,14 @@ public:
     return (_bits & MAX_MAGNITUDE) > ((1U << E) - 1U) << M;
   }
 
-  //TODO: Explicit inexact conversion
+  template <bool ENABLE =
+    std::numeric_limits<float>::radix == RADIX &&
+    std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
+    std::numeric_limits<float>::max_exponent >= MAX_EXP &&
+    std::numeric_limits<float>::min_exponent <= MIN_EXP &&
+    std::numeric_limits<float>::is_iec559>
   [[nodiscard, gnu::const]]
-  operator float() const noexcept {
-    static_assert(RADIX == std::numeric_limits<float>::radix);
-    static_assert(MANTISSA_DIGITS <= std::numeric_limits<float>::digits);
-    static_assert(MAX_EXP <= std::numeric_limits<float>::max_exponent);
-    static_assert(MIN_EXP >= std::numeric_limits<float>::min_exponent);
-    static_assert(std::numeric_limits<float>::is_iec559);
-
+  operator std::enable_if_t<ENABLE, float>() const noexcept {
     const unsigned MAGNITUDE_BITS = E + M;
     const std::uint32_t MAX_MAGNITUDE = (1U << MAGNITUDE_BITS) - 1U;
     const std::uint32_t sign = S && _bits >> MAGNITUDE_BITS;
@@ -201,15 +200,17 @@ public:
     return detail::bit_cast<float>(sign << 31 | (magnitude + bias));
   }
 
-  //TODO: Explicit inexact conversion
   [[nodiscard, gnu::const]]
-  operator double() const noexcept {
-    static_assert(RADIX == std::numeric_limits<double>::radix);
-    static_assert(MANTISSA_DIGITS <= std::numeric_limits<double>::digits);
-    static_assert(MAX_EXP <= std::numeric_limits<double>::max_exponent);
-    static_assert(MIN_EXP >= std::numeric_limits<double>::min_exponent);
-    static_assert(std::numeric_limits<double>::is_iec559);
+  explicit operator std::enable_if_t<!std::is_convertible_v<Minifloat, float>, float>() const noexcept;
 
+  template <bool ENABLE =
+    std::numeric_limits<double>::radix == RADIX &&
+    std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
+    std::numeric_limits<double>::max_exponent >= MAX_EXP &&
+    std::numeric_limits<double>::min_exponent <= MIN_EXP &&
+    std::numeric_limits<double>::is_iec559>
+  [[nodiscard, gnu::const]]
+  operator std::enable_if_t<ENABLE, double>() const noexcept {
     const unsigned MAGNITUDE_BITS = E + M;
     const std::uint64_t MAX_MAGNITUDE = (1U << MAGNITUDE_BITS) - 1U;
     const std::uint64_t sign = S && _bits >> MAGNITUDE_BITS;
@@ -222,6 +223,9 @@ public:
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
     return detail::bit_cast<double>(sign << 63 | (magnitude + bias));
   }
+  
+  [[nodiscard, gnu::const]]
+  explicit operator std::enable_if_t<!std::is_convertible_v<Minifloat, double>, double>() const noexcept;
 };
 
 template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
