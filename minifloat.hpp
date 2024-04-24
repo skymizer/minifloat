@@ -102,6 +102,7 @@ public:
   explicit Minifloat(float);
   explicit Minifloat(double);
 
+  //TODO: Explicit inexact conversion
   [[nodiscard, gnu::const]]
   operator float() const noexcept {
     static_assert(RADIX == std::numeric_limits<float>::radix);
@@ -131,6 +132,7 @@ public:
     return minifloat::detail::bit_cast<float>(sign << 31 | (shifted + bias));
   }
 
+  //TODO: Explicit inexact conversion
   [[nodiscard, gnu::const]]
   operator double() const noexcept {
     static_assert(RADIX == std::numeric_limits<double>::radix);
