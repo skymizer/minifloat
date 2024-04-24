@@ -124,7 +124,7 @@ public:
     const std::uint32_t shifted = magnitude << (std::numeric_limits<float>::digits - MAGNITUDE_BITS);
 
     if (N == minifloat::NaNStyle::IEEE && magnitude > ((1U << E) - 1U) << M)
-      return minifloat::detail::bit_cast<float>(sign << 31 | 0x7F800000 | shifted);
+      return minifloat::detail::bit_cast<float>(sign << 31 | 0x7FC00000 | shifted);
 
     const std::uint32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
     const std::uint32_t bias = diff << (std::numeric_limits<float>::digits - 1);
@@ -132,7 +132,33 @@ public:
   }
 
   [[nodiscard, gnu::const]]
-  operator double() const noexcept;
+  operator double() const noexcept {
+    static_assert(RADIX == std::numeric_limits<double>::radix);
+    static_assert(MANTISSA_DIGITS <= std::numeric_limits<double>::digits);
+    static_assert(MAX_EXP <= std::numeric_limits<double>::max_exponent);
+    static_assert(MIN_EXP >= std::numeric_limits<double>::min_exponent);
+    static_assert(std::numeric_limits<double>::is_iec559);
+
+    const unsigned MAGNITUDE_BITS = E + M;
+    const std::uint64_t MAX_MAGNITUDE = (1U << MAGNITUDE_BITS) - 1U;
+    const std::uint64_t sign = S && _bits >> MAGNITUDE_BITS;
+    const std::uint64_t magnitude = _bits & MAX_MAGNITUDE;
+
+    if (N == minifloat::NaNStyle::FNUZ && _bits == MAX_MAGNITUDE + 1U)
+      return NAN;
+
+    if (N == minifloat::NaNStyle::FN && magnitude == MAX_MAGNITUDE)
+      return sign ? -NAN : NAN;
+
+    const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - MAGNITUDE_BITS);
+
+    if (N == minifloat::NaNStyle::IEEE && magnitude > ((1U << E) - 1U) << M)
+      return minifloat::detail::bit_cast<double>(sign << 63 | 0x7FF8000000000000 | shifted);
+
+    const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
+    const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
+    return minifloat::detail::bit_cast<double>(sign << 63 | (shifted + bias));
+  }
 };
 
 template <bool S, unsigned E, unsigned M, int B, minifloat::NaNStyle N, minifloat::SubnormalStyle D>
