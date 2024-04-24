@@ -9,6 +9,7 @@
 #ifndef SKYMIZER_MINIFLOAT_HPP
 #define SKYMIZER_MINIFLOAT_HPP
 
+#include <limits>
 #include <type_traits>
 
 namespace skymizer {
@@ -41,7 +42,9 @@ auto bit_cast(const From &from) noexcept -> std::enable_if_t<
   * exercise to the reader.
   */
 template <unsigned M>
-using BitTrueGroupArithmeticType = std::conditional_t<M <= 11, float, double>;
+using BitTrueGroupArithmeticType = std::conditional_t<
+  M <= std::numeric_limits<float>::digits / 2 - 1,
+  float, double>;
 
 enum struct NaNStyle {
   IEEE, ///< IEEE 754 NaNs and infinities
