@@ -206,6 +206,17 @@ public:
     return detail::bit_cast<float>(sign() << 31 | (magnitude + bias));
   }
 
+  /** \brief Explicit lossy conversion to float
+    *
+    * This variant makes use of conversion to double.  Conversion to double is
+    * lossy only when then exponent width is too large.  In this case, a second
+    * conversion to float is safe.
+    */
+  [[nodiscard, gnu::const]]
+  explicit operator std::enable_if_t<!std::is_convertible<Minifloat, float>::value, float>() const noexcept {
+    return static_cast<double>(*this);
+  }
+
   /** \brief Implicit lossless conversion to double
     *
     * The conversion is only enabled if it is proven to be lossless at compile
@@ -227,28 +238,9 @@ public:
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
     return detail::bit_cast<double>(sign() << 63 | (magnitude + bias));
   }
-
-  /** \brief Explicit lossy conversion to float
-    *
-    * This variant makes use of the lossless implicit conversion to double.
-    */
-  [[nodiscard, gnu::const]]
-  explicit operator std::enable_if_t<
-    !std::is_convertible<Minifloat, float>::value &&
-    std::is_convertible<Minifloat, double>::value,
-    float>() const noexcept
-  {
-    return static_cast<double>(*this);
-  }
-
-  [[nodiscard, gnu::const]]
-  explicit operator std::enable_if_t<
-    !std::is_convertible<Minifloat, float>::value &&
-    !std::is_convertible<Minifloat, double>::value,
-    float>() const noexcept;
   
   [[nodiscard, gnu::const]]
-  explicit operator std::enable_if_t<!std::is_convertible_v<Minifloat, double>, double>() const noexcept;
+  explicit operator std::enable_if_t<!std::is_convertible<Minifloat, double>::value, double>() const noexcept;
 };
 
 template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
