@@ -64,6 +64,12 @@ using BitTrueGroupArithmeticType = std::conditional_t<
   M <= std::numeric_limits<float>::digits / 2 - 1,
   float, double>;
 
+/** \brief Default bias for a given exponent width
+  * \tparam E - Exponent width
+  */
+template <unsigned E>
+using DefaultBias = std::integral_constant<int, (1 << (E - 1)) - 1>;
+
 enum struct NaNStyle {
   IEEE, ///< IEEE 754 NaNs and infinities
   FN,   ///< The NaNs have all magnitude (non-sign) bits set
@@ -77,10 +83,10 @@ enum struct SubnormalStyle {
 };
 
 /** \brief Configurable floating point type
-  * \tparam S - Signedness
   * \tparam E - Exponent width
   * \tparam M - Significand (mantissa) width
   * \tparam B - Exponent bias
+  * \tparam S - Signedness
   * \tparam N - NaN encoding style
   * \tparam D - Subnormal (denormal) encoding style
   *
@@ -88,8 +94,9 @@ enum struct SubnormalStyle {
   * - S + E + M <= 16
   * - FNUZ must be signed
   */
-template <bool S, unsigned E, unsigned M,
-  int B = (1 << (E - 1)) - 1,
+template <unsigned E, unsigned M,
+  int B = DefaultBias<E>::value,
+  bool S = true,
   NaNStyle N = NaNStyle::IEEE,
   SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
