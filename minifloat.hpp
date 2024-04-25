@@ -255,7 +255,7 @@ public:
     const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - (E + M));
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return detail::bit_cast<double>(sign() << 63 | (shifted + bias));
+    return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
   
   /** \brief Explicit lossy conversion to double
@@ -285,7 +285,7 @@ public:
       return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sgn);
 
     if (static_cast<int>(magnitude >> M) < std::numeric_limits<double>::min_exponent + B) {
-      const std::uint64_t significand = magnitude & ((1U << M) - 1) | 1U << M;
+      const std::uint64_t significand = (magnitude & ((1U << M) - 1)) | 1U << M;
       const int exponent = static_cast<int>(magnitude >> M) - B;
       return std::copysign(std::ldexp(significand, exponent - M), sgn);
     }
@@ -293,7 +293,7 @@ public:
     const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - (E + M));
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return detail::bit_cast<double>(sign() << 63 | (shifted + bias));
+    return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
 };
 
