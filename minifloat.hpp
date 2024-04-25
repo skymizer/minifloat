@@ -147,7 +147,7 @@ private:
 
     if (magnitude < std::int32_t{1} << (std::numeric_limits<float>::digits - 1)) {
       if constexpr (D == SubnormalStyle::Precise) {
-        const StorageType ticks = std::rint(std::ldexp(std::abs(x), MANTISSA_DIGITS - MIN_EXP));
+        const StorageType ticks = std::rint(std::abs(x) * std::exp2f(MANTISSA_DIGITS) * std::exp2f(-MIN_EXP));
         return (N != NaNStyle::FNUZ || ticks) * sign | ticks;
       }
       if (magnitude <= std::int32_t{1} << (std::numeric_limits<float>::digits - 2))
