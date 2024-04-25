@@ -104,6 +104,7 @@ public:
   static const int MIN_EXP = 2 - B;
 
 private:
+  static const StorageType MAX_MAGNITUDE = (1U << (E + M)) - 1U;
   StorageType _bits;
 
   [[nodiscard, gnu::const]]
@@ -162,21 +163,18 @@ public:
   Minifloat() = default;
   explicit Minifloat(float x) : _bits(_to_bits(x)) {};
 
-  [[nodiscard, gnu::const]]
-  StorageType bits() const noexcept { return _bits; }
+  [[nodiscard, gnu::const]] StorageType bits() const noexcept { return _bits; }
+  [[nodiscard, gnu::const]] bool sign() const noexcept { return S && _bits >> (E + M); }
 
   [[nodiscard, gnu::const]]
   bool is_nan() const noexcept {
-    const unsigned MAGNITUDE_BITS = E + M;
-    const StorageType MAX_MAGNITUDE = (1U << MAGNITUDE_BITS) - 1U;
-
     if constexpr (N == NaNStyle::FNUZ)
       return _bits == MAX_MAGNITUDE + 1U;
 
     if constexpr (N == NaNStyle::FN)
       return (_bits & MAX_MAGNITUDE) == MAX_MAGNITUDE;
 
-    return (_bits & MAX_MAGNITUDE) > ((1U << E) - 1U) << M;
+    return (_bits & MAX_MAGNITUDE) > _inf_bits();
   }
 
   /** \brief Implicit lossless conversion to float
@@ -192,17 +190,13 @@ public:
     std::numeric_limits<float>::is_iec559>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, float>() const noexcept {
-    const unsigned MAGNITUDE_BITS = E + M;
-    const std::uint32_t MAX_MAGNITUDE = (1U << MAGNITUDE_BITS) - 1U;
-    const std::uint32_t sign = S && _bits >> MAGNITUDE_BITS;
-
     if (is_nan())
-      return std::copysign(NAN, sign ? -1.0f : 1.0f);
+      return std::copysign(NAN, sign() ? -1.0f : 1.0f);
 
-    const std::uint32_t magnitude = (_bits & MAX_MAGNITUDE) << (std::numeric_limits<float>::digits - MAGNITUDE_BITS);
+    const std::uint32_t magnitude = (_bits & MAX_MAGNITUDE) << (std::numeric_limits<float>::digits - (E + M));
     const std::uint32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
     const std::uint32_t bias = diff << (std::numeric_limits<float>::digits - 1);
-    return detail::bit_cast<float>(sign << 31 | (magnitude + bias));
+    return detail::bit_cast<float>(sign() << 31 | (magnitude + bias));
   }
 
   /** \brief Implicit lossless conversion to double
@@ -218,17 +212,13 @@ public:
     std::numeric_limits<double>::is_iec559>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, double>() const noexcept {
-    const unsigned MAGNITUDE_BITS = E + M;
-    const std::uint64_t MAX_MAGNITUDE = (1U << MAGNITUDE_BITS) - 1U;
-    const std::uint64_t sign = S && _bits >> MAGNITUDE_BITS;
-
     if (is_nan())
-      return std::copysign(NAN, sign ? -1.0 : 1.0);
+      return std::copysign(NAN, sign() ? -1.0 : 1.0);
 
-    const std::uint64_t magnitude = (_bits & MAX_MAGNITUDE) << (std::numeric_limits<double>::digits - MAGNITUDE_BITS);
+    const std::uint64_t magnitude = (_bits & MAX_MAGNITUDE) << (std::numeric_limits<double>::digits - (E + M));
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return detail::bit_cast<double>(sign << 63 | (magnitude + bias));
+    return detail::bit_cast<double>(sign() << 63 | (magnitude + bias));
   }
 
   /** \brief Explicit lossy conversion to float
