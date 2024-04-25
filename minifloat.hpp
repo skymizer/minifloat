@@ -197,13 +197,22 @@ public:
     std::numeric_limits<float>::is_iec559>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, float>() const noexcept {
-    if (is_nan())
-      return std::copysign(NAN, sign() ? -1.0f : 1.0f);
+    const float sgn = sign() ? -1.0f : 1.0f;
+    const std::uint32_t magnitude = _bits & MAX_MAGNITUDE;
 
-    const std::uint32_t magnitude = (_bits & MAX_MAGNITUDE) << (std::numeric_limits<float>::digits - (E + M));
+    if (is_nan())
+      return std::copysign(NAN, sgn);
+
+    if (N == NaNStyle::IEEE && magnitude == _inf_bits())
+      return std::copysign(HUGE_VALF, sgn);
+
+    if (D == SubnormalStyle::Precise && magnitude < 1 << M)
+      return static_cast<int>(magnitude) * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sgn);
+
+    const std::uint32_t shifted = magnitude << (std::numeric_limits<float>::digits - (E + M));
     const std::uint32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
     const std::uint32_t bias = diff << (std::numeric_limits<float>::digits - 1);
-    return detail::bit_cast<float>(sign() << 31 | (magnitude + bias));
+    return detail::bit_cast<float>(sign() << 31 | (shifted + bias));
   }
 
   /** \brief Explicit lossy conversion to float
@@ -230,17 +239,61 @@ public:
     std::numeric_limits<double>::is_iec559>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, double>() const noexcept {
-    if (is_nan())
-      return std::copysign(NAN, sign() ? -1.0 : 1.0);
+    const double sgn = sign() ? -1.0 : 1.0;
+    const std::uint64_t magnitude = _bits & MAX_MAGNITUDE;
 
-    const std::uint64_t magnitude = (_bits & MAX_MAGNITUDE) << (std::numeric_limits<double>::digits - (E + M));
+    if (is_nan())
+      return std::copysign(NAN, sgn);
+
+    if (N == NaNStyle::IEEE && magnitude == _inf_bits())
+      return std::copysign(HUGE_VAL, sgn);
+
+    if (D == SubnormalStyle::Precise && magnitude < 1 << M)
+      return static_cast<int>(magnitude) * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sgn);
+
+    const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - (E + M));
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return detail::bit_cast<double>(sign() << 63 | (magnitude + bias));
+    return detail::bit_cast<double>(sign() << 63 | (shifted + bias));
   }
   
+  /** \brief Explicit lossy conversion to double
+    *
+    * This variant assumes that the conversion is lossy only when the exponent
+    * is out of range.
+    */
   [[nodiscard, gnu::const]]
-  explicit operator std::enable_if_t<!std::is_convertible<Minifloat, double>::value, double>() const noexcept;
+  explicit operator std::enable_if_t<!std::is_convertible<Minifloat, double>::value, double>() const noexcept {
+    static_assert(std::numeric_limits<double>::radix == RADIX);
+    static_assert(std::numeric_limits<double>::digits >= MANTISSA_DIGITS);
+    static_assert(std::numeric_limits<double>::is_iec559);
+
+    const double sgn = sign() ? -1.0 : 1.0;
+    const std::uint64_t magnitude = _bits & MAX_MAGNITUDE;
+
+    if (is_nan())
+      return std::copysign(NAN, sgn);
+
+    if (N == NaNStyle::IEEE && magnitude == _inf_bits())
+      return std::copysign(HUGE_VAL, sgn);
+
+    if (magnitude >= static_cast<std::uint64_t>(std::numeric_limits<double>::max_exponent + B) << M)
+      return std::copysign(HUGE_VAL, sgn);
+
+    if (D == SubnormalStyle::Precise && magnitude < 1 << M)
+      return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sgn);
+
+    if (static_cast<int>(magnitude >> M) < std::numeric_limits<double>::min_exponent + B) {
+      const std::uint64_t significand = magnitude & ((1U << M) - 1) | 1U << M;
+      const int exponent = static_cast<int>(magnitude >> M) - B;
+      return std::copysign(std::ldexp(significand, exponent - M), sgn);
+    }
+
+    const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - (E + M));
+    const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
+    const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
+    return detail::bit_cast<double>(sign() << 63 | (shifted + bias));
+  }
 };
 
 template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
