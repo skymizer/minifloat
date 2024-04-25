@@ -9,6 +9,7 @@
 #ifndef SKYMIZER_MINIFLOAT_HPP
 #define SKYMIZER_MINIFLOAT_HPP
 
+#include <algorithm>
 #include <limits>
 #include <type_traits>
 #include <cmath>
