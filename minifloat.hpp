@@ -101,7 +101,7 @@ template <unsigned E, unsigned M,
   SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
 public:
-  static_assert(N != NaNStyle::FNUZ || S);
+  static_assert(N != NaNStyle::FNUZ || S, "FNUZ uses -0 as NaN, so only signed types make sense.");
   static_assert(S + E + M <= 16);
   typedef std::conditional_t<S + E + M <= 8, std::uint_least8_t, std::uint_least16_t> StorageType;
 
