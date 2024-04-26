@@ -112,6 +112,20 @@ public:
   static const int MIN_EXP = 2 - B;
 
 private:
+  static const bool HAS_EXACT_F32_CONVERSION =
+    std::numeric_limits<float>::radix == RADIX &&
+    std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
+    std::numeric_limits<float>::max_exponent >= MAX_EXP &&
+    std::numeric_limits<float>::min_exponent <= MIN_EXP &&
+    std::numeric_limits<float>::is_iec559;
+  
+  static const bool HAS_EXACT_F64_CONVERSION =
+    std::numeric_limits<double>::radix == RADIX &&
+    std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
+    std::numeric_limits<double>::max_exponent >= MAX_EXP &&
+    std::numeric_limits<double>::min_exponent <= MIN_EXP &&
+    std::numeric_limits<double>::is_iec559;
+
   static const StorageType MAX_MAGNITUDE = (1U << (E + M)) - 1U;
   StorageType _bits;
 
@@ -190,12 +204,7 @@ public:
     * The conversion is only enabled if it is proven to be lossless at compile
     * time.  If the conversion is lossy, the user must explicitly cast to float.
     */
-  template <bool ENABLE =
-    std::numeric_limits<float>::radix == RADIX &&
-    std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
-    std::numeric_limits<float>::max_exponent >= MAX_EXP &&
-    std::numeric_limits<float>::min_exponent <= MIN_EXP &&
-    std::numeric_limits<float>::is_iec559>
+  template <bool ENABLE = HAS_EXACT_F32_CONVERSION>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, float>() const noexcept {
     const float sgn = sign() ? -1.0f : 1.0f;
@@ -222,8 +231,9 @@ public:
     * lossy only when then exponent width is too large.  In this case, a second
     * conversion to float is safe.
     */
+  template <bool ENABLE = !HAS_EXACT_F32_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
   [[nodiscard, gnu::const]]
-  explicit operator std::enable_if_t<!std::is_convertible<Minifloat, float>::value, float>() const noexcept {
+  explicit operator float() const noexcept {
     return static_cast<double>(*this);
   }
 
@@ -232,12 +242,7 @@ public:
     * The conversion is only enabled if it is proven to be lossless at compile
     * time.  If the conversion is lossy, the user must explicitly cast to double.
     */
-  template <bool ENABLE =
-    std::numeric_limits<double>::radix == RADIX &&
-    std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
-    std::numeric_limits<double>::max_exponent >= MAX_EXP &&
-    std::numeric_limits<double>::min_exponent <= MIN_EXP &&
-    std::numeric_limits<double>::is_iec559>
+  template <bool ENABLE = HAS_EXACT_F64_CONVERSION>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, double>() const noexcept {
     const double sgn = sign() ? -1.0 : 1.0;
@@ -263,8 +268,9 @@ public:
     * This variant assumes that the conversion is lossy only when the exponent
     * is out of range.
     */
+  template <bool ENABLE = !HAS_EXACT_F64_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
   [[nodiscard, gnu::const]]
-  explicit operator std::enable_if_t<!std::is_convertible<Minifloat, double>::value, double>() const noexcept {
+  explicit operator double() const noexcept {
     static_assert(std::numeric_limits<double>::radix == RADIX);
     static_assert(std::numeric_limits<double>::digits >= MANTISSA_DIGITS);
     static_assert(std::numeric_limits<double>::is_iec559);
