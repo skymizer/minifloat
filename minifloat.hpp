@@ -299,29 +299,29 @@ public:
 
 template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<S, E, M, B, N, D> operator+(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator+(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
   typedef BitTrueGroupArithmeticType<M> ArithmeticType;
-  return static_cast<ArithmeticType>(x) + static_cast<ArithmeticType>(y);
+  return ArithmeticType{x} + ArithmeticType{y};
 }
 
 template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<S, E, M, B, N, D> operator-(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator-(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
   typedef BitTrueGroupArithmeticType<M> ArithmeticType;
-  return static_cast<ArithmeticType>(x) - static_cast<ArithmeticType>(y);
+  return ArithmeticType{x} - ArithmeticType{y};
 }
 
 template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<S, E, M, B, N, D> operator*(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator*(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
   typedef BitTrueGroupArithmeticType<M> ArithmeticType;
-  return static_cast<ArithmeticType>(x) * static_cast<ArithmeticType>(y);
+  return ArithmeticType{x} * ArithmeticType{y};
 }
 
 template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<S, E, M, B, N, D> operator/(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
-  return static_cast<double>(x) / static_cast<double>(y);
+double operator/(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+  return double{x} / double{y};
 }
 
 } // namespace minifloat
