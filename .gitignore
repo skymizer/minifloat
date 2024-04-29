@@ -31,3 +31,6 @@
 *.out
 *.app
 /test
+
+# Editor settings
+/.vscode/

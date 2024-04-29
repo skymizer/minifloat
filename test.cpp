@@ -3,8 +3,21 @@
 
 using namespace skymizer::minifloat;
 
+namespace {
+template <typename> struct Trait;
+
+template <unsigned E_, unsigned M_, NaNStyle N_, int B_, SubnormalStyle D_>
+struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
+  static const unsigned E = E_;
+  static const unsigned M = M_;
+  static const NaNStyle N = N_;
+  static const int B = B_;
+  static const SubnormalStyle D = D_;
+};
+} // namespace
+
 template <typename T>
-T id(T x) { return x; }
+static T id(T x) { return x; }
 
 TEST(SanityCheck, truncate) {
   EXPECT_EQ(E3M4{2.0f}.bits(), 0x40);
@@ -23,22 +36,31 @@ TEST(SanityCheck, truncate) {
   EXPECT_EQ(E5M7{-1.25f}.bits(), 0b1'01111'0100000);
 }
 
+template <typename T>
+static void test_equality() {
+  EXPECT_EQ(id<float>(T{-3.0f}), -3.0f);
+  EXPECT_EQ(id<double>(T{-3.0}), -3.0);
+  EXPECT_EQ(T{0.0f}, T{-0.0f});
+  EXPECT_EQ(T{0.0f}.bits() == T{-0.0f}.bits(), Trait<T>::N == NaNStyle::FNUZ);
+  EXPECT_TRUE(T{NAN}.is_nan());
+  EXPECT_TRUE(std::isnan(id<float>(T{NAN})));
+  EXPECT_TRUE(std::isnan(id<double>(T{NAN})));
+}
+
 TEST(SanityCheck, equality) {
-  EXPECT_EQ(id<float>(E3M4{-3.0f}), -3.0f);
-  EXPECT_EQ(id<float>(E4M3{-3.0f}), -3.0f);
-  EXPECT_EQ(id<float>(E5M2{-3.0f}), -3.0f);
-  EXPECT_EQ(id<float>(E5M7{-3.0f}), -3.0f);
+  test_equality<E3M4>();
+  test_equality<E3M4FN>();
+  test_equality<E3M4FNUZ>();
 
-  EXPECT_EQ(id<double>(E3M4{-3.0}), -3.0);
-  EXPECT_EQ(id<double>(E4M3{-3.0}), -3.0);
-  EXPECT_EQ(id<double>(E5M2{-3.0}), -3.0);
-  EXPECT_EQ(id<double>(E5M7{-3.0}), -3.0);
+  test_equality<E4M3>();
+  test_equality<E4M3FN>();
+  test_equality<E4M3FNUZ>();
 
-  EXPECT_TRUE(E4M3{NAN}.is_nan());
-  EXPECT_TRUE(E4M3FN{NAN}.is_nan());
-  EXPECT_TRUE(E4M3FNUZ{NAN}.is_nan());
+  test_equality<E5M2>();
+  test_equality<E5M2FN>();
+  test_equality<E5M2FNUZ>();
 
-  EXPECT_TRUE(E5M7{NAN}.is_nan());
-  EXPECT_TRUE(E5M7FN{NAN}.is_nan());
-  EXPECT_TRUE(E5M7FNUZ{NAN}.is_nan());
+  test_equality<E5M7>();
+  test_equality<E5M7FN>();
+  test_equality<E5M7FNUZ>();
 }
