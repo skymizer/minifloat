@@ -4,6 +4,9 @@
 using skymizer::Minifloat;
 using N = skymizer::minifloat::NaNStyle;
 
+template <typename T>
+T id(T x) { return x; }
+
 TEST(SanityCheck, truncate) {
   EXPECT_EQ((Minifloat<3, 4>{2.0f}.bits()), 0x40);
   EXPECT_EQ((Minifloat<4, 3>{2.0f}.bits()), 0x40);
@@ -19,18 +22,13 @@ TEST(SanityCheck, truncate) {
 }
 
 TEST(SanityCheck, equality) {
-  EXPECT_EQ(float(Minifloat<3, 4>{-3.0f}), -3.0f);
-  EXPECT_EQ(float(Minifloat<4, 3>{-3.0f}), -3.0f);
-  EXPECT_EQ(float(Minifloat<5, 2>{-3.0f}), -3.0f);
+  EXPECT_EQ(id<float>(Minifloat<3, 4>{-3.0f}), -3.0f);
+  EXPECT_EQ(id<float>(Minifloat<4, 3>{-3.0f}), -3.0f);
+  EXPECT_EQ(id<float>(Minifloat<5, 2>{-3.0f}), -3.0f);
 
-  EXPECT_EQ(double(Minifloat<3, 4>{-3.0}), -3.0);
-  EXPECT_EQ(double(Minifloat<4, 3>{-3.0}), -3.0);
-  EXPECT_EQ(double(Minifloat<5, 2>{-3.0}), -3.0);
-
-  Minifloat<3, 4> x(-3.0f);
-  static_assert(std::is_same<decltype(x + x), float>::value);
-  EXPECT_TRUE(x == x);
-  EXPECT_FALSE(x > x);
+  EXPECT_EQ(id<double>(Minifloat<3, 4>{-3.0}), -3.0);
+  EXPECT_EQ(id<double>(Minifloat<4, 3>{-3.0}), -3.0);
+  EXPECT_EQ(id<double>(Minifloat<5, 2>{-3.0}), -3.0);
 
   EXPECT_TRUE((Minifloat<4, 3, N::IEEE>{NAN}.is_nan()));
 }

@@ -302,7 +302,7 @@ bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   const auto a = x.bits();
   const auto b = y.bits();
   const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
-  return (a == b && !x.is_nan()) || (N != NaNStyle::FNUZ && (a | b) & ABS_MASK == 0);
+  return (a == b && !x.is_nan()) || (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK));
 }
 
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
@@ -314,7 +314,6 @@ bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  typedef std::make_signed_t<typename Minifloat<E, M, N, B, D>::StorageType> Signed;
   const auto a = x.bits();
   const auto b = y.bits();
   const auto sign = ((a | b) >> (E + M) & 1) * static_cast<decltype(a)>(-1);
@@ -323,7 +322,7 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
   if (x.is_nan() || y.is_nan())
     return false;
 
-  if (N != NaNStyle::FNUZ && (a | b) & ABS_MASK == 0)
+  if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
     return false;
 
   return (((a > b) - (a < b) + sign) ^ sign) < 0;
@@ -332,7 +331,6 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  typedef std::make_signed_t<typename Minifloat<E, M, N, B, D>::StorageType> Signed;
   const auto a = x.bits();
   const auto b = y.bits();
   const auto sign = ((a | b) >> (E + M) & 1) * static_cast<decltype(a)>(-1);
@@ -341,7 +339,7 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   if (x.is_nan() || y.is_nan())
     return false;
 
-  if (N != NaNStyle::FNUZ && (a | b) & ABS_MASK == 0)
+  if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
     return true;
 
   return (((a > b) - (a < b) + sign) ^ sign) <= 0;
