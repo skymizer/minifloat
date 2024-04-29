@@ -212,7 +212,7 @@ public:
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
       return static_cast<int>(magnitude) * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sgn);
 
-    const std::uint32_t shifted = magnitude << (std::numeric_limits<float>::digits - (E + M));
+    const std::uint32_t shifted = magnitude << (std::numeric_limits<float>::digits - MANTISSA_DIGITS);
     const std::uint32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
     const std::uint32_t bias = diff << (std::numeric_limits<float>::digits - 1);
     return detail::bit_cast<float>(sign() << 31 | (shifted + bias));
@@ -250,7 +250,7 @@ public:
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
       return static_cast<int>(magnitude) * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sgn);
 
-    const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - (E + M));
+    const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - MANTISSA_DIGITS);
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
     return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
