@@ -298,7 +298,7 @@ public:
 
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator+(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
   BitTrueGroupArithmeticType<M> b = y;
   return a + b;
@@ -306,7 +306,7 @@ BitTrueGroupArithmeticType<M> operator+(const Minifloat<E, M, N, B, D> &x, const
 
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator-(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
   BitTrueGroupArithmeticType<M> b = y;
   return a - b;
@@ -314,7 +314,7 @@ BitTrueGroupArithmeticType<M> operator-(const Minifloat<E, M, N, B, D> &x, const
 
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator*(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
   BitTrueGroupArithmeticType<M> b = y;
   return a * b;
@@ -322,7 +322,7 @@ BitTrueGroupArithmeticType<M> operator*(const Minifloat<E, M, N, B, D> &x, const
 
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-double operator/(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
+double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   double a = x;
   double b = y;
   return a / b;
