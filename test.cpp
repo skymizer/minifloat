@@ -27,5 +27,10 @@ TEST(SanityCheck, equality) {
   EXPECT_EQ(double(Minifloat<4, 3>{-3.0}), -3.0);
   EXPECT_EQ(double(Minifloat<5, 2>{-3.0}), -3.0);
 
+  Minifloat<3, 4> x(-3.0f);
+  static_assert(std::is_same<decltype(x + x), float>::value);
+  EXPECT_TRUE(x == x);
+  EXPECT_FALSE(x > x);
+
   EXPECT_TRUE((Minifloat<4, 3, N::IEEE>{NAN}.is_nan()));
 }

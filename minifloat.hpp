@@ -122,7 +122,7 @@ private:
     std::numeric_limits<double>::min_exponent <= MIN_EXP &&
     std::numeric_limits<double>::is_iec559;
 
-  static const StorageType MAX_MAGNITUDE = (1U << (E + M)) - 1U;
+  static const StorageType ABS_MASK = (1U << (E + M)) - 1U;
   StorageType _bits;
 
   [[nodiscard, gnu::const]]
@@ -184,12 +184,12 @@ public:
   [[nodiscard, gnu::const]]
   bool is_nan() const noexcept {
     if constexpr (N == NaNStyle::FNUZ)
-      return _bits == MAX_MAGNITUDE + 1U;
+      return _bits == ABS_MASK + 1U;
 
     if constexpr (N == NaNStyle::FN)
-      return (_bits & MAX_MAGNITUDE) == MAX_MAGNITUDE;
+      return (_bits & ABS_MASK) == ABS_MASK;
 
-    return (_bits & MAX_MAGNITUDE) > _inf_bits();
+    return (_bits & ABS_MASK) > _inf_bits();
   }
 
   /** \brief Implicit lossless conversion to float
@@ -201,7 +201,7 @@ public:
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, float>() const noexcept {
     const float sgn = sign() ? -1.0f : 1.0f;
-    const std::uint32_t magnitude = _bits & MAX_MAGNITUDE;
+    const std::uint32_t magnitude = _bits & ABS_MASK;
 
     if (is_nan())
       return std::copysign(NAN, sgn);
@@ -239,7 +239,7 @@ public:
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, double>() const noexcept {
     const double sgn = sign() ? -1.0 : 1.0;
-    const std::uint64_t magnitude = _bits & MAX_MAGNITUDE;
+    const std::uint64_t magnitude = _bits & ABS_MASK;
 
     if (is_nan())
       return std::copysign(NAN, sgn);
@@ -269,7 +269,7 @@ public:
     static_assert(std::numeric_limits<double>::is_iec559);
 
     const double sgn = sign() ? -1.0 : 1.0;
-    const std::uint64_t magnitude = _bits & MAX_MAGNITUDE;
+    const std::uint64_t magnitude = _bits & ABS_MASK;
 
     if (is_nan())
       return std::copysign(NAN, sgn);
@@ -295,6 +295,69 @@ public:
     return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
 };
+
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  const auto a = x.bits();
+  const auto b = y.bits();
+  const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
+  return (a == b && !x.is_nan()) || (N != NaNStyle::FNUZ && (a | b) & ABS_MASK == 0);
+}
+
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  return !(x == y);
+}
+
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  typedef std::make_signed_t<typename Minifloat<E, M, N, B, D>::StorageType> Signed;
+  const auto a = x.bits();
+  const auto b = y.bits();
+  const auto sign = ((a | b) >> (E + M) & 1) * static_cast<decltype(a)>(-1);
+  const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
+
+  if (x.is_nan() || y.is_nan())
+    return false;
+
+  if (N != NaNStyle::FNUZ && (a | b) & ABS_MASK == 0)
+    return false;
+
+  return (((a > b) - (a < b) + sign) ^ sign) < 0;
+}
+
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  typedef std::make_signed_t<typename Minifloat<E, M, N, B, D>::StorageType> Signed;
+  const auto a = x.bits();
+  const auto b = y.bits();
+  const auto sign = ((a | b) >> (E + M) & 1) * static_cast<decltype(a)>(-1);
+  const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
+
+  if (x.is_nan() || y.is_nan())
+    return false;
+
+  if (N != NaNStyle::FNUZ && (a | b) & ABS_MASK == 0)
+    return true;
+
+  return (((a > b) - (a < b) + sign) ^ sign) <= 0;
+}
+
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+bool operator>(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  return y < x;
+}
+
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  return y <= x;
+}
 
 template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
