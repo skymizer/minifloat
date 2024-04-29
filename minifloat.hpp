@@ -83,28 +83,24 @@ enum struct SubnormalStyle {
   Fast,     ///< I am speed
 };
 
-/** \brief Configurable floating point type
+/** \brief Configurable signed floating point type
   * \tparam E - Exponent width
   * \tparam M - Significand (mantissa) width
   * \tparam B - Exponent bias
-  * \tparam S - Signedness
   * \tparam N - NaN encoding style
   * \tparam D - Subnormal (denormal) encoding style
   *
   * Constraints:
-  * - S + E + M <= 16
-  * - FNUZ must be signed
+  * - E + M < 16
   */
 template <unsigned E, unsigned M,
   int B = DefaultBias<E>::value,
-  bool S = true,
   NaNStyle N = NaNStyle::IEEE,
   SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
 public:
-  static_assert(N != NaNStyle::FNUZ || S, "FNUZ uses -0 as NaN, so only signed types make sense.");
-  static_assert(S + E + M <= 16);
-  typedef std::conditional_t<S + E + M <= 8, std::uint_least8_t, std::uint_least16_t> StorageType;
+  static_assert(E + M < 16);
+  typedef std::conditional_t<E + M < 8, std::uint_least8_t, std::uint_least16_t> StorageType;
 
   static const unsigned RADIX = 2;
   static const unsigned MANTISSA_DIGITS = M + 1;
@@ -156,13 +152,10 @@ private:
   [[nodiscard, gnu::const]]
   static StorageType _to_bits(float x) {
     const auto bits = detail::bit_cast<std::uint32_t>(detail::round_to_mantissa<M>(x));
-    const auto sign = S ? bits >> 31 << (E + M) : 0;
+    const auto sign = bits >> 31 << (E + M);
 
     if (x != x) 
       return sign | _nan_bits();
-
-    if (!S && x <= 0)
-      return 0;
 
     const std::int32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
     const std::int32_t bias = diff << (std::numeric_limits<float>::digits - 1);
@@ -186,7 +179,7 @@ public:
   explicit Minifloat(float x) : _bits(_to_bits(x)) {};
 
   [[nodiscard, gnu::const]] StorageType bits() const noexcept { return _bits; }
-  [[nodiscard, gnu::const]] bool sign() const noexcept { return S && _bits >> (E + M); }
+  [[nodiscard, gnu::const]] bool sign() const noexcept { return _bits >> (E + M); }
 
   [[nodiscard, gnu::const]]
   bool is_nan() const noexcept {
@@ -303,30 +296,30 @@ public:
   }
 };
 
-template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator+(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator+(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
   typedef BitTrueGroupArithmeticType<M> ArithmeticType;
   return ArithmeticType{x} + ArithmeticType{y};
 }
 
-template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator-(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator-(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
   typedef BitTrueGroupArithmeticType<M> ArithmeticType;
   return ArithmeticType{x} - ArithmeticType{y};
 }
 
-template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator*(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator*(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
   typedef BitTrueGroupArithmeticType<M> ArithmeticType;
   return ArithmeticType{x} * ArithmeticType{y};
 }
 
-template <bool S, unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
 [[gnu::const]]
-double operator/(const Minifloat<S, E, M, B, N, D> &x, const Minifloat<S, E, M, B, N, D> &y) noexcept {
+double operator/(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
   return double{x} / double{y};
 }
 
