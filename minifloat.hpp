@@ -126,7 +126,7 @@ private:
   StorageType _bits;
 
   [[nodiscard, gnu::const]]
-  static constexpr StorageType _inf_bits() {
+  static constexpr StorageType _inf_bits() noexcept {
     const StorageType MAX = (UINT32_C(1) << (E + M)) - 1;
 
     if constexpr (N == NaNStyle::IEEE)
@@ -136,7 +136,7 @@ private:
   }
 
   [[nodiscard, gnu::const]]
-  static constexpr StorageType _nan_bits() {
+  static constexpr StorageType _nan_bits() noexcept {
     const StorageType N0 = UINT32_C(1) << (E + M);
     const StorageType MAX = N0 - 1;
 
@@ -150,7 +150,7 @@ private:
   }
 
   [[nodiscard, gnu::const]]
-  static StorageType _to_bits(float x) {
+  static StorageType _to_bits(float x) noexcept {
     const auto bits = detail::bit_cast<std::uint32_t>(detail::round_to_mantissa<M>(x));
     const auto sign = bits >> 31 << (E + M);
 
@@ -177,6 +177,12 @@ private:
 public:
   Minifloat() = default;
   explicit Minifloat(float x) : _bits(_to_bits(x)) {};
+
+  static constexpr Minifloat from_bits(StorageType bits) noexcept {
+    Minifloat result;
+    result._bits = bits;
+    return result;
+  }
 
   [[nodiscard, gnu::const]] StorageType bits() const noexcept { return _bits; }
   [[nodiscard, gnu::const]] bool sign() const noexcept { return _bits >> (E + M); }

@@ -16,6 +16,14 @@ struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
 };
 } // namespace
 
+template <typename T, typename F>
+static void foreach(F f) {
+  const unsigned WIDTH = Trait<T>::E + Trait<T>::M + 1;
+
+  for (unsigned i = 0; i < (1U << WIDTH); ++i)
+    f(T::from_bits(i));
+}
+
 template <typename T>
 static T id(T x) { return x; }
 
@@ -50,8 +58,9 @@ static void test_equality() {
   EXPECT_EQ(T{0.0f}, T{-0.0f});
   EXPECT_EQ(T{0.0f}.bits() == T{-0.0f}.bits(), Trait<T>::N == NaNStyle::FNUZ);
   EXPECT_TRUE(T{NAN}.is_nan());
-  EXPECT_TRUE(std::isnan(id<float>(T{NAN})));
-  EXPECT_TRUE(std::isnan(id<double>(T{NAN})));
+  EXPECT_TRUE((std::isnan)(id<float>(T{NAN})));
+  EXPECT_TRUE((std::isnan)(id<double>(T{NAN})));
+  foreach<T>([](T x){ EXPECT_EQ(x != x, x.is_nan()); });
 }
 
 TEST(SanityCheck, equality) {
