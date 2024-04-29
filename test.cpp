@@ -1,7 +1,8 @@
 #include "minifloat.hpp"
 #include <gtest/gtest.h>
 
-using namespace skymizer;
+using skymizer::Minifloat;
+using N = skymizer::minifloat::NaNStyle;
 
 TEST(SanityCheck, truncate) {
   EXPECT_EQ((Minifloat<3, 4>{2.0f}.bits()), 0x40);
@@ -26,5 +27,5 @@ TEST(SanityCheck, equality) {
   EXPECT_EQ(double(Minifloat<4, 3>{-3.0}), -3.0);
   EXPECT_EQ(double(Minifloat<5, 2>{-3.0}), -3.0);
 
-  EXPECT_TRUE((Minifloat<4, 3, minifloat::DefaultBias<4>::value, minifloat::NaNStyle::IEEE>{NAN}.is_nan()));
+  EXPECT_TRUE((Minifloat<4, 3, N::IEEE>{NAN}.is_nan()));
 }

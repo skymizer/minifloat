@@ -86,16 +86,16 @@ enum struct SubnormalStyle {
 /** \brief Configurable signed floating point type
   * \tparam E - Exponent width
   * \tparam M - Significand (mantissa) width
-  * \tparam B - Exponent bias
   * \tparam N - NaN encoding style
+  * \tparam B - Exponent bias
   * \tparam D - Subnormal (denormal) encoding style
   *
   * Constraints:
   * - E + M < 16
   */
 template <unsigned E, unsigned M,
-  int B = DefaultBias<E>::value,
   NaNStyle N = NaNStyle::IEEE,
+  int B = DefaultBias<E>::value,
   SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
 public:
@@ -296,30 +296,27 @@ public:
   }
 };
 
-template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator+(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
-  typedef BitTrueGroupArithmeticType<M> ArithmeticType;
-  return ArithmeticType{x} + ArithmeticType{y};
+BitTrueGroupArithmeticType<M> operator+(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
+  return BitTrueGroupArithmeticType<M>{x} + BitTrueGroupArithmeticType<M>{y};
 }
 
-template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator-(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
-  typedef BitTrueGroupArithmeticType<M> ArithmeticType;
-  return ArithmeticType{x} - ArithmeticType{y};
+BitTrueGroupArithmeticType<M> operator-(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
+  return BitTrueGroupArithmeticType<M>{x} - BitTrueGroupArithmeticType<M>{y};
 }
 
-template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator*(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
-  typedef BitTrueGroupArithmeticType<M> ArithmeticType;
-  return ArithmeticType{x} * ArithmeticType{y};
+BitTrueGroupArithmeticType<M> operator*(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
+  return BitTrueGroupArithmeticType<M>{x} * BitTrueGroupArithmeticType<M>{y};
 }
 
-template <unsigned E, unsigned M, int B, NaNStyle N, SubnormalStyle D>
+template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-double operator/(const Minifloat<E, M, B, N, D> &x, const Minifloat<E, M, B, N, D> &y) noexcept {
+BitTrueGroupArithmeticType<M> operator/(const Minifloat<E, M, N, B, D> &x, const Minifloat<E, M, N, B, D> &y) noexcept {
   return double{x} / double{y};
 }
 
