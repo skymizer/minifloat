@@ -82,7 +82,7 @@ TEST(SanityCheck, equality) {
 }
 
 template <typename T>
-static void test_conversion() {
+static void test_identity_conversion() {
   using detail::bit_cast;
   const bool IS_FNUZ = Trait<T>::N == NaNStyle::FNUZ;
 
@@ -99,20 +99,20 @@ static void test_conversion() {
   });
 }
 
-TEST(SanityCheck, conversion) {
-  test_conversion<E3M4>();
-  test_conversion<E3M4FN>();
-  test_conversion<E3M4FNUZ>();
+TEST(ConversionCheck, identity) {
+  test_identity_conversion<E3M4>();
+  test_identity_conversion<E3M4FN>();
+  test_identity_conversion<E3M4FNUZ>();
 
-  test_conversion<E4M3>();
-  test_conversion<E4M3FN>();
-  test_conversion<E4M3FNUZ>();
+  test_identity_conversion<E4M3>();
+  test_identity_conversion<E4M3FN>();
+  test_identity_conversion<E4M3FNUZ>();
 
-  test_conversion<E5M2>();
-  test_conversion<E5M2FN>();
-  test_conversion<E5M2FNUZ>();
+  test_identity_conversion<E5M2>();
+  test_identity_conversion<E5M2FN>();
+  test_identity_conversion<E5M2FNUZ>();
 
-  test_conversion<E5M7>();
-  test_conversion<E5M7FN>();
-  test_conversion<E5M7FNUZ>();
+  test_identity_conversion<E5M7>();
+  test_identity_conversion<E5M7FN>();
+  test_identity_conversion<E5M7FNUZ>();
 }
