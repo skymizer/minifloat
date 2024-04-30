@@ -6,10 +6,10 @@ using namespace skymizer::minifloat;
 namespace {
 template <typename> struct Trait;
 
-template <unsigned E_, unsigned M_, NaNStyle N_, int B_, SubnormalStyle D_>
+template <int E_, int M_, NaNStyle N_, int B_, SubnormalStyle D_>
 struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
-  static const unsigned E = E_;
-  static const unsigned M = M_;
+  static const int E = E_;
+  static const int M = M_;
   static const NaNStyle N = N_;
   static const int B = B_;
   static const SubnormalStyle D = D_;
@@ -18,7 +18,7 @@ struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
 
 template <typename T, typename F>
 static void foreach(F f) {
-  const unsigned WIDTH = Trait<T>::E + Trait<T>::M + 1;
+  const int WIDTH = Trait<T>::E + Trait<T>::M + 1;
 
   for (unsigned i = 0; i < (1U << WIDTH); ++i)
     f(T::from_bits(i));
@@ -27,7 +27,7 @@ static void foreach(F f) {
 template <typename T>
 static T id(T x) { return x; }
 
-template <unsigned E, unsigned M>
+template <int E, int M>
 static void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M>{x}.bits()), bits);
   EXPECT_EQ((Minifloat<E, M, NaNStyle::FN>{x}.bits()), bits);
@@ -79,4 +79,42 @@ TEST(SanityCheck, equality) {
   test_equality<E5M7>();
   test_equality<E5M7FN>();
   test_equality<E5M7FNUZ>();
+}
+
+template <typename T>
+static void test_conversion() {
+  using detail::bit_cast;
+
+  EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{0.0f})), 0);
+  EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{0.0f})), 0);
+
+  if constexpr (Trait<T>::N != NaNStyle::FNUZ) {
+    EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{-0.0f})), 0x8000'0000);
+    EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{-0.0f})), 0x8000'0000'0000'0000);
+  }
+
+  foreach<T>([](T x){
+    if (x.is_nan()) return;
+    EXPECT_EQ(x, T::from_bits(x.bits()));
+    EXPECT_EQ(x, T{id<float>(x)});
+    EXPECT_EQ(id<float>(x), id<double>(x));
+  });
+}
+
+TEST(SanityCheck, conversion) {
+  test_conversion<E3M4>();
+  test_conversion<E3M4FN>();
+  test_conversion<E3M4FNUZ>();
+
+  test_conversion<E4M3>();
+  test_conversion<E4M3FN>();
+  test_conversion<E4M3FNUZ>();
+
+  test_conversion<E5M2>();
+  test_conversion<E5M2FN>();
+  test_conversion<E5M2FNUZ>();
+
+  test_conversion<E5M7>();
+  test_conversion<E5M7FN>();
+  test_conversion<E5M7FNUZ>();
 }

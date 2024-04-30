@@ -38,7 +38,7 @@ auto bit_cast(const From &from) noexcept -> std::enable_if_t<
 /** \brief Round a float to the nearest float with the given significand width
   * \tparam M - Significand (mantissa) width
   */
-template <unsigned M>
+template <int M>
 [[nodiscard, gnu::const]]
 float round_to_mantissa(float x) {
   static_assert(std::numeric_limits<float>::radix == 2);
@@ -60,7 +60,7 @@ float round_to_mantissa(float x) {
   * wide as T, double rounding is not a problem.  The proof is left as an
   * exercise to the reader.
   */
-template <unsigned M>
+template <int M>
 using BitTrueGroupArithmeticType = std::conditional_t<
   M <= std::numeric_limits<float>::digits / 2 - 1,
   float, double>;
@@ -68,7 +68,7 @@ using BitTrueGroupArithmeticType = std::conditional_t<
 /** \brief Default bias for a given exponent width
   * \tparam E - Exponent width
   */
-template <unsigned E>
+template <int E>
 using DefaultBias = std::integral_constant<int, (1 << (E - 1)) - 1>;
 
 enum struct NaNStyle {
@@ -91,19 +91,23 @@ enum struct SubnormalStyle {
   * \tparam D - Subnormal (denormal) encoding style
   *
   * Constraints:
+  * - E > 0
+  * - M >= 0
   * - E + M < 16
   */
-template <unsigned E, unsigned M,
+template <int E, int M,
   NaNStyle N = NaNStyle::IEEE,
   int B = DefaultBias<E>::value,
   SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
 public:
+  static_assert(E > 0);
+  static_assert(M >= 0);
   static_assert(E + M < 16);
   typedef std::conditional_t<E + M < 8, std::uint_least8_t, std::uint_least16_t> StorageType;
 
-  static const unsigned RADIX = 2;
-  static const unsigned MANTISSA_DIGITS = M + 1;
+  static const int RADIX = 2;
+  static const int MANTISSA_DIGITS = M + 1;
   static const int MAX_EXP = (1 << E) - B - (N == NaNStyle::IEEE);
   static const int MIN_EXP = 2 - B;
 
@@ -216,7 +220,7 @@ public:
       return std::copysign(HUGE_VALF, sgn);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return static_cast<int>(magnitude) * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sgn);
+      return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sgn);
 
     const std::uint32_t shifted = magnitude << (std::numeric_limits<float>::digits - MANTISSA_DIGITS);
     const std::uint32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
@@ -254,7 +258,7 @@ public:
       return std::copysign(HUGE_VAL, sgn);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return static_cast<int>(magnitude) * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sgn);
+      return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sgn);
 
     const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - MANTISSA_DIGITS);
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
@@ -302,7 +306,7 @@ public:
   }
 };
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
@@ -311,13 +315,13 @@ bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   return (a == b && !x.is_nan()) || (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK));
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return !(x == y);
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
@@ -334,7 +338,7 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
   return (((a > b) - (a < b) + sign) ^ sign) < 0;
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
@@ -351,19 +355,19 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   return (((a > b) - (a < b) + sign) ^ sign) <= 0;
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator>(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return y < x;
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return y <= x;
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
@@ -371,7 +375,7 @@ BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E,
   return a + b;
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
@@ -379,7 +383,7 @@ BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E,
   return a - b;
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
@@ -387,7 +391,7 @@ BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E,
   return a * b;
 }
 
-template <unsigned E, unsigned M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   double a = x;
