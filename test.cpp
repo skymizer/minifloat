@@ -27,6 +27,12 @@ static void iterate(F f) {
 template <typename T>
 static T id(T x) { return x; }
 
+/** \brief Test floating-point identity like Object.is in JavaScript
+  *
+  * This is necessary because NaN != NaN in C++.  We also want to differentiate
+  * -0 from +0.  Using this functor, NaNs are considered identical to each
+  * other, while +0 and -0 are considered different. 
+  */
 static const struct {
   bool operator()(double x, double y) const {
     using detail::bit_cast;
