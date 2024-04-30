@@ -16,11 +16,11 @@ struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
 };
 } // namespace
 
-template <typename T, typename F>
-static void foreach(F f) {
-  const int WIDTH = Trait<T>::E + Trait<T>::M + 1;
+template <typename T, unsigned STEP = 1, typename F>
+static void iterate(F f) {
+  const unsigned END = 1U << (Trait<T>::E + Trait<T>::M + 1);
 
-  for (unsigned i = 0; i < (1U << WIDTH); ++i)
+  for (unsigned i = 0; i < END; i += STEP)
     f(T::from_bits(i));
 }
 
@@ -92,7 +92,7 @@ static void test_equality() {
   EXPECT_TRUE(T{NAN}.is_nan());
   EXPECT_TRUE((std::isnan)(id<float>(T{NAN})));
   EXPECT_TRUE((std::isnan)(id<double>(T{NAN})));
-  foreach<T>([](T x){ EXPECT_EQ(x != x, x.is_nan()); });
+  iterate<T>([](T x){ EXPECT_EQ(x != x, x.is_nan()); });
 }
 
 TEST(SanityCheck, equality) {
@@ -109,7 +109,7 @@ static void test_identity_conversion() {
   EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{-0.0f})), !IS_FNUZ * 0x8000'0000);
   EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{-0.0f})), !IS_FNUZ * 0x8000'0000'0000'0000);
 
-  foreach<T>([](T x){
+  iterate<T>([](T x){
     EXPECT_PRED2(are_identical, x, T::from_bits(x.bits()));
     EXPECT_PRED2(are_identical, x, T{id<float>(x)});
     EXPECT_PRED2(are_identical, id<float>(x), id<double>(x));
@@ -118,4 +118,30 @@ static void test_identity_conversion() {
 
 TEST(ConversionCheck, identity) {
   RUN_ON_SELECTED_TYPES(test_identity_conversion);
+}
+
+template <typename T, typename F>
+static void test_exact_arithmetics(F op) {
+  const unsigned STEP = 69 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
+
+  iterate<T, STEP>([op](T x){
+    iterate<T, STEP>([op, x](T y){
+      const auto z = op(x, y);
+      const double precise = op(id<double>(x), id<double>(y));
+      EXPECT_PRED2(are_identical, static_cast<T>(z), static_cast<T>(precise));
+      EXPECT_PRED2(are_identical, z, static_cast<decltype(z)>(precise));
+    });
+  });
+}
+
+template <typename T>
+static void test_exact_arithmetics() {
+  test_exact_arithmetics<T>(std::plus<>());
+  test_exact_arithmetics<T>(std::minus<>());
+  test_exact_arithmetics<T>(std::multiplies<>());
+  test_exact_arithmetics<T>(std::divides<>());
+}
+
+TEST(ArithmeticsCheck, exact) {
+  RUN_ON_SELECTED_TYPES(test_exact_arithmetics);
 }
