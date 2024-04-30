@@ -27,6 +27,21 @@ static void foreach(F f) {
 template <typename T>
 static T id(T x) { return x; }
 
+#define RUN_ON_SELECTED_TYPES(F) do { \
+  F<E3M4>(); \
+  F<E3M4FN>(); \
+  F<E3M4FNUZ>(); \
+  F<E4M3>(); \
+  F<E4M3FN>(); \
+  F<E4M3FNUZ>(); \
+  F<E5M2>(); \
+  F<E5M2FN>(); \
+  F<E5M2FNUZ>(); \
+  F<E5M7>(); \
+  F<E5M7FN>(); \
+  F<E5M7FNUZ>(); \
+} while (false)
+
 template <int E, int M>
 static void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M>{x}.bits()), bits);
@@ -64,21 +79,7 @@ static void test_equality() {
 }
 
 TEST(SanityCheck, equality) {
-  test_equality<E3M4>();
-  test_equality<E3M4FN>();
-  test_equality<E3M4FNUZ>();
-
-  test_equality<E4M3>();
-  test_equality<E4M3FN>();
-  test_equality<E4M3FNUZ>();
-
-  test_equality<E5M2>();
-  test_equality<E5M2FN>();
-  test_equality<E5M2FNUZ>();
-
-  test_equality<E5M7>();
-  test_equality<E5M7FN>();
-  test_equality<E5M7FNUZ>();
+  RUN_ON_SELECTED_TYPES(test_equality);
 }
 
 template <typename T>
@@ -100,19 +101,5 @@ static void test_identity_conversion() {
 }
 
 TEST(ConversionCheck, identity) {
-  test_identity_conversion<E3M4>();
-  test_identity_conversion<E3M4FN>();
-  test_identity_conversion<E3M4FNUZ>();
-
-  test_identity_conversion<E4M3>();
-  test_identity_conversion<E4M3FN>();
-  test_identity_conversion<E4M3FNUZ>();
-
-  test_identity_conversion<E5M2>();
-  test_identity_conversion<E5M2FN>();
-  test_identity_conversion<E5M2FNUZ>();
-
-  test_identity_conversion<E5M7>();
-  test_identity_conversion<E5M7FN>();
-  test_identity_conversion<E5M7FNUZ>();
+  RUN_ON_SELECTED_TYPES(test_identity_conversion);
 }
