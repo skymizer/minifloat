@@ -27,7 +27,7 @@ auto bit_cast(const From &from) noexcept -> std::enable_if_t<
   std::is_trivially_copyable<From>::value &&
   sizeof(To) == sizeof(From), To>
 {
-#if __has_builtin(__builtin_bit_cast)
+#if defined(__has_builtin) && __has_builtin(__builtin_bit_cast)
   return __builtin_bit_cast(To, from);
 #else
   union { From _; To to; } caster = {from};
