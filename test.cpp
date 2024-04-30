@@ -27,6 +27,23 @@ static void foreach(F f) {
 template <typename T>
 static T id(T x) { return x; }
 
+static const struct {
+  bool operator()(double x, double y) const {
+    using detail::bit_cast;
+    return bit_cast<std::uint64_t>(x) == bit_cast<std::uint64_t>(y) || (x != x && y != y);
+  }
+
+  bool operator()(float x, float y) const {
+    using detail::bit_cast;
+    return bit_cast<std::uint32_t>(x) == bit_cast<std::uint32_t>(y) || (x != x && y != y);
+  }
+
+  template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+  bool operator()(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) const {
+    return x.bits() == y.bits() || (x.is_nan() && y.is_nan());
+  }
+} are_identical;
+
 #define RUN_ON_SELECTED_TYPES(F) do { \
   F<E3M4>(); \
   F<E3M4FN>(); \
@@ -93,10 +110,9 @@ static void test_identity_conversion() {
   EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{-0.0f})), !IS_FNUZ * 0x8000'0000'0000'0000);
 
   foreach<T>([](T x){
-    if (x.is_nan()) return;
-    EXPECT_EQ(x, T::from_bits(x.bits()));
-    EXPECT_EQ(x, T{id<float>(x)});
-    EXPECT_EQ(id<float>(x), id<double>(x));
+    EXPECT_PRED2(are_identical, x, T::from_bits(x.bits()));
+    EXPECT_PRED2(are_identical, x, T{id<float>(x)});
+    EXPECT_PRED2(are_identical, id<float>(x), id<double>(x));
   });
 }
 
