@@ -84,14 +84,12 @@ TEST(SanityCheck, equality) {
 template <typename T>
 static void test_conversion() {
   using detail::bit_cast;
+  const bool IS_FNUZ = Trait<T>::N == NaNStyle::FNUZ;
 
   EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{0.0f})), 0);
   EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{0.0f})), 0);
-
-  if constexpr (Trait<T>::N != NaNStyle::FNUZ) {
-    EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{-0.0f})), 0x8000'0000);
-    EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{-0.0f})), 0x8000'0000'0000'0000);
-  }
+  EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{-0.0f})), !IS_FNUZ * 0x8000'0000);
+  EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{-0.0f})), !IS_FNUZ * 0x8000'0000'0000'0000);
 
   foreach<T>([](T x){
     if (x.is_nan()) return;
