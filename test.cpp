@@ -128,10 +128,11 @@ TEST(ConversionCheck, identity) {
 
 template <typename T, typename F>
 static void test_exact_arithmetics(F op) {
-  const unsigned STEP = 69 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
+  const unsigned X_STEP = 38 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
+  const unsigned Y_STEP = 49 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
 
-  iterate<T, STEP>([op](T x){
-    iterate<T, STEP>([op, x](T y){
+  iterate<T, X_STEP>([op](T x){
+    iterate<T, Y_STEP>([op, x](T y){
       const auto z = op(x, y);
       const double precise = op(id<double>(x), id<double>(y));
       EXPECT_PRED2(are_identical, static_cast<T>(z), static_cast<T>(precise));
@@ -148,6 +149,28 @@ static void test_exact_arithmetics() {
   test_exact_arithmetics<T>(std::divides<>());
 }
 
-TEST(ArithmeticsCheck, exact) {
+TEST(ArithmeticCheck, exact) {
   RUN_ON_SELECTED_TYPES(test_exact_arithmetics);
+}
+
+template <typename T>
+static int compare(T x, T y) {
+  return (x > y) - (x < y);
+}
+
+template <typename T>
+static void test_comparison() {
+  const unsigned X_STEP = 38 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
+  const unsigned Y_STEP = 49 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
+
+  iterate<T, X_STEP>([](T x){
+    iterate<T, Y_STEP>([x](T y){
+      EXPECT_EQ(compare(x, y), compare(id<float>(x), id<float>(y)));
+      EXPECT_EQ(compare(x, y), compare(id<double>(x), id<double>(y)));
+    });
+  });
+}
+
+TEST(ComparisonCheck, generic) {
+  RUN_ON_SELECTED_TYPES(test_comparison);
 }

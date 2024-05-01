@@ -326,7 +326,7 @@ template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
   const auto b = y.bits();
-  const auto sign = ((a | b) >> (E + M) & 1) * static_cast<decltype(a)>(-1);
+  const bool sign = (a | b) >> (E + M) & 1;
   const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
 
   if (x.is_nan() || y.is_nan())
@@ -335,7 +335,7 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
   if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
     return false;
 
-  return (((a > b) - (a < b) + sign) ^ sign) < 0;
+  return sign ? a > b : a < b;
 }
 
 template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
@@ -343,7 +343,7 @@ template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
   const auto b = y.bits();
-  const auto sign = ((a | b) >> (E + M) & 1) * static_cast<decltype(a)>(-1);
+  const bool sign = (a | b) >> (E + M) & 1;
   const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
 
   if (x.is_nan() || y.is_nan())
@@ -352,7 +352,7 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
     return true;
 
-  return (((a > b) - (a < b) + sign) ^ sign) <= 0;
+  return sign ? a >= b : a <= b;
 }
 
 template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
