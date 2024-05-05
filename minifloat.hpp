@@ -192,7 +192,7 @@ public:
   [[nodiscard, gnu::const]] bool sign() const noexcept { return _bits >> (E + M); }
 
   [[nodiscard, gnu::const]]
-  bool is_nan() const noexcept {
+  constexpr bool isnan() const noexcept {
     if constexpr (N == NaNStyle::FNUZ)
       return _bits == ABS_MASK + 1U;
 
@@ -200,6 +200,16 @@ public:
       return (_bits & ABS_MASK) == ABS_MASK;
 
     return (_bits & ABS_MASK) > _inf_bits();
+  }
+
+  [[nodiscard, gnu::const]]
+  constexpr bool signbit() const noexcept {
+    return _bits >> (E + M) & 1;
+  }
+
+  [[nodiscard, gnu::const]]
+  constexpr Minifloat abs() const noexcept {
+    return from_bits(_bits & ABS_MASK);
   }
 
   /** \brief Implicit lossless conversion to float
@@ -213,7 +223,7 @@ public:
     const float sgn = sign() ? -1.0f : 1.0f;
     const std::uint32_t magnitude = _bits & ABS_MASK;
 
-    if (is_nan())
+    if (isnan())
       return std::copysign(NAN, sgn);
 
     if (N == NaNStyle::IEEE && magnitude == _inf_bits())
@@ -251,7 +261,7 @@ public:
     const double sgn = sign() ? -1.0 : 1.0;
     const std::uint64_t magnitude = _bits & ABS_MASK;
 
-    if (is_nan())
+    if (isnan())
       return std::copysign(NAN, sgn);
 
     if (N == NaNStyle::IEEE && magnitude == _inf_bits())
@@ -281,7 +291,7 @@ public:
     const double sgn = sign() ? -1.0 : 1.0;
     const std::uint64_t magnitude = _bits & ABS_MASK;
 
-    if (is_nan())
+    if (isnan())
       return std::copysign(NAN, sgn);
 
     if (N == NaNStyle::IEEE && magnitude == _inf_bits())
@@ -312,7 +322,7 @@ bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   const auto a = x.bits();
   const auto b = y.bits();
   const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
-  return (a == b && !x.is_nan()) || (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK));
+  return (a == b && !x.isnan()) || (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK));
 }
 
 template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
@@ -329,7 +339,7 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
   const bool sign = (a | b) >> (E + M) & 1;
   const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
 
-  if (x.is_nan() || y.is_nan())
+  if (x.isnan() || y.isnan())
     return false;
 
   if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
@@ -346,7 +356,7 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   const bool sign = (a | b) >> (E + M) & 1;
   const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
 
-  if (x.is_nan() || y.is_nan())
+  if (x.isnan() || y.isnan())
     return false;
 
   if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
@@ -365,6 +375,18 @@ template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return y <= x;
+}
+
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcept {
+  return x;
+}
+
+template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
+  return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (1U << (E + M)));
 }
 
 template <int E, int M, NaNStyle N, int B, SubnormalStyle D>

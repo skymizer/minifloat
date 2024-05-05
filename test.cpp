@@ -46,7 +46,7 @@ static const struct {
 
   template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
   bool operator()(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) const {
-    return x.bits() == y.bits() || (x.is_nan() && y.is_nan());
+    return x.bits() == y.bits() || (x.isnan() && y.isnan());
   }
 } are_identical;
 
@@ -95,10 +95,10 @@ static void test_equality() {
   EXPECT_EQ(id<double>(T{-3.0}), -3.0);
   EXPECT_EQ(T{0.0f}, T{-0.0f});
   EXPECT_EQ(T{0.0f}.bits() == T{-0.0f}.bits(), Trait<T>::N == NaNStyle::FNUZ);
-  EXPECT_TRUE(T{NAN}.is_nan());
+  EXPECT_TRUE(T{NAN}.isnan());
   EXPECT_TRUE((std::isnan)(id<float>(T{NAN})));
   EXPECT_TRUE((std::isnan)(id<double>(T{NAN})));
-  iterate<T>([](T x){ EXPECT_EQ(x != x, x.is_nan()); });
+  iterate<T>([](T x){ EXPECT_EQ(x != x, x.isnan()); });
 }
 
 TEST(SanityCheck, equality) {
@@ -124,6 +124,33 @@ static void test_identity_conversion() {
 
 TEST(ConversionCheck, identity) {
   RUN_ON_SELECTED_TYPES(test_identity_conversion);
+}
+
+template <SubnormalStyle D, int E, int M, NaNStyle N, int B>
+static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
+  typedef Minifloat<E, M, N, B, D> T;
+  const T y(x);
+  
+  EXPECT_TRUE(x.signbit() == y.signbit() || (N == NaNStyle::FNUZ && !y.bits()));
+  EXPECT_LE(T::from_bits(0), y.abs());
+  EXPECT_LE(y.abs(), T::from_bits(1U << M));
+}
+
+template <typename T>
+static void test_subnormal_conversion() {
+  const unsigned END = 1U << Trait<T>::M;
+
+  for (unsigned i = 0; i < END; ++i) {
+    const T x = T::from_bits(i);
+    test_subnormal_conversion<SubnormalStyle::Reserved>(x);
+    test_subnormal_conversion<SubnormalStyle::Fast>(x);
+    test_subnormal_conversion<SubnormalStyle::Reserved>(-x);
+    test_subnormal_conversion<SubnormalStyle::Fast>(-x);
+  }
+}
+
+TEST(ConversionCheck, subnormal) {
+  RUN_ON_SELECTED_TYPES(test_subnormal_conversion);
 }
 
 template <typename T, typename F>
