@@ -130,8 +130,13 @@ template <SubnormalStyle D, int E, int M, NaNStyle N, int B>
 static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
   typedef Minifloat<E, M, N, B, D> T;
   const T y(x);
-  
   EXPECT_TRUE(x.signbit() == y.signbit() || (N == NaNStyle::FNUZ && !y.bits()));
+
+  if constexpr (D == SubnormalStyle::Reserved) {
+    const unsigned abs = y.abs().bits();
+    EXPECT_TRUE(abs == 0 || abs == 1U << M);
+    return;
+  }
   EXPECT_LE(T::from_bits(0), y.abs());
   EXPECT_LE(y.abs(), T::from_bits(1U << M));
 }
