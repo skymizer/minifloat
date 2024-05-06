@@ -386,6 +386,7 @@ constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcep
 template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
+  if (N == NaNStyle::FNUZ && !x.bits()) return x;
   return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (1U << (E + M)));
 }
 

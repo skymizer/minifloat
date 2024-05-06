@@ -126,15 +126,27 @@ TEST(ConversionCheck, identity) {
   RUN_ON_SELECTED_TYPES(test_identity_conversion);
 }
 
+using OwO = struct {};
+
 template <SubnormalStyle D, int E, int M, NaNStyle N, int B>
 static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
-  typedef Minifloat<E, M, N, B, D> T;
+  using T = Minifloat<E, M, N, B, D>;
+  using Bits = typename T::StorageType;
+
   const T y(x);
   EXPECT_TRUE(x.signbit() == y.signbit() || (N == NaNStyle::FNUZ && !y.bits()));
 
+  const Bits THRESHOLD = 1U << M;
+  const Bits magnitude = x.abs().bits();
+
+  if (magnitude == 0 || magnitude >= THRESHOLD) {
+    EXPECT_TRUE(x.bits() == y.bits() || (x.isnan() && y.isnan()));
+    return;
+  }
+
   if constexpr (D == SubnormalStyle::Reserved) {
-    const unsigned abs = y.abs().bits();
-    EXPECT_TRUE(abs == 0 || abs == 1U << M);
+    const Bits magnitude = y.abs().bits();
+    EXPECT_TRUE(magnitude == 0 || magnitude == 1U << M);
     return;
   }
   EXPECT_LE(T::from_bits(0), y.abs());
@@ -143,15 +155,10 @@ static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Prec
 
 template <typename T>
 static void test_subnormal_conversion() {
-  const unsigned END = 1U << Trait<T>::M;
-
-  for (unsigned i = 0; i < END; ++i) {
-    const T x = T::from_bits(i);
+  iterate<T>([](T x){
     test_subnormal_conversion<SubnormalStyle::Reserved>(x);
     test_subnormal_conversion<SubnormalStyle::Fast>(x);
-    test_subnormal_conversion<SubnormalStyle::Reserved>(-x);
-    test_subnormal_conversion<SubnormalStyle::Fast>(-x);
-  }
+  });
 }
 
 TEST(ConversionCheck, subnormal) {
