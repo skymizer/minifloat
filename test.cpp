@@ -106,6 +106,20 @@ TEST(SanityCheck, equality) {
 }
 
 template <typename T>
+static void test_unary_sign() {
+  EXPECT_EQ(T{0.0f}, -T{0.0f});
+
+  iterate<T>([](T x){
+    EXPECT_PRED2(are_identical, x, +x);
+    EXPECT_PRED2(are_identical, x, - -x);
+  });
+}
+
+TEST(SanityCheck, unary_sign) {
+  RUN_ON_SELECTED_TYPES(test_unary_sign);
+}
+
+template <typename T>
 static void test_identity_conversion() {
   using detail::bit_cast;
   const bool IS_FNUZ = Trait<T>::N == NaNStyle::FNUZ;
@@ -125,8 +139,6 @@ static void test_identity_conversion() {
 TEST(ConversionCheck, identity) {
   RUN_ON_SELECTED_TYPES(test_identity_conversion);
 }
-
-using OwO = struct {};
 
 template <SubnormalStyle D, int E, int M, NaNStyle N, int B>
 static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {

@@ -209,7 +209,9 @@ public:
 
   [[nodiscard, gnu::const]]
   constexpr Minifloat abs() const noexcept {
-    return from_bits(_bits & ABS_MASK);
+    const StorageType magnitude = _bits & ABS_MASK;
+    if (N == NaNStyle::FNUZ && !magnitude) return *this;
+    return from_bits(magnitude);
   }
 
   /** \brief Implicit lossless conversion to float
@@ -386,7 +388,8 @@ constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcep
 template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
-  if (N == NaNStyle::FNUZ && !x.bits()) return x;
+  const unsigned ABS_MASK = (1U << (E + M)) - 1U;
+  if (N == NaNStyle::FNUZ && !(x.bits() & ABS_MASK)) return x;
   return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (1U << (E + M)));
 }
 
