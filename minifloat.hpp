@@ -104,8 +104,8 @@ public:
   static_assert(E > 0);
   static_assert(M >= 0);
   static_assert(E + M < 16);
-  typedef std::conditional_t<E + M < 8, std::uint_least8_t, std::uint_least16_t> StorageType;
 
+  using StorageType = std::conditional_t<E + M < 8, std::uint_least8_t, std::uint_least16_t>;
   static const int RADIX = 2;
   static const int MANTISSA_DIGITS = M + 1;
   static const int MAX_EXP = (1 << E) - B - (N == NaNStyle::IEEE);
@@ -422,27 +422,27 @@ double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcep
   return a / b;
 }
 
-#define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                       \
-  typedef Minifloat<EXP, MANT>                 E##EXP##M##MANT;      \
-  typedef Minifloat<EXP, MANT, NaNStyle::FN>   E##EXP##M##MANT##FN;  \
-  typedef Minifloat<EXP, MANT, NaNStyle::FNUZ> E##EXP##M##MANT##FNUZ;
+#define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT) \
+  using E##EXP##M##MANT = Minifloat<EXP, MANT>; \
+  using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NaNStyle::FN>; \
+  using E##EXP##M##MANT##FNUZ = Minifloat<EXP, MANT, NaNStyle::FNUZ>;
 
 #define SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(EXP) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 0)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 1)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 2)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 3)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 4)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 5)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 6)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 7)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 8)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 9)          \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 10)         \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 11)         \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 12)         \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 13)         \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 14)         \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 0) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 1) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 2) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 3) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 4) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 5) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 6) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 7) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 8) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 9) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 10) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 11) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 12) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 13) \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 14) \
   SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 15)
 
 SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(1)
