@@ -14,11 +14,11 @@ using namespace skymizer::minifloat;
 namespace {
 template <typename> struct Trait;
 
-template <int E_, int M_, NaNStyle N_, int B_, SubnormalStyle D_>
+template <int E_, int M_, NanStyle N_, int B_, SubnormalStyle D_>
 struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
   static const int E = E_;
   static const int M = M_;
-  static const NaNStyle N = N_;
+  static const NanStyle N = N_;
   static const int B = B_;
   static const SubnormalStyle D = D_;
 };
@@ -52,7 +52,7 @@ static const struct {
     return bit_cast<std::uint32_t>(x) == bit_cast<std::uint32_t>(y) || (x != x && y != y);
   }
 
-  template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+  template <int E, int M, NanStyle N, int B, SubnormalStyle D>
   bool operator()(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) const {
     return x.bits() == y.bits() || (x.isnan() && y.isnan());
   }
@@ -76,8 +76,8 @@ static const struct {
 template <int E, int M>
 static void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M>{x}.bits()), bits);
-  EXPECT_EQ((Minifloat<E, M, NaNStyle::FN>{x}.bits()), bits);
-  EXPECT_EQ((Minifloat<E, M, NaNStyle::FNUZ>{x}.bits()), bits);
+  EXPECT_EQ((Minifloat<E, M, NanStyle::FN>{x}.bits()), bits);
+  EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.bits()), bits);
 }
 
 TEST(SanityCheck, finite_bits) {
@@ -102,7 +102,7 @@ static void test_equality() {
   EXPECT_EQ(id<float>(T{-3.0f}), -3.0f);
   EXPECT_EQ(id<double>(T{-3.0}), -3.0);
   EXPECT_EQ(T{0.0f}, T{-0.0f});
-  EXPECT_EQ(T{0.0f}.bits() == T{-0.0f}.bits(), Trait<T>::N == NaNStyle::FNUZ);
+  EXPECT_EQ(T{0.0f}.bits() == T{-0.0f}.bits(), Trait<T>::N == NanStyle::FNUZ);
   EXPECT_TRUE(T{NAN}.isnan());
   EXPECT_TRUE((std::isnan)(id<float>(T{NAN})));
   EXPECT_TRUE((std::isnan)(id<double>(T{NAN})));
@@ -130,7 +130,7 @@ TEST(SanityCheck, unary_sign) {
 template <typename T>
 static void test_identity_conversion() {
   using detail::bit_cast;
-  const bool IS_FNUZ = Trait<T>::N == NaNStyle::FNUZ;
+  const bool IS_FNUZ = Trait<T>::N == NanStyle::FNUZ;
 
   EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{0.0f})), 0);
   EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{0.0f})), 0);
@@ -148,13 +148,13 @@ TEST(ConversionCheck, identity) {
   RUN_ON_SELECTED_TYPES(test_identity_conversion);
 }
 
-template <SubnormalStyle D, int E, int M, NaNStyle N, int B>
+template <SubnormalStyle D, int E, int M, NanStyle N, int B>
 static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
   using T = Minifloat<E, M, N, B, D>;
   using Bits = typename T::StorageType;
 
   const T y(x);
-  EXPECT_TRUE(x.signbit() == y.signbit() || (N == NaNStyle::FNUZ && !y.bits()));
+  EXPECT_TRUE(x.signbit() == y.signbit() || (N == NanStyle::FNUZ && !y.bits()));
 
   const Bits THRESHOLD = 1U << M;
   const Bits magnitude = x.abs().bits();

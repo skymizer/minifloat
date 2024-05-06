@@ -71,7 +71,7 @@ using BitTrueGroupArithmeticType = std::conditional_t<
 template <int E>
 using DefaultBias = std::integral_constant<int, (1 << (E - 1)) - 1>;
 
-enum struct NaNStyle {
+enum struct NanStyle {
   IEEE, ///< IEEE 754 NaNs and infinities
   FN,   ///< The NaNs have all magnitude (non-sign) bits set
   FNUZ, ///< The NaN is -0
@@ -96,7 +96,7 @@ enum struct SubnormalStyle {
   * - E + M < 16
   */
 template <int E, int M,
-  NaNStyle N = NaNStyle::IEEE,
+  NanStyle N = NanStyle::IEEE,
   int B = DefaultBias<E>::value,
   SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
@@ -108,7 +108,7 @@ public:
   using StorageType = std::conditional_t<E + M < 8, std::uint_least8_t, std::uint_least16_t>;
   static const int RADIX = 2;
   static const int MANTISSA_DIGITS = M + 1;
-  static const int MAX_EXP = (1 << E) - B - (N == NaNStyle::IEEE);
+  static const int MAX_EXP = (1 << E) - B - (N == NanStyle::IEEE);
   static const int MIN_EXP = 2 - B;
 
 private:
@@ -133,10 +133,10 @@ private:
   static constexpr StorageType _inf_bits() noexcept {
     const StorageType MAX = (UINT32_C(1) << (E + M)) - 1;
 
-    if constexpr (N == NaNStyle::IEEE)
+    if constexpr (N == NanStyle::IEEE)
       return MAX << M & MAX;
 
-    return MAX - (N == NaNStyle::FN);
+    return MAX - (N == NanStyle::FN);
   }
 
   [[nodiscard, gnu::const]]
@@ -144,10 +144,10 @@ private:
     const StorageType N0 = UINT32_C(1) << (E + M);
     const StorageType MAX = N0 - 1;
 
-    if constexpr (N == NaNStyle::FNUZ)
+    if constexpr (N == NanStyle::FNUZ)
       return N0;
 
-    if constexpr (N == NaNStyle::FN || M == 0)
+    if constexpr (N == NanStyle::FN || M == 0)
       return MAX;
 
     return MAX << (M - 1) & MAX;
@@ -168,10 +168,10 @@ private:
     if (magnitude < std::int32_t{1} << (std::numeric_limits<float>::digits - 1)) {
       if constexpr (D == SubnormalStyle::Precise) {
         const StorageType ticks = std::rint(std::abs(x) * std::exp2f(MANTISSA_DIGITS) * std::exp2f(-MIN_EXP));
-        return (N != NaNStyle::FNUZ || ticks) * sign | ticks;
+        return (N != NanStyle::FNUZ || ticks) * sign | ticks;
       }
       if (magnitude <= std::int32_t{1} << (std::numeric_limits<float>::digits - 2))
-        return (N != NaNStyle::FNUZ) * sign;
+        return (N != NanStyle::FNUZ) * sign;
       return sign | 1 << M;
     }
     const int shift = std::numeric_limits<float>::digits - MANTISSA_DIGITS;
@@ -193,10 +193,10 @@ public:
 
   [[nodiscard, gnu::const]]
   constexpr bool isnan() const noexcept {
-    if constexpr (N == NaNStyle::FNUZ)
+    if constexpr (N == NanStyle::FNUZ)
       return _bits == ABS_MASK + 1U;
 
-    if constexpr (N == NaNStyle::FN)
+    if constexpr (N == NanStyle::FN)
       return (_bits & ABS_MASK) == ABS_MASK;
 
     return (_bits & ABS_MASK) > _inf_bits();
@@ -210,7 +210,7 @@ public:
   [[nodiscard, gnu::const]]
   constexpr Minifloat abs() const noexcept {
     const StorageType magnitude = _bits & ABS_MASK;
-    if (N == NaNStyle::FNUZ && !magnitude) return *this;
+    if (N == NanStyle::FNUZ && !magnitude) return *this;
     return from_bits(magnitude);
   }
 
@@ -228,7 +228,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sgn);
 
-    if (N == NaNStyle::IEEE && magnitude == _inf_bits())
+    if (N == NanStyle::IEEE && magnitude == _inf_bits())
       return std::copysign(HUGE_VALF, sgn);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -266,7 +266,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sgn);
 
-    if (N == NaNStyle::IEEE && magnitude == _inf_bits())
+    if (N == NanStyle::IEEE && magnitude == _inf_bits())
       return std::copysign(HUGE_VAL, sgn);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -296,7 +296,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sgn);
 
-    if (N == NaNStyle::IEEE && magnitude == _inf_bits())
+    if (N == NanStyle::IEEE && magnitude == _inf_bits())
       return std::copysign(HUGE_VAL, sgn);
 
     if (magnitude >= static_cast<std::uint64_t>(std::numeric_limits<double>::max_exponent + B) << M)
@@ -318,22 +318,22 @@ public:
   }
 };
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
   const auto b = y.bits();
   const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
-  return (a == b && !x.isnan()) || (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK));
+  return (a == b && !x.isnan()) || (N != NanStyle::FNUZ && !((a | b) & ABS_MASK));
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return !(x == y);
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
@@ -344,13 +344,13 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
   if (x.isnan() || y.isnan())
     return false;
 
-  if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
+  if (N != NanStyle::FNUZ && !((a | b) & ABS_MASK))
     return false;
 
   return sign ? a > b : a < b;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
@@ -361,39 +361,39 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   if (x.isnan() || y.isnan())
     return false;
 
-  if (N != NaNStyle::FNUZ && !((a | b) & ABS_MASK))
+  if (N != NanStyle::FNUZ && !((a | b) & ABS_MASK))
     return true;
 
   return sign ? a >= b : a <= b;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator>(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return y < x;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return y <= x;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcept {
   return x;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
   const unsigned ABS_MASK = (1U << (E + M)) - 1U;
-  if (N == NaNStyle::FNUZ && !(x.bits() & ABS_MASK)) return x;
+  if (N == NanStyle::FNUZ && !(x.bits() & ABS_MASK)) return x;
   return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (1U << (E + M)));
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
@@ -401,7 +401,7 @@ BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E,
   return a + b;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
@@ -409,7 +409,7 @@ BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E,
   return a - b;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a = x;
@@ -417,7 +417,7 @@ BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E,
   return a * b;
 }
 
-template <int E, int M, NaNStyle N, int B, SubnormalStyle D>
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   double a = x;
@@ -427,8 +427,8 @@ double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcep
 
 #define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT) \
   using E##EXP##M##MANT = Minifloat<EXP, MANT>; \
-  using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NaNStyle::FN>; \
-  using E##EXP##M##MANT##FNUZ = Minifloat<EXP, MANT, NaNStyle::FNUZ>;
+  using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NanStyle::FN>; \
+  using E##EXP##M##MANT##FNUZ = Minifloat<EXP, MANT, NanStyle::FNUZ>;
 
 #define SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(EXP) \
   SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 0) \
