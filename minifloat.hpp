@@ -161,21 +161,20 @@ private:
     if (x != x) 
       return sign | _nan_bits();
 
-    const std::int32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
-    const std::int32_t bias = diff << (std::numeric_limits<float>::digits - 1);
-    const std::int32_t magnitude = (bits & INT32_MAX) - bias;
+    const auto diff = std::int32_t{MIN_EXP - std::numeric_limits<float>::min_exponent} << M;
+    const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (std::numeric_limits<float>::digits - M)) - diff;
 
-    if (magnitude < std::int32_t{1} << (std::numeric_limits<float>::digits - 1)) {
-      if constexpr (D == SubnormalStyle::Precise) {
-        const StorageType ticks = std::rint(std::abs(x) * std::exp2f(MANTISSA_DIGITS) * std::exp2f(-MIN_EXP));
-        return (N != NanStyle::FNUZ || ticks) * sign | ticks;
-      }
-      if (magnitude <= std::int32_t{1} << (std::numeric_limits<float>::digits - 2))
-        return (N != NanStyle::FNUZ) * sign;
-      return sign | 1 << M;
+    if (magnitude < 1 << M) {
+      if constexpr (D == SubnormalStyle::Fast)
+        return magnitude <= 0 ? (N != NanStyle::FNUZ) * sign : sign | magnitude;
+
+      if constexpr (D == SubnormalStyle::Reserved)
+        return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
+
+      const StorageType ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
+      return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
-    const int shift = std::numeric_limits<float>::digits - MANTISSA_DIGITS;
-    return sign | std::min<std::int32_t>(magnitude >> shift, _inf_bits());
+    return sign | std::min<std::int32_t>(magnitude, _inf_bits());
   }
 
 public:
