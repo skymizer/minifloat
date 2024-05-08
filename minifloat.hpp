@@ -131,26 +131,26 @@ private:
 
   [[nodiscard, gnu::const]]
   static constexpr StorageType _inf_bits() noexcept {
-    const StorageType MAX = (UINT32_C(1) << (E + M)) - 1;
+    const StorageType max = (UINT32_C(1) << (E + M)) - 1;
 
     if constexpr (N == NanStyle::IEEE)
-      return MAX << M & MAX;
+      return max << M & max;
 
-    return MAX - (N == NanStyle::FN);
+    return max - (N == NanStyle::FN);
   }
 
   [[nodiscard, gnu::const]]
   static constexpr StorageType _nan_bits() noexcept {
-    const StorageType N0 = UINT32_C(1) << (E + M);
-    const StorageType MAX = N0 - 1;
+    const StorageType n0 = UINT32_C(1) << (E + M);
+    const StorageType max = n0 - 1;
 
     if constexpr (N == NanStyle::FNUZ)
-      return N0;
+      return n0;
 
     if constexpr (N == NanStyle::FN || M == 0)
-      return MAX;
+      return max;
 
-    return MAX << (M - 1) & MAX;
+    return max << (M - 1) & max;
   }
 
   [[nodiscard, gnu::const]]
@@ -388,8 +388,8 @@ constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcep
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
-  const unsigned ABS_MASK = (1U << (E + M)) - 1U;
-  if (N == NanStyle::FNUZ && !(x.bits() & ABS_MASK)) return x;
+  const unsigned abs_mask = (1U << (E + M)) - 1U;
+  if (N == NanStyle::FNUZ && !(x.bits() & abs_mask)) return x;
   return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (1U << (E + M)));
 }
 
