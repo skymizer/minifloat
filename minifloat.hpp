@@ -182,8 +182,9 @@ public:
   explicit Minifloat(float x) : _bits(_to_bits(x)) {};
 
   static constexpr Minifloat from_bits(StorageType bits) noexcept {
+    const unsigned mask = (1U << (E + M + 1)) - 1U;
     Minifloat result;
-    result._bits = bits;
+    result._bits = bits & mask;
     return result;
   }
 
