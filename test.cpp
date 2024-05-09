@@ -114,6 +114,28 @@ TEST(SanityCheck, equality) {
 }
 
 template <typename T>
+static int compare(T x, T y) {
+  return (x > y) - (x < y);
+}
+
+template <typename T>
+static void test_comparison() {
+  const unsigned X_STEP = 38 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
+  const unsigned Y_STEP = 49 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
+
+  iterate<T, X_STEP>([](T x){
+    iterate<T, Y_STEP>([x](T y){
+      EXPECT_EQ(compare(x, y), compare(id<float>(x), id<float>(y)));
+      EXPECT_EQ(compare(x, y), compare(id<double>(x), id<double>(y)));
+    });
+  });
+}
+
+TEST(SanityCheck, comparison) {
+  RUN_ON_SELECTED_TYPES(test_comparison);
+}
+
+template <typename T>
 static void test_unary_sign() {
   EXPECT_EQ(T{0.0f}, -T{0.0f});
 
@@ -210,26 +232,4 @@ static void test_exact_arithmetics() {
 
 TEST(ArithmeticCheck, exact) {
   RUN_ON_SELECTED_TYPES(test_exact_arithmetics);
-}
-
-template <typename T>
-static int compare(T x, T y) {
-  return (x > y) - (x < y);
-}
-
-template <typename T>
-static void test_comparison() {
-  const unsigned X_STEP = 38 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
-  const unsigned Y_STEP = 49 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
-
-  iterate<T, X_STEP>([](T x){
-    iterate<T, Y_STEP>([x](T y){
-      EXPECT_EQ(compare(x, y), compare(id<float>(x), id<float>(y)));
-      EXPECT_EQ(compare(x, y), compare(id<double>(x), id<double>(y)));
-    });
-  });
-}
-
-TEST(ComparisonCheck, generic) {
-  RUN_ON_SELECTED_TYPES(test_comparison);
 }
