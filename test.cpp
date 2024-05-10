@@ -58,6 +58,10 @@ static const struct {
   }
 } are_identical;
 
+using E4M3B11 = Minifloat<4, 3, NanStyle::IEEE, 11>;
+using E4M3B11FN = Minifloat<4, 3, NanStyle::FN, 11>;
+using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
+
 #define RUN_ON_SELECTED_TYPES(F) do { \
   F<E3M4>(); \
   F<E3M4FN>(); \
@@ -65,6 +69,9 @@ static const struct {
   F<E4M3>(); \
   F<E4M3FN>(); \
   F<E4M3FNUZ>(); \
+  F<E4M3B11>(); \
+  F<E4M3B11FN>(); \
+  F<E4M3B11FNUZ>(); \
   F<E5M2>(); \
   F<E5M2FN>(); \
   F<E5M2FNUZ>(); \
