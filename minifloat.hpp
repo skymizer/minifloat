@@ -15,11 +15,16 @@
 #include <cmath>
 #include <cstdint>
 
+/// Namespace for Skymizer
 namespace skymizer {
 
+/// Namespace for the minifloat library
 namespace minifloat {
 
+/// Implementation details
 namespace detail {
+
+/// Backport of C++20 std::bit_cast
 template <typename To, typename From>
 [[nodiscard, gnu::const]]
 auto bit_cast(const From &from) noexcept -> std::enable_if_t<
@@ -35,9 +40,9 @@ auto bit_cast(const From &from) noexcept -> std::enable_if_t<
 #endif
 }
 
-/** \brief Round a float to the nearest float with the given significand width
-  * \tparam M - Significand (mantissa) width
-  */
+/// Round a float to the nearest float with the given significand width
+///
+/// \tparam M - Significand (mantissa) width
 template <int M>
 [[nodiscard, gnu::const]]
 float round_to_mantissa(float x) {
@@ -50,51 +55,97 @@ float round_to_mantissa(float x) {
   const auto bias = ulp / 2 - !(bits & ulp);
   return bit_cast<float>((bits + bias) & ~(ulp - 1));
 }
+
 } // namespace detail
 
-/** \brief A fast native type borrowed for minifloat arithmetics
-  * \tparam M - Significand (mantissa) width
-  *
-  * We want to emulate addition and multiplication of floating point number
-  * type T with a wider type U.  If the significand of U is more than twice as
-  * wide as T, double rounding is not a problem.  The proof is left as an
-  * exercise to the reader.
-  */
+/// A fast native type borrowed for minifloat arithmetics
+///
+/// \tparam M - Significand (mantissa) width
+///
+/// We want to emulate addition and multiplication of floating point number
+/// type T with a wider type U.  If the significand of U is more than twice as
+/// wide as T, double rounding is not a problem.  The proof is left as an
+/// exercise to the reader.
 template <int M>
 using BitTrueGroupArithmeticType = std::conditional_t<
   M <= std::numeric_limits<float>::digits / 2 - 1,
   float, double>;
 
-/** \brief Default bias for a given exponent width
-  * \tparam E - Exponent width
-  */
+/// Default bias for a given exponent width
+///
+/// \tparam E - Exponent width
 template <int E>
 using DefaultBias = std::integral_constant<int, (1 << (E - 1)) - 1>;
 
+/// NaN encoding style
+///
+/// The variants follow [LLVM/MLIR naming conventions][llvm] derived from
+/// their differences to [IEEE 754][ieee].
+///
+/// [llvm]: https://llvm.org/doxygen/structllvm_1_1APFloatBase.html
+/// [ieee]: https://en.wikipedia.org/wiki/IEEE_754
 enum struct NanStyle {
-  IEEE, ///< IEEE 754 NaNs and infinities
-  FN,   ///< The NaNs have all magnitude (non-sign) bits set
-  FNUZ, ///< The NaN is -0
+  /// IEEE 754 NaN encoding
+  ///
+  /// The maximum exponent is reserved for non-finite numbers.  The zero
+  /// mantissa stands for infinity, while any other value represents a NaN.
+  IEEE,
+
+  /// `FN` suffix as in LLVM/MLIR
+  ///
+  /// `F` is for finite, `N` for a special NaN encoding.  There are no
+  /// infinities.  The maximum magnitude is reserved for NaNs, where the
+  /// exponent and mantissa are all ones.
+  FN,
+
+  /// `FNUZ` suffix as in LLVM/MLIR
+  ///
+  /// `F` is for finite, `N` for a special NaN encoding, `UZ` for unsigned
+  /// zero.  There are no infinities.  The negative zero (&minus;0.0)
+  /// representation is reserved for NaN.  As a result, there is only one
+  /// (+0.0) unsigned zero.
+  FNUZ,
 };
 
+/// Subnormal handling style
 enum struct SubnormalStyle {
-  Precise,  ///< IEEE 754 subnormal numbers
-  Reserved, ///< Do not use subnormal representations
-  Fast,     ///< I am speed
+  /// IEEE 754 subnormal numbers
+  ///
+  /// Subnormal numbers have the smallest exponent (same as the smallest normal
+  /// numbers) but without the implicit leading bit.  Subnormal numbers provide
+  /// a smooth transition from zero to normal numbers.
+  Precise,
+
+  /// Do not use subnormal representations
+  ///
+  /// I (jdh8) do not recommend this option, but one of our users requested it.
+  /// If you want to reserve floating-point representations, I strongly suggest
+  /// using NaN boxing instead.
+  Reserved,
+
+  /// I am speed
+  ///
+  /// Subnormal numbers are valid representations, but they are not
+  /// guaranteed to be precise.  This is useful for fast emulation of
+  /// subnormal numbers.
+  ///
+  /// The fast representations still have a correct sign and a magnitude between
+  /// zero and the smallest positive normal number.
+  Fast,
 };
 
-/** \brief Configurable signed floating point type
-  * \tparam E - Exponent width
-  * \tparam M - Significand (mantissa) width
-  * \tparam N - NaN encoding style
-  * \tparam B - Exponent bias
-  * \tparam D - Subnormal (denormal) encoding style
-  *
-  * Constraints:
-  * - E > 0
-  * - M >= 0
-  * - E + M < 16
-  */
+/// Configurable signed floating point type
+///
+/// \tparam E - Exponent width
+/// \tparam M - Significand (mantissa) width
+/// \tparam N - NaN encoding style
+/// \tparam B - Exponent bias
+/// \tparam D - Subnormal (denormal) encoding style
+///
+/// Constraints:
+/// - E > 0
+/// - M >= 0 (M > 0 if N is `NanStyle::IEEE`)
+/// - E + M < 16
 template <int E, int M,
   NanStyle N = NanStyle::IEEE,
   int B = DefaultBias<E>::value,
@@ -214,11 +265,10 @@ public:
     return from_bits(magnitude);
   }
 
-  /** \brief Implicit lossless conversion to float
-    *
-    * The conversion is only enabled if it is proven to be lossless at compile
-    * time.  If the conversion is lossy, the user must explicitly cast to float.
-    */
+  /// Implicit lossless conversion to float
+  ///
+  /// The conversion is only enabled if it is proven to be lossless at compile
+  /// time.  If the conversion is lossy, the user must explicitly cast to float.
   template <bool ENABLE = HAS_EXACT_F32_CONVERSION>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, float>() const noexcept {
@@ -240,23 +290,21 @@ public:
     return detail::bit_cast<float>(sign() << 31 | (shifted + bias));
   }
 
-  /** \brief Explicit lossy conversion to float
-    *
-    * This variant makes use of conversion to double.  Conversion to double is
-    * lossy only when then exponent width is too large.  In this case, a second
-    * conversion to float is safe.
-    */
+  /// Explicit lossy conversion to float
+  ///
+  /// This variant makes use of conversion to double.  Conversion to double is
+  /// lossy only when then exponent width is too large.  In this case, a second
+  /// conversion to float is safe.
   template <bool ENABLE = !HAS_EXACT_F32_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
   [[nodiscard, gnu::const]]
   explicit operator float() const noexcept {
     return static_cast<double>(*this);
   }
 
-  /** \brief Implicit lossless conversion to double
-    *
-    * The conversion is only enabled if it is proven to be lossless at compile
-    * time.  If the conversion is lossy, the user must explicitly cast to double.
-    */
+  /// Implicit lossless conversion to double
+  ///
+  /// The conversion is only enabled if it is proven to be lossless at compile
+  /// time.  If the conversion is lossy, the user must explicitly cast to double.
   template <bool ENABLE = HAS_EXACT_F64_CONVERSION>
   [[nodiscard, gnu::const]]
   operator std::enable_if_t<ENABLE, double>() const noexcept {
@@ -278,11 +326,10 @@ public:
     return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
   
-  /** \brief Explicit lossy conversion to double
-    *
-    * This variant assumes that the conversion is lossy only when the exponent
-    * is out of range.
-    */
+  /// Explicit lossy conversion to double
+  ///
+  /// This variant assumes that the conversion is lossy only when the exponent
+  /// is out of range.
   template <bool ENABLE = !HAS_EXACT_F64_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
   [[nodiscard, gnu::const]]
   explicit operator double() const noexcept {

@@ -1,6 +1,8 @@
 Minifloat
 =========
-C++ template library for minifloats dedicated to @skymizer
+C++ template library for minifloats dedicated to [@skymizer][skymizer]
+
+[skymizer]: https://github.com/skymizer
 
 This header-only C++ library provides emulation of minifloats up to 16 bits.
 In this library, implicit conversions are proven lossless at compile time.
