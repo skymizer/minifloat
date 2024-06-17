@@ -34,3 +34,7 @@
 
 # Editor settings
 /.vscode/
+
+# Generated documentations
+/html/
+/latex/

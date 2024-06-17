@@ -21,7 +21,6 @@ namespace skymizer {
 /// Namespace for the minifloat library
 namespace minifloat {
 
-/// Implementation details
 namespace detail {
 
 /// Backport of C++20 std::bit_cast
