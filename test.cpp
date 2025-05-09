@@ -75,9 +75,9 @@ TEST(Suite, E4M3B11FNUZ) { CALLBACK<E4M3B11FNUZ>(); } \
 TEST(Suite, E5M2) { CALLBACK<E5M2>(); } \
 TEST(Suite, E5M2FN) { CALLBACK<E5M2FN>(); } \
 TEST(Suite, E5M2FNUZ) { CALLBACK<E5M2FNUZ>(); } \
-TEST(Suite, E5M7) { CALLBACK<E5M7>(); } \
-TEST(Suite, E5M7FN) { CALLBACK<E5M7FN>(); } \
-TEST(Suite, E5M7FNUZ) { CALLBACK<E5M7FNUZ>(); }
+TEST(Suite, E4M4FN) { CALLBACK<E4M4FN>(); } \
+TEST(Suite, E4M5FN) { CALLBACK<E4M5FN>(); } \
+TEST(Suite, E5M4FN) { CALLBACK<E5M4FN>(); }
 
 template <int E, int M>
 static void test_finite_bits(float x, unsigned bits) {
