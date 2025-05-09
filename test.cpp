@@ -33,7 +33,7 @@ static void iterate(F f) {
 }
 
 template <typename T>
-static T id(T x) { return x; }
+static T identity(T x) { return x; }
 
 /** \brief Test floating-point identity like Object.is in JavaScript
   *
@@ -105,13 +105,13 @@ TEST(SanityCheck, finite_bits) {
 
 template <typename T>
 static void test_equality() {
-  EXPECT_EQ(id<float>(T{-3.0f}), -3.0f);
-  EXPECT_EQ(id<double>(T{-3.0}), -3.0);
+  EXPECT_EQ(identity<float>(T{-3.0f}), -3.0f);
+  EXPECT_EQ(identity<double>(T{-3.0}), -3.0);
   EXPECT_EQ(T{0.0f}, T{-0.0f});
   EXPECT_EQ(T{0.0f}.bits() == T{-0.0f}.bits(), Trait<T>::N == NanStyle::FNUZ);
   EXPECT_TRUE(T{NAN}.isnan());
-  EXPECT_TRUE((std::isnan)(id<float>(T{NAN})));
-  EXPECT_TRUE((std::isnan)(id<double>(T{NAN})));
+  EXPECT_TRUE((std::isnan)(identity<float>(T{NAN})));
+  EXPECT_TRUE((std::isnan)(identity<double>(T{NAN})));
   iterate<T>([](T x){ EXPECT_EQ(x != x, x.isnan()); });
 }
 
@@ -138,8 +138,8 @@ template <typename T>
 static void test_comparison() {
   iterate<T>([](T x){
     iterate<T>([x](T y){
-      EXPECT_EQ(compare(x, y), compare(id<float>(x), id<float>(y)));
-      EXPECT_EQ(compare(x, y), compare(id<double>(x), id<double>(y)));
+      EXPECT_EQ(compare(x, y), compare(identity<float>(x), identity<float>(y)));
+      EXPECT_EQ(compare(x, y), compare(identity<double>(x), identity<double>(y)));
     });
   });
 }
@@ -151,15 +151,15 @@ static void test_identity_conversion() {
   using detail::bit_cast;
   const bool IS_FNUZ = Trait<T>::N == NanStyle::FNUZ;
 
-  EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{0.0f})), 0);
-  EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{0.0f})), 0);
-  EXPECT_EQ(bit_cast<std::uint32_t>(id<float>(T{-0.0f})), !IS_FNUZ * 0x8000'0000);
-  EXPECT_EQ(bit_cast<std::uint64_t>(id<double>(T{-0.0f})), !IS_FNUZ * 0x8000'0000'0000'0000);
+  EXPECT_EQ(bit_cast<std::uint32_t>(identity<float>(T{0.0f})), 0);
+  EXPECT_EQ(bit_cast<std::uint64_t>(identity<double>(T{0.0f})), 0);
+  EXPECT_EQ(bit_cast<std::uint32_t>(identity<float>(T{-0.0f})), !IS_FNUZ * 0x8000'0000);
+  EXPECT_EQ(bit_cast<std::uint64_t>(identity<double>(T{-0.0f})), !IS_FNUZ * 0x8000'0000'0000'0000);
 
   iterate<T>([](T x){
     EXPECT_PRED2(are_identical, x, T::from_bits(x.bits()));
-    EXPECT_PRED2(are_identical, x, T{id<float>(x)});
-    EXPECT_PRED2(are_identical, id<float>(x), id<double>(x));
+    EXPECT_PRED2(are_identical, x, T{identity<float>(x)});
+    EXPECT_PRED2(are_identical, identity<float>(x), identity<double>(x));
   });
 }
 
@@ -205,7 +205,7 @@ static void test_exact_arithmetics(F op) {
   iterate<T>([op](T x){
     iterate<T>([op, x](T y){
       const auto z = op(x, y);
-      const double precise = op(id<double>(x), id<double>(y));
+      const double precise = op(identity<double>(x), identity<double>(y));
       EXPECT_PRED2(are_identical, static_cast<T>(z), static_cast<T>(precise));
       EXPECT_PRED2(are_identical, z, static_cast<decltype(z)>(precise));
     });
