@@ -170,7 +170,7 @@ static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Prec
   using T = Minifloat<E, M, N, B, D>;
   using Bits = typename T::StorageType;
 
-  const T y(x);
+  const T y(identity<float>(x));
   EXPECT_TRUE(x.signbit() == y.signbit() || (N == NanStyle::FNUZ && !y.bits()));
 
   const Bits THRESHOLD = 1U << M;
@@ -236,3 +236,29 @@ MAKE_TESTS_FOR_SELECTED_TYPES(AdditionCheck, test_exact_addition)
 MAKE_TESTS_FOR_SELECTED_TYPES(SubtractionCheck, test_exact_subtraction)
 MAKE_TESTS_FOR_SELECTED_TYPES(MultiplicationCheck, test_exact_multiplication)
 MAKE_TESTS_FOR_SELECTED_TYPES(DivisionCheck, test_exact_division)
+
+template <int E, int M, NanStyle N = NanStyle::FN>
+static void test_snowball_addition() {
+  using T = Minifloat<E, M, N>;
+  using Bits = typename T::StorageType;
+
+  const Bits STEP = 1U << M;
+  const Bits SIGNIFICAND = STEP - 1U;
+  const Bits EXPONENT = 1U << (E + M - 1);
+  const Bits GREATER = EXPONENT | SIGNIFICAND;
+
+  for (Bits lesser = SIGNIFICAND; lesser <= GREATER; lesser += STEP) {
+    const T x = T::from_bits(GREATER);
+    const T y = T::from_bits(lesser);
+
+    const double xx = x;
+    const double yy = y;
+    EXPECT_PRED2(are_identical, static_cast<T>(x + y), static_cast<T>(xx + yy));
+  }
+}
+
+TEST(SnowballAdditionCheck, E2M11) { test_snowball_addition<2, 11>(); }
+TEST(SnowballAdditionCheck, E3M11) { test_snowball_addition<3, 11>(); }
+TEST(SnowballAdditionCheck, E4M11) { test_snowball_addition<4, 11>(); }
+TEST(SnowballAdditionCheck, E2M12) { test_snowball_addition<2, 12>(); }
+TEST(SnowballAdditionCheck, E3M12) { test_snowball_addition<3, 12>(); }

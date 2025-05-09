@@ -55,6 +55,22 @@ float round_to_mantissa(float x) {
   return bit_cast<float>((bits + bias) & ~(ulp - 1));
 }
 
+/// Round a float to the nearest float with the given significand width
+///
+/// \tparam M - Significand (mantissa) width
+template <int M>
+[[nodiscard, gnu::const]]
+double round_to_mantissa(double x) {
+  static_assert(std::numeric_limits<double>::radix == 2);
+  static_assert(M < std::numeric_limits<double>::digits);
+  static_assert(std::numeric_limits<double>::is_iec559);
+
+  const auto bits = bit_cast<std::uint64_t>(x);
+  const auto ulp = std::uint64_t{1} << (std::numeric_limits<double>::digits - 1 - M);
+  const auto bias = ulp / 2 - !(bits & ulp);
+  return bit_cast<double>((bits + bias) & ~(ulp - 1));
+}
+
 } // namespace detail
 
 /// A fast native type borrowed for minifloat arithmetics
@@ -227,9 +243,34 @@ private:
     return sign | std::min<std::int32_t>(magnitude, _inf_bits());
   }
 
+  [[nodiscard, gnu::const]]
+  static StorageType _to_bits(double x) noexcept {
+    const auto bits = detail::bit_cast<std::uint64_t>(detail::round_to_mantissa<M>(x));
+    const auto sign = bits >> 63 << (E + M);
+
+    if (x != x) 
+      return sign | _nan_bits();
+
+    const auto diff = std::int64_t{MIN_EXP - std::numeric_limits<double>::min_exponent} << M;
+    const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (std::numeric_limits<double>::digits - M)) - diff;
+
+    if (magnitude < 1 << M) {
+      if constexpr (D == SubnormalStyle::Fast)
+        return magnitude <= 0 ? (N != NanStyle::FNUZ) * sign : sign | magnitude;
+
+      if constexpr (D == SubnormalStyle::Reserved)
+        return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
+
+      const StorageType ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
+      return (N != NanStyle::FNUZ || ticks) * sign | ticks;
+    }
+    return sign | std::min<std::int64_t>(magnitude, _inf_bits());
+  }
+
 public:
   Minifloat() = default;
   explicit Minifloat(float x) : _bits(_to_bits(x)) {};
+  explicit Minifloat(double x) : _bits(_to_bits(x)) {};
 
   static constexpr Minifloat from_bits(StorageType bits) noexcept {
     const unsigned mask = (1U << (E + M + 1)) - 1U;
