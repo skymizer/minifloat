@@ -24,11 +24,11 @@ struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
 };
 } // namespace
 
-template <typename T, unsigned STEP = 1, typename F>
+template <typename T, typename F>
 static void iterate(F f) {
   const unsigned END = 1U << (Trait<T>::E + Trait<T>::M + 1);
 
-  for (unsigned i = 0; i < END; i += STEP)
+  for (unsigned i = 0; i < END; ++i)
     f(T::from_bits(i));
 }
 
@@ -136,11 +136,8 @@ MAKE_TESTS_FOR_SELECTED_TYPES(UnarySignCheck, test_unary_sign)
 
 template <typename T>
 static void test_comparison() {
-  const unsigned X_STEP = 38 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
-  const unsigned Y_STEP = 49 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
-
-  iterate<T, X_STEP>([](T x){
-    iterate<T, Y_STEP>([x](T y){
+  iterate<T>([](T x){
+    iterate<T>([x](T y){
       EXPECT_EQ(compare(x, y), compare(id<float>(x), id<float>(y)));
       EXPECT_EQ(compare(x, y), compare(id<double>(x), id<double>(y)));
     });
@@ -205,11 +202,8 @@ MAKE_TESTS_FOR_SELECTED_TYPES(SubnormalConversionCheck, test_subnormal_conversio
 
 template <typename T, typename F>
 static void test_exact_arithmetics(F op) {
-  const unsigned X_STEP = 38 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
-  const unsigned Y_STEP = 49 << (Trait<T>::E + Trait<T>::M) >> 15 | 1;
-
-  iterate<T, X_STEP>([op](T x){
-    iterate<T, Y_STEP>([op, x](T y){
+  iterate<T>([op](T x){
+    iterate<T>([op, x](T y){
       const auto z = op(x, y);
       const double precise = op(id<double>(x), id<double>(y));
       EXPECT_PRED2(are_identical, static_cast<T>(z), static_cast<T>(precise));
