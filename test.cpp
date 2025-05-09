@@ -213,11 +213,26 @@ static void test_exact_arithmetics(F op) {
 }
 
 template <typename T>
-static void test_exact_arithmetics() {
+static void test_exact_addition() {
   test_exact_arithmetics<T>(std::plus<>());
+}
+
+template <typename T>
+static void test_exact_subtraction() {
   test_exact_arithmetics<T>(std::minus<>());
+}
+
+template <typename T>
+static void test_exact_multiplication() {
   test_exact_arithmetics<T>(std::multiplies<>());
+}
+
+template <typename T>
+static void test_exact_division() {
   test_exact_arithmetics<T>(std::divides<>());
 }
 
-MAKE_TESTS_FOR_SELECTED_TYPES(ArithmeticCheck, test_exact_arithmetics)
+MAKE_TESTS_FOR_SELECTED_TYPES(AdditionCheck, test_exact_addition)
+MAKE_TESTS_FOR_SELECTED_TYPES(SubtractionCheck, test_exact_subtraction)
+MAKE_TESTS_FOR_SELECTED_TYPES(MultiplicationCheck, test_exact_multiplication)
+MAKE_TESTS_FOR_SELECTED_TYPES(DivisionCheck, test_exact_division)
