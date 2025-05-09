@@ -62,23 +62,22 @@ using E4M3B11 = Minifloat<4, 3, NanStyle::IEEE, 11>;
 using E4M3B11FN = Minifloat<4, 3, NanStyle::FN, 11>;
 using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
 
-#define RUN_ON_SELECTED_TYPES(F) do { \
-  F<E3M4>(); \
-  F<E3M4FN>(); \
-  F<E3M4FNUZ>(); \
-  F<E4M3>(); \
-  F<E4M3FN>(); \
-  F<E4M3FNUZ>(); \
-  F<E4M3B11>(); \
-  F<E4M3B11FN>(); \
-  F<E4M3B11FNUZ>(); \
-  F<E5M2>(); \
-  F<E5M2FN>(); \
-  F<E5M2FNUZ>(); \
-  F<E5M7>(); \
-  F<E5M7FN>(); \
-  F<E5M7FNUZ>(); \
-} while (false)
+#define MAKE_TESTS_FOR_SELECTED_TYPES(Suite, CALLBACK) \
+TEST(Suite, E3M4) { CALLBACK<E3M4>(); } \
+TEST(Suite, E3M4FN) { CALLBACK<E3M4FN>(); } \
+TEST(Suite, E3M4FNUZ) { CALLBACK<E3M4FNUZ>(); } \
+TEST(Suite, E4M3) { CALLBACK<E4M3>(); } \
+TEST(Suite, E4M3FN) { CALLBACK<E4M3FN>(); } \
+TEST(Suite, E4M3FNUZ) { CALLBACK<E4M3FNUZ>(); } \
+TEST(Suite, E4M3B11) { CALLBACK<E4M3B11>(); } \
+TEST(Suite, E4M3B11FN) { CALLBACK<E4M3B11FN>(); } \
+TEST(Suite, E4M3B11FNUZ) { CALLBACK<E4M3B11FNUZ>(); } \
+TEST(Suite, E5M2) { CALLBACK<E5M2>(); } \
+TEST(Suite, E5M2FN) { CALLBACK<E5M2FN>(); } \
+TEST(Suite, E5M2FNUZ) { CALLBACK<E5M2FNUZ>(); } \
+TEST(Suite, E5M7) { CALLBACK<E5M7>(); } \
+TEST(Suite, E5M7FN) { CALLBACK<E5M7FN>(); } \
+TEST(Suite, E5M7FNUZ) { CALLBACK<E5M7FNUZ>(); }
 
 template <int E, int M>
 static void test_finite_bits(float x, unsigned bits) {
@@ -116,14 +115,24 @@ static void test_equality() {
   iterate<T>([](T x){ EXPECT_EQ(x != x, x.isnan()); });
 }
 
-TEST(SanityCheck, equality) {
-  RUN_ON_SELECTED_TYPES(test_equality);
-}
+MAKE_TESTS_FOR_SELECTED_TYPES(EqualityCheck, test_equality)
 
 template <typename T>
 static int compare(T x, T y) {
   return (x > y) - (x < y);
 }
+
+template <typename T>
+static void test_unary_sign() {
+  EXPECT_EQ(T{0.0f}, -T{0.0f});
+
+  iterate<T>([](T x){
+    EXPECT_PRED2(are_identical, x, +x);
+    EXPECT_PRED2(are_identical, x, - -x);
+  });
+}
+
+MAKE_TESTS_FOR_SELECTED_TYPES(UnarySignCheck, test_unary_sign)
 
 template <typename T>
 static void test_comparison() {
@@ -138,23 +147,7 @@ static void test_comparison() {
   });
 }
 
-TEST(SanityCheck, comparison) {
-  RUN_ON_SELECTED_TYPES(test_comparison);
-}
-
-template <typename T>
-static void test_unary_sign() {
-  EXPECT_EQ(T{0.0f}, -T{0.0f});
-
-  iterate<T>([](T x){
-    EXPECT_PRED2(are_identical, x, +x);
-    EXPECT_PRED2(are_identical, x, - -x);
-  });
-}
-
-TEST(SanityCheck, unary_sign) {
-  RUN_ON_SELECTED_TYPES(test_unary_sign);
-}
+MAKE_TESTS_FOR_SELECTED_TYPES(ComparisonCheck, test_comparison)
 
 template <typename T>
 static void test_identity_conversion() {
@@ -173,9 +166,7 @@ static void test_identity_conversion() {
   });
 }
 
-TEST(ConversionCheck, identity) {
-  RUN_ON_SELECTED_TYPES(test_identity_conversion);
-}
+MAKE_TESTS_FOR_SELECTED_TYPES(IdentityConversionCheck, test_identity_conversion)
 
 template <SubnormalStyle D, int E, int M, NanStyle N, int B>
 static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
@@ -210,9 +201,7 @@ static void test_subnormal_conversion() {
   });
 }
 
-TEST(ConversionCheck, subnormal) {
-  RUN_ON_SELECTED_TYPES(test_subnormal_conversion);
-}
+MAKE_TESTS_FOR_SELECTED_TYPES(SubnormalConversionCheck, test_subnormal_conversion)
 
 template <typename T, typename F>
 static void test_exact_arithmetics(F op) {
@@ -237,6 +226,4 @@ static void test_exact_arithmetics() {
   test_exact_arithmetics<T>(std::divides<>());
 }
 
-TEST(ArithmeticCheck, exact) {
-  RUN_ON_SELECTED_TYPES(test_exact_arithmetics);
-}
+MAKE_TESTS_FOR_SELECTED_TYPES(ArithmeticCheck, test_exact_arithmetics)
