@@ -279,10 +279,10 @@ public:
     return result;
   }
 
-  [[nodiscard, gnu::const]] StorageType bits() const noexcept { return _bits; }
-  [[nodiscard, gnu::const]] bool sign() const noexcept { return _bits >> (E + M); }
+  [[nodiscard, gnu::pure]] StorageType bits() const noexcept { return _bits; }
+  [[nodiscard, gnu::pure]] bool sign() const noexcept { return _bits >> (E + M); }
 
-  [[nodiscard, gnu::const]]
+  [[nodiscard, gnu::pure]]
   constexpr bool isnan() const noexcept {
     if constexpr (N == NanStyle::FNUZ)
       return _bits == ABS_MASK + 1U;
@@ -293,12 +293,12 @@ public:
     return (_bits & ABS_MASK) > _inf_bits();
   }
 
-  [[nodiscard, gnu::const]]
+  [[nodiscard, gnu::pure]]
   constexpr bool signbit() const noexcept {
     return _bits >> (E + M) & 1;
   }
 
-  [[nodiscard, gnu::const]]
+  [[nodiscard, gnu::pure]]
   constexpr Minifloat abs() const noexcept {
     const StorageType magnitude = _bits & ABS_MASK;
     if (N == NanStyle::FNUZ && !magnitude) return *this;
@@ -310,7 +310,7 @@ public:
   /// The conversion is only enabled if it is proven to be lossless at compile
   /// time.  If the conversion is lossy, the user must explicitly cast to float.
   template <bool ENABLE = HAS_EXACT_F32_CONVERSION>
-  [[nodiscard, gnu::const]]
+  [[nodiscard, gnu::pure]]
   operator std::enable_if_t<ENABLE, float>() const noexcept {
     const float sgn = sign() ? -1.0f : 1.0f;
     const std::uint32_t magnitude = _bits & ABS_MASK;
@@ -336,7 +336,7 @@ public:
   /// lossy only when then exponent width is too large.  In this case, a second
   /// conversion to float is safe.
   template <bool ENABLE = !HAS_EXACT_F32_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
-  [[nodiscard, gnu::const]]
+  [[nodiscard, gnu::pure]]
   explicit operator float() const noexcept {
     return static_cast<double>(*this);
   }
@@ -346,7 +346,7 @@ public:
   /// The conversion is only enabled if it is proven to be lossless at compile
   /// time.  If the conversion is lossy, the user must explicitly cast to double.
   template <bool ENABLE = HAS_EXACT_F64_CONVERSION>
-  [[nodiscard, gnu::const]]
+  [[nodiscard, gnu::pure]]
   operator std::enable_if_t<ENABLE, double>() const noexcept {
     const double sgn = sign() ? -1.0 : 1.0;
     const std::uint64_t magnitude = _bits & ABS_MASK;
@@ -371,7 +371,7 @@ public:
   /// This variant assumes that the conversion is lossy only when the exponent
   /// is out of range.
   template <bool ENABLE = !HAS_EXACT_F64_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
-  [[nodiscard, gnu::const]]
+  [[nodiscard, gnu::pure]]
   explicit operator double() const noexcept {
     static_assert(std::numeric_limits<double>::radix == RADIX);
     static_assert(std::numeric_limits<double>::digits >= MANTISSA_DIGITS);
