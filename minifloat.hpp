@@ -176,8 +176,8 @@ public:
   static const int MANTISSA_DIGITS = M + 1;
   static const int MAX_EXP = (1 << E) - B - (N == NanStyle::IEEE);
   static const int MIN_EXP = 2 - B;
+  static const StorageType ABS_MASK = (1U << (E + M)) - 1U;
 
-private:
   static const bool HAS_EXACT_F32_CONVERSION =
     std::numeric_limits<float>::radix == RADIX &&
     std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
@@ -192,7 +192,7 @@ private:
     std::numeric_limits<double>::min_exponent <= MIN_EXP &&
     std::numeric_limits<double>::is_iec559;
 
-  static const StorageType ABS_MASK = (1U << (E + M)) - 1U;
+private:
   StorageType _bits;
 
   [[nodiscard, gnu::const]]
@@ -279,8 +279,8 @@ public:
     return result;
   }
 
-  [[nodiscard, gnu::pure]] StorageType bits() const noexcept { return _bits; }
-  [[nodiscard, gnu::pure]] bool sign() const noexcept { return _bits >> (E + M); }
+  [[nodiscard, gnu::pure]] constexpr StorageType bits() const noexcept { return _bits; }
+  [[nodiscard, gnu::pure]] constexpr bool sign() const noexcept { return _bits >> (E + M); }
 
   [[nodiscard, gnu::pure]]
   constexpr bool isnan() const noexcept {
@@ -405,13 +405,24 @@ public:
   }
 };
 
+namespace detail {
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
+[[gnu::const]]
+constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  const auto a = x.bits();
+  const auto b = y.bits();
+
+  if constexpr (N == NanStyle::FNUZ)
+    return false;
+
+  return ((a | b) & Minifloat<E, M, N, B, D>::ABS_MASK) == 0;
+}
+} // namespace detail
+
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  const auto a = x.bits();
-  const auto b = y.bits();
-  const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
-  return (a == b && !x.isnan()) || (N != NanStyle::FNUZ && !((a | b) & ABS_MASK));
+  return (x.bits() == y.bits() && !x.isnan()) || detail::are_different_zeroes(x, y);
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
@@ -426,12 +437,8 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
   const auto a = x.bits();
   const auto b = y.bits();
   const bool sign = (a | b) >> (E + M) & 1;
-  const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
 
-  if (x.isnan() || y.isnan())
-    return false;
-
-  if (N != NanStyle::FNUZ && !((a | b) & ABS_MASK))
+  if (x.isnan() || y.isnan() || detail::are_different_zeroes(x, y))
     return false;
 
   return sign ? a > b : a < b;
@@ -443,12 +450,11 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
   const auto a = x.bits();
   const auto b = y.bits();
   const bool sign = (a | b) >> (E + M) & 1;
-  const decltype(a) ABS_MASK = (1U << (E + M)) - 1U;
 
   if (x.isnan() || y.isnan())
     return false;
 
-  if (N != NanStyle::FNUZ && !((a | b) & ABS_MASK))
+  if (detail::are_different_zeroes(x, y))
     return true;
 
   return sign ? a >= b : a <= b;
