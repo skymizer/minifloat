@@ -26,10 +26,10 @@ namespace detail {
 /// Backport of C++20 std::bit_cast
 template <typename To, typename From>
 [[nodiscard, gnu::const]]
-auto bit_cast(const From &from) noexcept
-    -> std::enable_if_t<std::is_trivially_copyable_v<To> && std::is_trivially_copyable_v<From> &&
-                            sizeof(To) == sizeof(From),
-                        To> {
+auto bit_cast(const From &from) noexcept -> std::enable_if_t<
+    std::is_trivially_copyable_v<To> && std::is_trivially_copyable_v<From> &&
+        sizeof(To) == sizeof(From),
+    To> {
 #if defined(__has_builtin) && __has_builtin(__builtin_bit_cast)
   return __builtin_bit_cast(To, from);
 #else
@@ -74,18 +74,6 @@ double round_to_mantissa(double x) {
 }
 
 } // namespace detail
-
-/// A fast native type borrowed for minifloat arithmetics
-///
-/// \tparam M - Significand (mantissa) width
-///
-/// We want to emulate addition and multiplication of floating point number
-/// type T with a wider type U.  If the significand of U is more than twice as
-/// wide as T, double rounding is not a problem.  The proof is left as an
-/// exercise to the reader.
-template <int M>
-using BitTrueGroupArithmeticType =
-    std::conditional_t<M <= std::numeric_limits<float>::digits / 2 - 1, float, double>;
 
 /// Default bias for a given exponent width
 ///
@@ -161,8 +149,9 @@ enum struct SubnormalStyle {
 /// - E > 0
 /// - M >= 0 (M > 0 if N is `NanStyle::IEEE`)
 /// - E + M < 16
-template <int E, int M, NanStyle N = NanStyle::IEEE, int B = DefaultBias<E>::value,
-          SubnormalStyle D = SubnormalStyle::Precise>
+template <
+    int E, int M, NanStyle N = NanStyle::IEEE, int B = DefaultBias<E>::value,
+    SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
 public:
   static constexpr int EXPONENT_BITS = E;
@@ -176,19 +165,19 @@ public:
   static_assert(E + M < 16);
 
   using StorageType = std::conditional_t < E + M<8, std::uint_least8_t, std::uint_least16_t>;
-  static const int RADIX = 2;
-  static const int MANTISSA_DIGITS = M + 1;
-  static const int MAX_EXP = (1 << E) - B - int{N == NanStyle::IEEE};
-  static const int MIN_EXP = 2 - B;
-  static const StorageType ABS_MASK = (1U << (E + M)) - 1U;
+  static constexpr int RADIX = 2;
+  static constexpr int MANTISSA_DIGITS = M + 1;
+  static constexpr int MAX_EXP = (1 << E) - B - int{N == NanStyle::IEEE};
+  static constexpr int MIN_EXP = 2 - B;
+  static constexpr StorageType ABS_MASK = (1U << (E + M)) - 1U;
 
-  static const bool HAS_EXACT_F32_CONVERSION =
+  static constexpr bool HAS_EXACT_F32_CONVERSION =
       std::numeric_limits<float>::radix == RADIX &&
       std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
       std::numeric_limits<float>::max_exponent >= MAX_EXP &&
       std::numeric_limits<float>::min_exponent <= MIN_EXP && std::numeric_limits<float>::is_iec559;
 
-  static const bool HAS_EXACT_F64_CONVERSION =
+  static constexpr bool HAS_EXACT_F64_CONVERSION =
       std::numeric_limits<double>::radix == RADIX &&
       std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
       std::numeric_limits<double>::max_exponent >= MAX_EXP &&
@@ -210,16 +199,16 @@ private:
 
   [[nodiscard, gnu::const]]
   static constexpr StorageType nan_bits() noexcept {
-    const StorageType n0 = UINT32_C(1) << (E + M);
-    const StorageType max = n0 - 1;
+    constexpr StorageType SIGN_BIT = UINT32_C(1) << (E + M);
+    constexpr StorageType MAX = SIGN_BIT - 1;
 
     if constexpr (N == NanStyle::FNUZ)
-      return n0;
+      return SIGN_BIT;
 
     if constexpr (N == NanStyle::FN || M == 0)
-      return max;
+      return MAX;
 
-    return max << (M - 1) & max;
+    return MAX << (M - 1) & MAX;
   }
 
   [[nodiscard, gnu::const]]
@@ -420,8 +409,8 @@ public:
 namespace detail {
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x,
-                                    Minifloat<E, M, N, B, D> y) noexcept {
+constexpr bool
+are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
   const auto b = y.bits();
 
@@ -502,35 +491,36 @@ constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcep
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x,
-                                        Minifloat<E, M, N, B, D> y) noexcept {
-  BitTrueGroupArithmeticType<M> a(x);
-  BitTrueGroupArithmeticType<M> b(y);
-  return a + b;
+Minifloat<E, M, N, B, D>
+operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
+    return static_cast<Minifloat<E, M, N, B, D>>(x.to_float() + y.to_float());
+  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() + y.to_double());
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x,
-                                        Minifloat<E, M, N, B, D> y) noexcept {
-  BitTrueGroupArithmeticType<M> a(x);
-  BitTrueGroupArithmeticType<M> b(y);
-  return a - b;
+Minifloat<E, M, N, B, D>
+operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
+    return static_cast<Minifloat<E, M, N, B, D>>(x.to_float() - y.to_float());
+  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() - y.to_double());
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x,
-                                        Minifloat<E, M, N, B, D> y) noexcept {
-  BitTrueGroupArithmeticType<M> a(x);
-  BitTrueGroupArithmeticType<M> b(y);
-  return a * b;
+Minifloat<E, M, N, B, D>
+operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
+    return static_cast<Minifloat<E, M, N, B, D>>(x.to_float() * y.to_float());
+  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() * y.to_double());
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  return x.to_double() / y.to_double();
+Minifloat<E, M, N, B, D>
+operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() / y.to_double());
 }
 
 #define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                                                     \

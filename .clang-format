@@ -2,3 +2,4 @@
 Language: Cpp
 BasedOnStyle: LLVM
 ColumnLimit: 100
+AlignAfterOpenBracket: BlockIndent

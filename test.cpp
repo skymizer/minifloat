@@ -131,8 +131,9 @@ template <typename T> static void test_identity_conversion() {
   EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{0.0F})), 0);
   EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{0.0F})), 0);
   EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{-0.0F})), !IS_FNUZ * 0x8000'0000);
-  EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{-0.0F})),
-            !IS_FNUZ * 0x8000'0000'0000'0000);
+  EXPECT_EQ(
+      bit_cast<std::uint64_t>(static_cast<double>(T{-0.0F})), !IS_FNUZ * 0x8000'0000'0000'0000
+  );
 
   iterate<T>([](T x) {
     EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.bits()));
@@ -180,10 +181,9 @@ MAKE_TESTS_FOR_SELECTED_TYPES(SubnormalConversionCheck, test_subnormal_conversio
 template <typename T, typename F> static void test_exact_arithmetics(F op) {
   iterate<T>([op](T x) {
     iterate<T>([op, x](T y) {
-      const auto z = op(x, y);
-      const double precise = op(static_cast<double>(x), static_cast<double>(y));
-      EXPECT_PRED2(ARE_IDENTICAL, static_cast<T>(z), static_cast<T>(precise));
-      EXPECT_PRED2(ARE_IDENTICAL, z, static_cast<decltype(z)>(precise));
+      const T z = op(x, y);
+      const T answer(op(x.to_double(), y.to_double()));
+      EXPECT_PRED2(ARE_IDENTICAL, z, answer);
     });
   });
 }
@@ -221,10 +221,9 @@ template <int E, int M, NanStyle N = NanStyle::FN> static void test_snowball_add
   for (Bits lesser = SIGNIFICAND; lesser <= GREATER; lesser += STEP) {
     const T x = T::from_bits(GREATER);
     const T y = T::from_bits(lesser);
-
-    const double xx = x.to_double();
-    const double yy = y.to_double();
-    EXPECT_PRED2(ARE_IDENTICAL, static_cast<T>(x + y), static_cast<T>(xx + yy));
+    const T xx(x.to_double());
+    const T yy(y.to_double());
+    EXPECT_PRED2(ARE_IDENTICAL, x + y, xx + yy);
   }
 }
 
