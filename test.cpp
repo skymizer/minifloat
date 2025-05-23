@@ -70,6 +70,13 @@ template <int E, int M> static void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.bits()), bits);
 }
 
+TEST(SanityCheck, Copying) {
+  E4M3B11 a{2.0F};
+  E4M3B11 b = a;
+  E4M3B11 c;
+  c = b;
+}
+
 TEST(SanityCheck, FiniteBits) {
   test_finite_bits<3, 4>(2.0F, 0x40);
   test_finite_bits<4, 3>(2.0F, 0x40);
