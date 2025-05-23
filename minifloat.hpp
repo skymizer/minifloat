@@ -481,9 +481,9 @@ constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcep
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
-  const unsigned abs_mask = (1U << (E + M)) - 1U;
-  if (N == NanStyle::FNUZ && !(x.bits() & abs_mask)) return x;
-  return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (1U << (E + M)));
+  constexpr auto ABS_MASK = Minifloat<E, M, N, B, D>::ABS_MASK;
+  if (N == NanStyle::FNUZ && (x.bits() & ABS_MASK) == 0) return x;
+  return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (ABS_MASK + 1));
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
