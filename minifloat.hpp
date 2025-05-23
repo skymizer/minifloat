@@ -10,10 +10,10 @@
 #define SKYMIZER_MINIFLOAT_HPP
 
 #include <algorithm>
-#include <limits>
-#include <type_traits>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <type_traits>
 
 /// Namespace for Skymizer
 namespace skymizer {
@@ -26,15 +26,17 @@ namespace detail {
 /// Backport of C++20 std::bit_cast
 template <typename To, typename From>
 [[nodiscard, gnu::const]]
-auto bit_cast(const From &from) noexcept -> std::enable_if_t<
-  std::is_trivially_copyable<To>::value &&
-  std::is_trivially_copyable<From>::value &&
-  sizeof(To) == sizeof(From), To>
-{
+auto bit_cast(const From &from) noexcept
+    -> std::enable_if_t<std::is_trivially_copyable_v<To> && std::is_trivially_copyable_v<From> &&
+                            sizeof(To) == sizeof(From),
+                        To> {
 #if defined(__has_builtin) && __has_builtin(__builtin_bit_cast)
   return __builtin_bit_cast(To, from);
 #else
-  union { From _; To to; } caster = {from};
+  union {
+    From _;
+    To to;
+  } caster = {from};
   return caster.to;
 #endif
 }
@@ -82,15 +84,13 @@ double round_to_mantissa(double x) {
 /// wide as T, double rounding is not a problem.  The proof is left as an
 /// exercise to the reader.
 template <int M>
-using BitTrueGroupArithmeticType = std::conditional_t<
-  M <= std::numeric_limits<float>::digits / 2 - 1,
-  float, double>;
+using BitTrueGroupArithmeticType =
+    std::conditional_t<M <= std::numeric_limits<float>::digits / 2 - 1, float, double>;
 
 /// Default bias for a given exponent width
 ///
 /// \tparam E - Exponent width
-template <int E>
-using DefaultBias = std::integral_constant<int, (1 << (E - 1)) - 1>;
+template <int E> using DefaultBias = std::integral_constant<int, (1 << (E - 1)) - 1>;
 
 /// NaN encoding style
 ///
@@ -161,10 +161,8 @@ enum struct SubnormalStyle {
 /// - E > 0
 /// - M >= 0 (M > 0 if N is `NanStyle::IEEE`)
 /// - E + M < 16
-template <int E, int M,
-  NanStyle N = NanStyle::IEEE,
-  int B = DefaultBias<E>::value,
-  SubnormalStyle D = SubnormalStyle::Precise>
+template <int E, int M, NanStyle N = NanStyle::IEEE, int B = DefaultBias<E>::value,
+          SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
 public:
   static constexpr int EXPONENT_BITS = E;
@@ -177,7 +175,7 @@ public:
   static_assert(M >= 0);
   static_assert(E + M < 16);
 
-  using StorageType = std::conditional_t<E + M < 8, std::uint_least8_t, std::uint_least16_t>;
+  using StorageType = std::conditional_t < E + M<8, std::uint_least8_t, std::uint_least16_t>;
   static const int RADIX = 2;
   static const int MANTISSA_DIGITS = M + 1;
   static const int MAX_EXP = (1 << E) - B - int{N == NanStyle::IEEE};
@@ -185,18 +183,17 @@ public:
   static const StorageType ABS_MASK = (1U << (E + M)) - 1U;
 
   static const bool HAS_EXACT_F32_CONVERSION =
-    std::numeric_limits<float>::radix == RADIX &&
-    std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
-    std::numeric_limits<float>::max_exponent >= MAX_EXP &&
-    std::numeric_limits<float>::min_exponent <= MIN_EXP &&
-    std::numeric_limits<float>::is_iec559;
-  
+      std::numeric_limits<float>::radix == RADIX &&
+      std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
+      std::numeric_limits<float>::max_exponent >= MAX_EXP &&
+      std::numeric_limits<float>::min_exponent <= MIN_EXP && std::numeric_limits<float>::is_iec559;
+
   static const bool HAS_EXACT_F64_CONVERSION =
-    std::numeric_limits<double>::radix == RADIX &&
-    std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
-    std::numeric_limits<double>::max_exponent >= MAX_EXP &&
-    std::numeric_limits<double>::min_exponent <= MIN_EXP &&
-    std::numeric_limits<double>::is_iec559;
+      std::numeric_limits<double>::radix == RADIX &&
+      std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
+      std::numeric_limits<double>::max_exponent >= MAX_EXP &&
+      std::numeric_limits<double>::min_exponent <= MIN_EXP &&
+      std::numeric_limits<double>::is_iec559;
 
 private:
   StorageType bits_;
@@ -230,11 +227,12 @@ private:
     const auto bits = detail::bit_cast<std::uint32_t>(detail::round_to_mantissa<M>(x));
     const auto sign = bits >> 31 << (E + M);
 
-    if (x != x) 
+    if (x != x)
       return sign | nan_bits();
 
-    const auto diff = std::int32_t{MIN_EXP - std::numeric_limits<float>::min_exponent} << M;
-    const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (std::numeric_limits<float>::digits - M)) - diff;
+    using Trait = std::numeric_limits<float>;
+    const auto diff = std::int32_t{MIN_EXP - Trait::min_exponent} << M;
+    const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (Trait::digits - M)) - diff;
 
     if (magnitude < 1 << M) {
       if constexpr (D == SubnormalStyle::Fast)
@@ -254,11 +252,12 @@ private:
     const auto bits = detail::bit_cast<std::uint64_t>(detail::round_to_mantissa<M>(x));
     const auto sign = bits >> 63 << (E + M);
 
-    if (x != x) 
+    if (x != x)
       return sign | nan_bits();
 
-    const auto diff = std::int64_t{MIN_EXP - std::numeric_limits<double>::min_exponent} << M;
-    const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (std::numeric_limits<double>::digits - M)) - diff;
+    using Trait = std::numeric_limits<double>;
+    const auto diff = std::int64_t{MIN_EXP - Trait::min_exponent} << M;
+    const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (Trait::digits - M)) - diff;
 
     if (magnitude < 1 << M) {
       if constexpr (D == SubnormalStyle::Fast)
@@ -307,15 +306,18 @@ public:
   [[nodiscard, gnu::pure]]
   constexpr Minifloat abs() const noexcept {
     const StorageType magnitude = bits_ & ABS_MASK;
-    if (N == NanStyle::FNUZ && !magnitude) return *this;
+
+    if (N == NanStyle::FNUZ && !magnitude)
+      return *this;
+
     return from_bits(magnitude);
   }
 
   /// Explicit conversion to float
   ///
-  /// The lossy branch makes use of conversion to double.  Conversion to double is
-  /// lossy only when then exponent width is too large.  In this case, a second
-  /// conversion to float is safe.
+  /// The lossy branch makes use of conversion to double.  Conversion to double
+  /// is lossy only when then exponent width is too large.  In this case, a
+  /// second conversion to float is safe.
   [[nodiscard, gnu::pure]]
   float to_float() const noexcept {
     if constexpr (!HAS_EXACT_F32_CONVERSION)
@@ -333,19 +335,23 @@ public:
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
       return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sgn);
 
-    const std::uint32_t shifted = magnitude << (std::numeric_limits<float>::digits - MANTISSA_DIGITS);
-    const std::uint32_t diff = MIN_EXP - std::numeric_limits<float>::min_exponent;
-    const std::uint32_t bias = diff << (std::numeric_limits<float>::digits - 1);
+    using Trait = std::numeric_limits<float>;
+    const std::uint32_t shifted = magnitude << (Trait::digits - MANTISSA_DIGITS);
+    const std::uint32_t diff = MIN_EXP - Trait::min_exponent;
+    const std::uint32_t bias = diff << (Trait::digits - 1);
     return detail::bit_cast<float>(sign() << 31 | (shifted + bias));
   }
 
   [[nodiscard, gnu::pure]]
-  explicit operator float() const noexcept { return to_float(); }
+  explicit operator float() const noexcept {
+    return to_float();
+  }
 
   /// Implicit lossless conversion to double
   ///
   /// The conversion is only enabled if it is proven to be lossless at compile
-  /// time.  If the conversion is lossy, the user must explicitly cast to double.
+  /// time.  If the conversion is lossy, the user must explicitly cast to
+  /// double.
   [[nodiscard, gnu::pure]]
   std::enable_if_t<HAS_EXACT_F64_CONVERSION, double> to_double() const noexcept {
     const double sgn = sign() ? -1.0 : 1.0;
@@ -360,12 +366,13 @@ public:
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
       return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sgn);
 
-    const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - MANTISSA_DIGITS);
+    const std::uint64_t shifted = magnitude
+                                  << (std::numeric_limits<double>::digits - MANTISSA_DIGITS);
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
     return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
-  
+
   /// Explicit lossy conversion to double
   ///
   /// This variant assumes that the conversion is lossy only when the exponent
@@ -405,13 +412,16 @@ public:
   }
 
   [[nodiscard, gnu::pure]]
-  explicit operator double() const noexcept { return to_double(); }
+  explicit operator double() const noexcept {
+    return to_double();
+  }
 };
 
 namespace detail {
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x,
+                                    Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.bits();
   const auto b = y.bits();
 
@@ -485,13 +495,15 @@ template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
   constexpr auto ABS_MASK = Minifloat<E, M, N, B, D>::ABS_MASK;
-  if (N == NanStyle::FNUZ && (x.bits() & ABS_MASK) == 0) return x;
+  if (N == NanStyle::FNUZ && (x.bits() & ABS_MASK) == 0)
+    return x;
   return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (ABS_MASK + 1));
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x,
+                                        Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a(x);
   BitTrueGroupArithmeticType<M> b(y);
   return a + b;
@@ -499,7 +511,8 @@ BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E,
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x,
+                                        Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a(x);
   BitTrueGroupArithmeticType<M> b(y);
   return a - b;
@@ -507,7 +520,8 @@ BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E,
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x,
+                                        Minifloat<E, M, N, B, D> y) noexcept {
   BitTrueGroupArithmeticType<M> a(x);
   BitTrueGroupArithmeticType<M> b(y);
   return a * b;
@@ -519,27 +533,27 @@ double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcep
   return x.to_double() / y.to_double();
 }
 
-#define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT) \
-  using E##EXP##M##MANT = Minifloat<EXP, MANT>; \
-  using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NanStyle::FN>; \
+#define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                                                     \
+  using E##EXP##M##MANT = Minifloat<EXP, MANT>;                                                    \
+  using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NanStyle::FN>;                                  \
   using E##EXP##M##MANT##FNUZ = Minifloat<EXP, MANT, NanStyle::FNUZ>;
 
-#define SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(EXP) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 0) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 1) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 2) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 3) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 4) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 5) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 6) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 7) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 8) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 9) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 10) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 11) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 12) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 13) \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 14) \
+#define SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(EXP)                                                     \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 0)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 1)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 2)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 3)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 4)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 5)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 6)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 7)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 8)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 9)                                                              \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 10)                                                             \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 11)                                                             \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 12)                                                             \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 13)                                                             \
+  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 14)                                                             \
   SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 15)
 
 SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(1)

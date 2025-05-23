@@ -11,8 +11,7 @@
 
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
-template <typename T, typename F>
-static void iterate(F f) {
+template <typename T, typename F> static void iterate(F f) {
   constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
 
   for (unsigned i = 0; i < END; ++i)
@@ -20,11 +19,11 @@ static void iterate(F f) {
 }
 
 /** \brief Test floating-point identity like Object.is in JavaScript
-  *
-  * This is necessary because NaN != NaN in C++.  We also want to differentiate
-  * -0 from +0.  Using this functor, NaNs are considered identical to each
-  * other, while +0 and -0 are considered different. 
-  */
+ *
+ * This is necessary because NaN != NaN in C++.  We also want to differentiate
+ * -0 from +0.  Using this functor, NaNs are considered identical to each
+ * other, while +0 and -0 are considered different.
+ */
 static const struct {
   bool operator()(double x, double y) const {
     using detail::bit_cast;
@@ -47,26 +46,25 @@ using E4M3B11FN = Minifloat<4, 3, NanStyle::FN, 11>;
 using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
-#define MAKE_TESTS_FOR_SELECTED_TYPES(Suite, CALLBACK) \
-TEST(Suite, E3M4) { (CALLBACK<E3M4>)(); } \
-TEST(Suite, E3M4FN) { (CALLBACK<E3M4FN>)(); } \
-TEST(Suite, E3M4FNUZ) { (CALLBACK<E3M4FNUZ>)(); } \
-TEST(Suite, E4M3) { (CALLBACK<E4M3>)(); } \
-TEST(Suite, E4M3FN) { (CALLBACK<E4M3FN>)(); } \
-TEST(Suite, E4M3FNUZ) { (CALLBACK<E4M3FNUZ>)(); } \
-TEST(Suite, E4M3B11) { (CALLBACK<E4M3B11>)(); } \
-TEST(Suite, E4M3B11FN) { (CALLBACK<E4M3B11FN>)(); } \
-TEST(Suite, E4M3B11FNUZ) { (CALLBACK<E4M3B11FNUZ>)(); } \
-TEST(Suite, E5M2) { (CALLBACK<E5M2>)(); } \
-TEST(Suite, E5M2FN) { (CALLBACK<E5M2FN>)(); } \
-TEST(Suite, E5M2FNUZ) { (CALLBACK<E5M2FNUZ>)(); } \
-TEST(Suite, E4M4FN) { (CALLBACK<E4M4FN>)(); } \
-TEST(Suite, E4M5FN) { (CALLBACK<E4M5FN>)(); } \
-TEST(Suite, E5M4FN) { (CALLBACK<E5M4FN>)(); }
+#define MAKE_TESTS_FOR_SELECTED_TYPES(Suite, CALLBACK)                                             \
+  TEST(Suite, E3M4) { (CALLBACK<E3M4>)(); }                                                        \
+  TEST(Suite, E3M4FN) { (CALLBACK<E3M4FN>)(); }                                                    \
+  TEST(Suite, E3M4FNUZ) { (CALLBACK<E3M4FNUZ>)(); }                                                \
+  TEST(Suite, E4M3) { (CALLBACK<E4M3>)(); }                                                        \
+  TEST(Suite, E4M3FN) { (CALLBACK<E4M3FN>)(); }                                                    \
+  TEST(Suite, E4M3FNUZ) { (CALLBACK<E4M3FNUZ>)(); }                                                \
+  TEST(Suite, E4M3B11) { (CALLBACK<E4M3B11>)(); }                                                  \
+  TEST(Suite, E4M3B11FN) { (CALLBACK<E4M3B11FN>)(); }                                              \
+  TEST(Suite, E4M3B11FNUZ) { (CALLBACK<E4M3B11FNUZ>)(); }                                          \
+  TEST(Suite, E5M2) { (CALLBACK<E5M2>)(); }                                                        \
+  TEST(Suite, E5M2FN) { (CALLBACK<E5M2FN>)(); }                                                    \
+  TEST(Suite, E5M2FNUZ) { (CALLBACK<E5M2FNUZ>)(); }                                                \
+  TEST(Suite, E4M4FN) { (CALLBACK<E4M4FN>)(); }                                                    \
+  TEST(Suite, E4M5FN) { (CALLBACK<E4M5FN>)(); }                                                    \
+  TEST(Suite, E5M4FN) { (CALLBACK<E5M4FN>)(); }
 // NOLINTEND(bugprone-macro-parentheses)
 
-template <int E, int M>
-static void test_finite_bits(float x, unsigned bits) {
+template <int E, int M> static void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M>{x}.bits()), bits);
   EXPECT_EQ((Minifloat<E, M, NanStyle::FN>{x}.bits()), bits);
   EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.bits()), bits);
@@ -89,8 +87,7 @@ TEST(SanityCheck, FiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
-template <typename T>
-static void test_equality() {
+template <typename T> static void test_equality() {
   EXPECT_EQ(static_cast<float>(T{-3.0F}), -3.0F);
   EXPECT_EQ(static_cast<double>(T{-3.0}), -3.0);
   EXPECT_EQ(T{0.0F}, T{-0.0F});
@@ -98,21 +95,17 @@ static void test_equality() {
   EXPECT_TRUE(T{NAN}.isnan());
   EXPECT_TRUE((std::isnan)(static_cast<float>(T{NAN})));
   EXPECT_TRUE((std::isnan)(static_cast<double>(T{NAN})));
-  iterate<T>([](T x){ EXPECT_EQ(x != x, x.isnan()); });
+  iterate<T>([](T x) { EXPECT_EQ(x != x, x.isnan()); });
 }
 
 MAKE_TESTS_FOR_SELECTED_TYPES(EqualityCheck, test_equality)
 
-template <typename T>
-static int compare(T x, T y) {
-  return (x > y) - (x < y);
-}
+template <typename T> static int compare(T x, T y) { return (x > y) - (x < y); }
 
-template <typename T>
-static void test_unary_sign() {
+template <typename T> static void test_unary_sign() {
   EXPECT_EQ(T{0.0F}, -T{0.0F});
 
-  iterate<T>([](T x){
+  iterate<T>([](T x) {
     EXPECT_PRED2(ARE_IDENTICAL, x, +x);
     EXPECT_PRED2(ARE_IDENTICAL, x, - -x);
   });
@@ -120,10 +113,9 @@ static void test_unary_sign() {
 
 MAKE_TESTS_FOR_SELECTED_TYPES(UnarySignCheck, test_unary_sign)
 
-template <typename T>
-static void test_comparison() {
-  iterate<T>([](T x){
-    iterate<T>([x](T y){
+template <typename T> static void test_comparison() {
+  iterate<T>([](T x) {
+    iterate<T>([x](T y) {
       EXPECT_EQ(compare(x, y), compare(static_cast<float>(x), static_cast<float>(y)));
       EXPECT_EQ(compare(x, y), compare(static_cast<double>(x), static_cast<double>(y)));
     });
@@ -132,17 +124,17 @@ static void test_comparison() {
 
 MAKE_TESTS_FOR_SELECTED_TYPES(ComparisonCheck, test_comparison)
 
-template <typename T>
-static void test_identity_conversion() {
+template <typename T> static void test_identity_conversion() {
   using detail::bit_cast;
   constexpr bool IS_FNUZ = T::NAN_STYLE == NanStyle::FNUZ;
 
   EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{0.0F})), 0);
   EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{0.0F})), 0);
   EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{-0.0F})), !IS_FNUZ * 0x8000'0000);
-  EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{-0.0F})), !IS_FNUZ * 0x8000'0000'0000'0000);
+  EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{-0.0F})),
+            !IS_FNUZ * 0x8000'0000'0000'0000);
 
-  iterate<T>([](T x){
+  iterate<T>([](T x) {
     EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.bits()));
     EXPECT_PRED2(ARE_IDENTICAL, x, T{static_cast<float>(x)});
     EXPECT_PRED2(ARE_IDENTICAL, static_cast<float>(x), static_cast<double>(x));
@@ -176,9 +168,8 @@ static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Prec
   EXPECT_LE(y.abs(), T::from_bits(1U << M));
 }
 
-template <typename T>
-static void test_subnormal_conversion() {
-  iterate<T>([](T x){
+template <typename T> static void test_subnormal_conversion() {
+  iterate<T>([](T x) {
     test_subnormal_conversion<SubnormalStyle::Reserved>(x);
     test_subnormal_conversion<SubnormalStyle::Fast>(x);
   });
@@ -186,10 +177,9 @@ static void test_subnormal_conversion() {
 
 MAKE_TESTS_FOR_SELECTED_TYPES(SubnormalConversionCheck, test_subnormal_conversion)
 
-template <typename T, typename F>
-static void test_exact_arithmetics(F op) {
-  iterate<T>([op](T x){
-    iterate<T>([op, x](T y){
+template <typename T, typename F> static void test_exact_arithmetics(F op) {
+  iterate<T>([op](T x) {
+    iterate<T>([op, x](T y) {
       const auto z = op(x, y);
       const double precise = op(static_cast<double>(x), static_cast<double>(y));
       EXPECT_PRED2(ARE_IDENTICAL, static_cast<T>(z), static_cast<T>(precise));
@@ -198,23 +188,19 @@ static void test_exact_arithmetics(F op) {
   });
 }
 
-template <typename T>
-static void test_exact_addition() {
+template <typename T> static void test_exact_addition() {
   test_exact_arithmetics<T>(std::plus<>());
 }
 
-template <typename T>
-static void test_exact_subtraction() {
+template <typename T> static void test_exact_subtraction() {
   test_exact_arithmetics<T>(std::minus<>());
 }
 
-template <typename T>
-static void test_exact_multiplication() {
+template <typename T> static void test_exact_multiplication() {
   test_exact_arithmetics<T>(std::multiplies<>());
 }
 
-template <typename T>
-static void test_exact_division() {
+template <typename T> static void test_exact_division() {
   test_exact_arithmetics<T>(std::divides<>());
 }
 
@@ -223,8 +209,7 @@ MAKE_TESTS_FOR_SELECTED_TYPES(SubtractionCheck, test_exact_subtraction)
 MAKE_TESTS_FOR_SELECTED_TYPES(MultiplicationCheck, test_exact_multiplication)
 MAKE_TESTS_FOR_SELECTED_TYPES(DivisionCheck, test_exact_division)
 
-template <int E, int M, NanStyle N = NanStyle::FN>
-static void test_snowball_addition() {
+template <int E, int M, NanStyle N = NanStyle::FN> static void test_snowball_addition() {
   using T = Minifloat<E, M, N>;
   using Bits = typename T::StorageType;
 
