@@ -9,24 +9,11 @@
 #include "minifloat.hpp"
 #include <gtest/gtest.h>
 
-using namespace skymizer::minifloat;
-
-namespace {
-template <typename> struct Trait;
-
-template <int E_, int M_, NanStyle N_, int B_, SubnormalStyle D_>
-struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
-  static const int E = E_;
-  static const int M = M_;
-  static const NanStyle N = N_;
-  static const int B = B_;
-  static const SubnormalStyle D = D_;
-};
-} // namespace
+using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
 template <typename T, typename F>
 static void iterate(F f) {
-  constexpr unsigned END = 1U << (Trait<T>::E + Trait<T>::M + 1);
+  constexpr unsigned END = 1U << (T::E + T::M + 1);
 
   for (unsigned i = 0; i < END; ++i)
     f(T::from_bits(i));
@@ -61,21 +48,21 @@ using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define MAKE_TESTS_FOR_SELECTED_TYPES(Suite, CALLBACK) \
-TEST(Suite, e3m4) { (CALLBACK<E3M4>)(); } \
-TEST(Suite, e3m4fn) { (CALLBACK<E3M4FN>)(); } \
-TEST(Suite, e3m4fnuz) { (CALLBACK<E3M4FNUZ>)(); } \
-TEST(Suite, e4m3) { (CALLBACK<E4M3>)(); } \
-TEST(Suite, e4m3fn) { (CALLBACK<E4M3FN>)(); } \
-TEST(Suite, e4m3fnuz) { (CALLBACK<E4M3FNUZ>)(); } \
-TEST(Suite, e4m3b11) { (CALLBACK<E4M3B11>)(); } \
-TEST(Suite, e4m3b11fn) { (CALLBACK<E4M3B11FN>)(); } \
-TEST(Suite, e4m3b11fnuz) { (CALLBACK<E4M3B11FNUZ>)(); } \
-TEST(Suite, e5m2) { (CALLBACK<E5M2>)(); } \
-TEST(Suite, e5m2fn) { (CALLBACK<E5M2FN>)(); } \
-TEST(Suite, e5m2fnuz) { (CALLBACK<E5M2FNUZ>)(); } \
-TEST(Suite, e4m4fn) { (CALLBACK<E4M4FN>)(); } \
-TEST(Suite, e4m5fn) { (CALLBACK<E4M5FN>)(); } \
-TEST(Suite, e5m4fn) { (CALLBACK<E5M4FN>)(); }
+TEST(Suite, E3M4) { (CALLBACK<E3M4>)(); } \
+TEST(Suite, E3M4FN) { (CALLBACK<E3M4FN>)(); } \
+TEST(Suite, E3M4FNUZ) { (CALLBACK<E3M4FNUZ>)(); } \
+TEST(Suite, E4M3) { (CALLBACK<E4M3>)(); } \
+TEST(Suite, E4M3FN) { (CALLBACK<E4M3FN>)(); } \
+TEST(Suite, E4M3FNUZ) { (CALLBACK<E4M3FNUZ>)(); } \
+TEST(Suite, E4M3B11) { (CALLBACK<E4M3B11>)(); } \
+TEST(Suite, E4M3B11FN) { (CALLBACK<E4M3B11FN>)(); } \
+TEST(Suite, E4M3B11FNUZ) { (CALLBACK<E4M3B11FNUZ>)(); } \
+TEST(Suite, E5M2) { (CALLBACK<E5M2>)(); } \
+TEST(Suite, E5M2FN) { (CALLBACK<E5M2FN>)(); } \
+TEST(Suite, E5M2FNUZ) { (CALLBACK<E5M2FNUZ>)(); } \
+TEST(Suite, E4M4FN) { (CALLBACK<E4M4FN>)(); } \
+TEST(Suite, E4M5FN) { (CALLBACK<E4M5FN>)(); } \
+TEST(Suite, E5M4FN) { (CALLBACK<E5M4FN>)(); }
 // NOLINTEND(bugprone-macro-parentheses)
 
 template <int E, int M>
@@ -85,7 +72,7 @@ static void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.bits()), bits);
 }
 
-TEST(SanityCheck, finite_bits) {
+TEST(SanityCheck, FiniteBits) {
   test_finite_bits<3, 4>(2.0F, 0x40);
   test_finite_bits<4, 3>(2.0F, 0x40);
   test_finite_bits<5, 2>(2.0F, 0x40);
@@ -107,7 +94,7 @@ static void test_equality() {
   EXPECT_EQ(static_cast<float>(T{-3.0F}), -3.0F);
   EXPECT_EQ(static_cast<double>(T{-3.0}), -3.0);
   EXPECT_EQ(T{0.0F}, T{-0.0F});
-  EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), Trait<T>::N == NanStyle::FNUZ);
+  EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), T::N == NanStyle::FNUZ);
   EXPECT_TRUE(T{NAN}.isnan());
   EXPECT_TRUE((std::isnan)(static_cast<float>(T{NAN})));
   EXPECT_TRUE((std::isnan)(static_cast<double>(T{NAN})));
@@ -148,7 +135,7 @@ MAKE_TESTS_FOR_SELECTED_TYPES(ComparisonCheck, test_comparison)
 template <typename T>
 static void test_identity_conversion() {
   using detail::bit_cast;
-  constexpr bool IS_FNUZ = Trait<T>::N == NanStyle::FNUZ;
+  constexpr bool IS_FNUZ = T::N == NanStyle::FNUZ;
 
   EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{0.0F})), 0);
   EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{0.0F})), 0);

@@ -165,8 +165,17 @@ template <int E, int M,
   NanStyle N = NanStyle::IEEE,
   int B = DefaultBias<E>::value,
   SubnormalStyle D = SubnormalStyle::Precise>
+class Minifloat;
+
+template <int EXPONENT_BITS, int MANTISSA_BITS, NanStyle NAN_STYLE, int BIAS, SubnormalStyle SUBNORMAL_STYLE>
 class Minifloat {
 public:
+  static constexpr int E = EXPONENT_BITS;
+  static constexpr int M = MANTISSA_BITS;
+  static constexpr NanStyle N = NAN_STYLE;
+  static constexpr int B = BIAS;
+  static constexpr SubnormalStyle D = SUBNORMAL_STYLE;
+
   static_assert(E > 0);
   static_assert(M >= 0);
   static_assert(E + M < 16);
