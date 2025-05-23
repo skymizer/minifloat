@@ -59,22 +59,24 @@ using E4M3B11 = Minifloat<4, 3, NanStyle::IEEE, 11>;
 using E4M3B11FN = Minifloat<4, 3, NanStyle::FN, 11>;
 using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define MAKE_TESTS_FOR_SELECTED_TYPES(Suite, CALLBACK) \
-TEST(Suite, e3m4) { CALLBACK<E3M4>(); } \
-TEST(Suite, e3m4fn) { CALLBACK<E3M4FN>(); } \
-TEST(Suite, e3m4fnuz) { CALLBACK<E3M4FNUZ>(); } \
-TEST(Suite, e4m3) { CALLBACK<E4M3>(); } \
-TEST(Suite, e4m3fn) { CALLBACK<E4M3FN>(); } \
-TEST(Suite, e4m3fnuz) { CALLBACK<E4M3FNUZ>(); } \
-TEST(Suite, e4m3b11) { CALLBACK<E4M3B11>(); } \
-TEST(Suite, e4m3b11fn) { CALLBACK<E4M3B11FN>(); } \
-TEST(Suite, e4m3b11fnuz) { CALLBACK<E4M3B11FNUZ>(); } \
-TEST(Suite, e5m2) { CALLBACK<E5M2>(); } \
-TEST(Suite, e5m2fn) { CALLBACK<E5M2FN>(); } \
-TEST(Suite, e5m2fnuz) { CALLBACK<E5M2FNUZ>(); } \
-TEST(Suite, e4m4fn) { CALLBACK<E4M4FN>(); } \
-TEST(Suite, e4m5fn) { CALLBACK<E4M5FN>(); } \
-TEST(Suite, e5m4fn) { CALLBACK<E5M4FN>(); }
+TEST(Suite, e3m4) { (CALLBACK<E3M4>)(); } \
+TEST(Suite, e3m4fn) { (CALLBACK<E3M4FN>)(); } \
+TEST(Suite, e3m4fnuz) { (CALLBACK<E3M4FNUZ>)(); } \
+TEST(Suite, e4m3) { (CALLBACK<E4M3>)(); } \
+TEST(Suite, e4m3fn) { (CALLBACK<E4M3FN>)(); } \
+TEST(Suite, e4m3fnuz) { (CALLBACK<E4M3FNUZ>)(); } \
+TEST(Suite, e4m3b11) { (CALLBACK<E4M3B11>)(); } \
+TEST(Suite, e4m3b11fn) { (CALLBACK<E4M3B11FN>)(); } \
+TEST(Suite, e4m3b11fnuz) { (CALLBACK<E4M3B11FNUZ>)(); } \
+TEST(Suite, e5m2) { (CALLBACK<E5M2>)(); } \
+TEST(Suite, e5m2fn) { (CALLBACK<E5M2FN>)(); } \
+TEST(Suite, e5m2fnuz) { (CALLBACK<E5M2FNUZ>)(); } \
+TEST(Suite, e4m4fn) { (CALLBACK<E4M4FN>)(); } \
+TEST(Suite, e4m5fn) { (CALLBACK<E4M5FN>)(); } \
+TEST(Suite, e5m4fn) { (CALLBACK<E5M4FN>)(); }
+// NOLINTEND(bugprone-macro-parentheses)
 
 template <int E, int M>
 static void test_finite_bits(float x, unsigned bits) {
