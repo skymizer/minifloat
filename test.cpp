@@ -13,7 +13,7 @@ using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
 template <typename T, typename F>
 static void iterate(F f) {
-  constexpr unsigned END = 1U << (T::E + T::M + 1);
+  constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
 
   for (unsigned i = 0; i < END; ++i)
     f(T::from_bits(i));
@@ -94,7 +94,7 @@ static void test_equality() {
   EXPECT_EQ(static_cast<float>(T{-3.0F}), -3.0F);
   EXPECT_EQ(static_cast<double>(T{-3.0}), -3.0);
   EXPECT_EQ(T{0.0F}, T{-0.0F});
-  EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), T::N == NanStyle::FNUZ);
+  EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), T::NAN_STYLE == NanStyle::FNUZ);
   EXPECT_TRUE(T{NAN}.isnan());
   EXPECT_TRUE((std::isnan)(static_cast<float>(T{NAN})));
   EXPECT_TRUE((std::isnan)(static_cast<double>(T{NAN})));
@@ -135,7 +135,7 @@ MAKE_TESTS_FOR_SELECTED_TYPES(ComparisonCheck, test_comparison)
 template <typename T>
 static void test_identity_conversion() {
   using detail::bit_cast;
-  constexpr bool IS_FNUZ = T::N == NanStyle::FNUZ;
+  constexpr bool IS_FNUZ = T::NAN_STYLE == NanStyle::FNUZ;
 
   EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{0.0F})), 0);
   EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{0.0F})), 0);
