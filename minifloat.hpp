@@ -174,7 +174,7 @@ public:
   using StorageType = std::conditional_t<E + M < 8, std::uint_least8_t, std::uint_least16_t>;
   static const int RADIX = 2;
   static const int MANTISSA_DIGITS = M + 1;
-  static const int MAX_EXP = (1 << E) - B - (N == NanStyle::IEEE);
+  static const int MAX_EXP = (1 << E) - B - int{N == NanStyle::IEEE};
   static const int MIN_EXP = 2 - B;
   static const StorageType ABS_MASK = (1U << (E + M)) - 1U;
 
@@ -193,10 +193,10 @@ public:
     std::numeric_limits<double>::is_iec559;
 
 private:
-  StorageType _bits;
+  StorageType bits_;
 
   [[nodiscard, gnu::const]]
-  static constexpr StorageType _inf_bits() noexcept {
+  static constexpr StorageType inf_bits() noexcept {
     const StorageType max = (UINT32_C(1) << (E + M)) - 1;
 
     if constexpr (N == NanStyle::IEEE)
@@ -206,7 +206,7 @@ private:
   }
 
   [[nodiscard, gnu::const]]
-  static constexpr StorageType _nan_bits() noexcept {
+  static constexpr StorageType nan_bits() noexcept {
     const StorageType n0 = UINT32_C(1) << (E + M);
     const StorageType max = n0 - 1;
 
@@ -220,12 +220,12 @@ private:
   }
 
   [[nodiscard, gnu::const]]
-  static StorageType _to_bits(float x) noexcept {
+  static StorageType to_bits(float x) noexcept {
     const auto bits = detail::bit_cast<std::uint32_t>(detail::round_to_mantissa<M>(x));
     const auto sign = bits >> 31 << (E + M);
 
     if (x != x) 
-      return sign | _nan_bits();
+      return sign | nan_bits();
 
     const auto diff = std::int32_t{MIN_EXP - std::numeric_limits<float>::min_exponent} << M;
     const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (std::numeric_limits<float>::digits - M)) - diff;
@@ -240,16 +240,16 @@ private:
       const StorageType ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
-    return sign | std::min<std::int32_t>(magnitude, _inf_bits());
+    return sign | std::min<std::int32_t>(magnitude, inf_bits());
   }
 
   [[nodiscard, gnu::const]]
-  static StorageType _to_bits(double x) noexcept {
+  static StorageType to_bits(double x) noexcept {
     const auto bits = detail::bit_cast<std::uint64_t>(detail::round_to_mantissa<M>(x));
     const auto sign = bits >> 63 << (E + M);
 
     if (x != x) 
-      return sign | _nan_bits();
+      return sign | nan_bits();
 
     const auto diff = std::int64_t{MIN_EXP - std::numeric_limits<double>::min_exponent} << M;
     const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (std::numeric_limits<double>::digits - M)) - diff;
@@ -264,43 +264,43 @@ private:
       const StorageType ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
-    return sign | std::min<std::int64_t>(magnitude, _inf_bits());
+    return sign | std::min<std::int64_t>(magnitude, inf_bits());
   }
 
 public:
   Minifloat() = default;
-  explicit Minifloat(float x) : _bits(_to_bits(x)) {};
-  explicit Minifloat(double x) : _bits(_to_bits(x)) {};
+  explicit Minifloat(float x) : bits_(to_bits(x)) {};
+  explicit Minifloat(double x) : bits_(to_bits(x)) {};
 
   static constexpr Minifloat from_bits(StorageType bits) noexcept {
     const unsigned mask = (1U << (E + M + 1)) - 1U;
     Minifloat result;
-    result._bits = bits & mask;
+    result.bits_ = bits & mask;
     return result;
   }
 
-  [[nodiscard, gnu::pure]] constexpr StorageType bits() const noexcept { return _bits; }
-  [[nodiscard, gnu::pure]] constexpr bool sign() const noexcept { return _bits >> (E + M); }
+  [[nodiscard, gnu::pure]] constexpr StorageType bits() const noexcept { return bits_; }
+  [[nodiscard, gnu::pure]] constexpr bool sign() const noexcept { return bits_ >> (E + M); }
 
   [[nodiscard, gnu::pure]]
   constexpr bool isnan() const noexcept {
     if constexpr (N == NanStyle::FNUZ)
-      return _bits == ABS_MASK + 1U;
+      return bits_ == ABS_MASK + 1U;
 
     if constexpr (N == NanStyle::FN)
-      return (_bits & ABS_MASK) == ABS_MASK;
+      return (bits_ & ABS_MASK) == ABS_MASK;
 
-    return (_bits & ABS_MASK) > _inf_bits();
+    return (bits_ & ABS_MASK) > inf_bits();
   }
 
   [[nodiscard, gnu::pure]]
   constexpr bool signbit() const noexcept {
-    return _bits >> (E + M) & 1;
+    return bits_ >> (E + M) & 1;
   }
 
   [[nodiscard, gnu::pure]]
   constexpr Minifloat abs() const noexcept {
-    const StorageType magnitude = _bits & ABS_MASK;
+    const StorageType magnitude = bits_ & ABS_MASK;
     if (N == NanStyle::FNUZ && !magnitude) return *this;
     return from_bits(magnitude);
   }
@@ -312,13 +312,13 @@ public:
   template <bool ENABLE = HAS_EXACT_F32_CONVERSION>
   [[nodiscard, gnu::pure]]
   operator std::enable_if_t<ENABLE, float>() const noexcept {
-    const float sgn = sign() ? -1.0f : 1.0f;
-    const std::uint32_t magnitude = _bits & ABS_MASK;
+    const float sgn = sign() ? -1.0F : 1.0F;
+    const std::uint32_t magnitude = bits_ & ABS_MASK;
 
     if (isnan())
       return std::copysign(NAN, sgn);
 
-    if (N == NanStyle::IEEE && magnitude == _inf_bits())
+    if (N == NanStyle::IEEE && magnitude == inf_bits())
       return std::copysign(HUGE_VALF, sgn);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -349,12 +349,12 @@ public:
   [[nodiscard, gnu::pure]]
   operator std::enable_if_t<ENABLE, double>() const noexcept {
     const double sgn = sign() ? -1.0 : 1.0;
-    const std::uint64_t magnitude = _bits & ABS_MASK;
+    const std::uint64_t magnitude = bits_ & ABS_MASK;
 
     if (isnan())
       return std::copysign(NAN, sgn);
 
-    if (N == NanStyle::IEEE && magnitude == _inf_bits())
+    if (N == NanStyle::IEEE && magnitude == inf_bits())
       return std::copysign(HUGE_VAL, sgn);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -378,12 +378,12 @@ public:
     static_assert(std::numeric_limits<double>::is_iec559);
 
     const double sgn = sign() ? -1.0 : 1.0;
-    const std::uint64_t magnitude = _bits & ABS_MASK;
+    const std::uint64_t magnitude = bits_ & ABS_MASK;
 
     if (isnan())
       return std::copysign(NAN, sgn);
 
-    if (N == NanStyle::IEEE && magnitude == _inf_bits())
+    if (N == NanStyle::IEEE && magnitude == inf_bits())
       return std::copysign(HUGE_VAL, sgn);
 
     if (magnitude >= static_cast<std::uint64_t>(std::numeric_limits<double>::max_exponent + B) << M)
