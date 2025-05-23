@@ -305,13 +305,16 @@ public:
     return from_bits(magnitude);
   }
 
-  /// Implicit lossless conversion to float
+  /// Explicit conversion to float
   ///
-  /// The conversion is only enabled if it is proven to be lossless at compile
-  /// time.  If the conversion is lossy, the user must explicitly cast to float.
-  template <bool ENABLE = HAS_EXACT_F32_CONVERSION>
+  /// The lossy branch makes use of conversion to double.  Conversion to double is
+  /// lossy only when then exponent width is too large.  In this case, a second
+  /// conversion to float is safe.
   [[nodiscard, gnu::pure]]
-  operator std::enable_if_t<ENABLE, float>() const noexcept {
+  float to_float() const noexcept {
+    if constexpr (!HAS_EXACT_F32_CONVERSION)
+      return static_cast<double>(*this);
+
     const float sgn = sign() ? -1.0F : 1.0F;
     const std::uint32_t magnitude = bits_ & ABS_MASK;
 
@@ -330,24 +333,15 @@ public:
     return detail::bit_cast<float>(sign() << 31 | (shifted + bias));
   }
 
-  /// Explicit lossy conversion to float
-  ///
-  /// This variant makes use of conversion to double.  Conversion to double is
-  /// lossy only when then exponent width is too large.  In this case, a second
-  /// conversion to float is safe.
-  template <bool ENABLE = !HAS_EXACT_F32_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
   [[nodiscard, gnu::pure]]
-  explicit operator float() const noexcept {
-    return static_cast<double>(*this);
-  }
+  explicit operator float() const noexcept { return to_float(); }
 
   /// Implicit lossless conversion to double
   ///
   /// The conversion is only enabled if it is proven to be lossless at compile
   /// time.  If the conversion is lossy, the user must explicitly cast to double.
-  template <bool ENABLE = HAS_EXACT_F64_CONVERSION>
   [[nodiscard, gnu::pure]]
-  operator std::enable_if_t<ENABLE, double>() const noexcept {
+  std::enable_if_t<HAS_EXACT_F64_CONVERSION, double> to_double() const noexcept {
     const double sgn = sign() ? -1.0 : 1.0;
     const std::uint64_t magnitude = bits_ & ABS_MASK;
 
@@ -370,9 +364,9 @@ public:
   ///
   /// This variant assumes that the conversion is lossy only when the exponent
   /// is out of range.
-  template <bool ENABLE = !HAS_EXACT_F64_CONVERSION, std::enable_if_t<ENABLE> * = nullptr>
+  template <bool INEXACT = !HAS_EXACT_F64_CONVERSION>
   [[nodiscard, gnu::pure]]
-  explicit operator double() const noexcept {
+  std::enable_if_t<INEXACT, double> to_double() const noexcept {
     static_assert(std::numeric_limits<double>::radix == RADIX);
     static_assert(std::numeric_limits<double>::digits >= MANTISSA_DIGITS);
     static_assert(std::numeric_limits<double>::is_iec559);
@@ -403,6 +397,9 @@ public:
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
     return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
+
+  [[nodiscard, gnu::pure]]
+  explicit operator double() const noexcept { return to_double(); }
 };
 
 namespace detail {
@@ -489,33 +486,31 @@ constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcep
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  BitTrueGroupArithmeticType<M> a = x;
-  BitTrueGroupArithmeticType<M> b = y;
+  BitTrueGroupArithmeticType<M> a(x);
+  BitTrueGroupArithmeticType<M> b(y);
   return a + b;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  BitTrueGroupArithmeticType<M> a = x;
-  BitTrueGroupArithmeticType<M> b = y;
+  BitTrueGroupArithmeticType<M> a(x);
+  BitTrueGroupArithmeticType<M> b(y);
   return a - b;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 BitTrueGroupArithmeticType<M> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  BitTrueGroupArithmeticType<M> a = x;
-  BitTrueGroupArithmeticType<M> b = y;
+  BitTrueGroupArithmeticType<M> a(x);
+  BitTrueGroupArithmeticType<M> b(y);
   return a * b;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 double operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  double a = x;
-  double b = y;
-  return a / b;
+  return x.to_double() / y.to_double();
 }
 
 #define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT) \

@@ -26,14 +26,11 @@ struct Trait<Minifloat<E_, M_, N_, B_, D_>> {
 
 template <typename T, typename F>
 static void iterate(F f) {
-  const unsigned END = 1U << (Trait<T>::E + Trait<T>::M + 1);
+  constexpr unsigned END = 1U << (Trait<T>::E + Trait<T>::M + 1);
 
   for (unsigned i = 0; i < END; ++i)
     f(T::from_bits(i));
 }
-
-template <typename T>
-static T identity(T x) { return x; }
 
 /** \brief Test floating-point identity like Object.is in JavaScript
   *
@@ -56,7 +53,7 @@ static const struct {
   bool operator()(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) const {
     return x.bits() == y.bits() || (x.isnan() && y.isnan());
   }
-} are_identical;
+} ARE_IDENTICAL;
 
 using E4M3B11 = Minifloat<4, 3, NanStyle::IEEE, 11>;
 using E4M3B11FN = Minifloat<4, 3, NanStyle::FN, 11>;
@@ -87,31 +84,31 @@ static void test_finite_bits(float x, unsigned bits) {
 }
 
 TEST(SanityCheck, finite_bits) {
-  test_finite_bits<3, 4>(2.0f, 0x40);
-  test_finite_bits<4, 3>(2.0f, 0x40);
-  test_finite_bits<5, 2>(2.0f, 0x40);
-  test_finite_bits<5, 7>(2.0f, 0b0'10000'0000000);
+  test_finite_bits<3, 4>(2.0F, 0x40);
+  test_finite_bits<4, 3>(2.0F, 0x40);
+  test_finite_bits<5, 2>(2.0F, 0x40);
+  test_finite_bits<5, 7>(2.0F, 0b0'10000'0000000);
 
-  test_finite_bits<3, 4>(1.0f, 0b0'011'0000);
-  test_finite_bits<4, 3>(1.0f, 0b0'0111'000);
-  test_finite_bits<5, 2>(1.0f, 0b0'01111'00);
-  test_finite_bits<5, 7>(1.0f, 0b0'01111'0000000);
+  test_finite_bits<3, 4>(1.0F, 0b0'011'0000);
+  test_finite_bits<4, 3>(1.0F, 0b0'0111'000);
+  test_finite_bits<5, 2>(1.0F, 0b0'01111'00);
+  test_finite_bits<5, 7>(1.0F, 0b0'01111'0000000);
 
-  test_finite_bits<3, 4>(-1.25f, 0b1'011'0100);
-  test_finite_bits<4, 3>(-1.25f, 0b1'0111'010);
-  test_finite_bits<5, 2>(-1.25f, 0b1'01111'01);
-  test_finite_bits<5, 7>(-1.25f, 0b1'01111'0100000);
+  test_finite_bits<3, 4>(-1.25F, 0b1'011'0100);
+  test_finite_bits<4, 3>(-1.25F, 0b1'0111'010);
+  test_finite_bits<5, 2>(-1.25F, 0b1'01111'01);
+  test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
 template <typename T>
 static void test_equality() {
-  EXPECT_EQ(identity<float>(T{-3.0f}), -3.0f);
-  EXPECT_EQ(identity<double>(T{-3.0}), -3.0);
-  EXPECT_EQ(T{0.0f}, T{-0.0f});
-  EXPECT_EQ(T{0.0f}.bits() == T{-0.0f}.bits(), Trait<T>::N == NanStyle::FNUZ);
+  EXPECT_EQ(static_cast<float>(T{-3.0F}), -3.0F);
+  EXPECT_EQ(static_cast<double>(T{-3.0}), -3.0);
+  EXPECT_EQ(T{0.0F}, T{-0.0F});
+  EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), Trait<T>::N == NanStyle::FNUZ);
   EXPECT_TRUE(T{NAN}.isnan());
-  EXPECT_TRUE((std::isnan)(identity<float>(T{NAN})));
-  EXPECT_TRUE((std::isnan)(identity<double>(T{NAN})));
+  EXPECT_TRUE((std::isnan)(static_cast<float>(T{NAN})));
+  EXPECT_TRUE((std::isnan)(static_cast<double>(T{NAN})));
   iterate<T>([](T x){ EXPECT_EQ(x != x, x.isnan()); });
 }
 
@@ -124,11 +121,11 @@ static int compare(T x, T y) {
 
 template <typename T>
 static void test_unary_sign() {
-  EXPECT_EQ(T{0.0f}, -T{0.0f});
+  EXPECT_EQ(T{0.0F}, -T{0.0F});
 
   iterate<T>([](T x){
-    EXPECT_PRED2(are_identical, x, +x);
-    EXPECT_PRED2(are_identical, x, - -x);
+    EXPECT_PRED2(ARE_IDENTICAL, x, +x);
+    EXPECT_PRED2(ARE_IDENTICAL, x, - -x);
   });
 }
 
@@ -138,8 +135,8 @@ template <typename T>
 static void test_comparison() {
   iterate<T>([](T x){
     iterate<T>([x](T y){
-      EXPECT_EQ(compare(x, y), compare(identity<float>(x), identity<float>(y)));
-      EXPECT_EQ(compare(x, y), compare(identity<double>(x), identity<double>(y)));
+      EXPECT_EQ(compare(x, y), compare(static_cast<float>(x), static_cast<float>(y)));
+      EXPECT_EQ(compare(x, y), compare(static_cast<double>(x), static_cast<double>(y)));
     });
   });
 }
@@ -149,17 +146,17 @@ MAKE_TESTS_FOR_SELECTED_TYPES(ComparisonCheck, test_comparison)
 template <typename T>
 static void test_identity_conversion() {
   using detail::bit_cast;
-  const bool IS_FNUZ = Trait<T>::N == NanStyle::FNUZ;
+  constexpr bool IS_FNUZ = Trait<T>::N == NanStyle::FNUZ;
 
-  EXPECT_EQ(bit_cast<std::uint32_t>(identity<float>(T{0.0f})), 0);
-  EXPECT_EQ(bit_cast<std::uint64_t>(identity<double>(T{0.0f})), 0);
-  EXPECT_EQ(bit_cast<std::uint32_t>(identity<float>(T{-0.0f})), !IS_FNUZ * 0x8000'0000);
-  EXPECT_EQ(bit_cast<std::uint64_t>(identity<double>(T{-0.0f})), !IS_FNUZ * 0x8000'0000'0000'0000);
+  EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{0.0F})), 0);
+  EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{0.0F})), 0);
+  EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{-0.0F})), !IS_FNUZ * 0x8000'0000);
+  EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{-0.0F})), !IS_FNUZ * 0x8000'0000'0000'0000);
 
   iterate<T>([](T x){
-    EXPECT_PRED2(are_identical, x, T::from_bits(x.bits()));
-    EXPECT_PRED2(are_identical, x, T{identity<float>(x)});
-    EXPECT_PRED2(are_identical, identity<float>(x), identity<double>(x));
+    EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.bits()));
+    EXPECT_PRED2(ARE_IDENTICAL, x, T{static_cast<float>(x)});
+    EXPECT_PRED2(ARE_IDENTICAL, static_cast<float>(x), static_cast<double>(x));
   });
 }
 
@@ -170,10 +167,10 @@ static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Prec
   using T = Minifloat<E, M, N, B, D>;
   using Bits = typename T::StorageType;
 
-  const T y(identity<float>(x));
+  const T y(static_cast<float>(x));
   EXPECT_TRUE(x.signbit() == y.signbit() || (N == NanStyle::FNUZ && !y.bits()));
 
-  const Bits THRESHOLD = 1U << M;
+  constexpr Bits THRESHOLD = 1U << M;
   const Bits magnitude = x.abs().bits();
 
   if (magnitude == 0 || magnitude >= THRESHOLD) {
@@ -205,9 +202,9 @@ static void test_exact_arithmetics(F op) {
   iterate<T>([op](T x){
     iterate<T>([op, x](T y){
       const auto z = op(x, y);
-      const double precise = op(identity<double>(x), identity<double>(y));
-      EXPECT_PRED2(are_identical, static_cast<T>(z), static_cast<T>(precise));
-      EXPECT_PRED2(are_identical, z, static_cast<decltype(z)>(precise));
+      const double precise = op(static_cast<double>(x), static_cast<double>(y));
+      EXPECT_PRED2(ARE_IDENTICAL, static_cast<T>(z), static_cast<T>(precise));
+      EXPECT_PRED2(ARE_IDENTICAL, z, static_cast<decltype(z)>(precise));
     });
   });
 }
@@ -242,18 +239,18 @@ static void test_snowball_addition() {
   using T = Minifloat<E, M, N>;
   using Bits = typename T::StorageType;
 
-  const Bits STEP = 1U << M;
-  const Bits SIGNIFICAND = STEP - 1U;
-  const Bits EXPONENT = 1U << (E + M - 1);
-  const Bits GREATER = EXPONENT | SIGNIFICAND;
+  constexpr Bits STEP = 1U << M;
+  constexpr Bits SIGNIFICAND = STEP - 1U;
+  constexpr Bits EXPONENT = 1U << (E + M - 1);
+  constexpr Bits GREATER = EXPONENT | SIGNIFICAND;
 
   for (Bits lesser = SIGNIFICAND; lesser <= GREATER; lesser += STEP) {
     const T x = T::from_bits(GREATER);
     const T y = T::from_bits(lesser);
 
-    const double xx = x;
-    const double yy = y;
-    EXPECT_PRED2(are_identical, static_cast<T>(x + y), static_cast<T>(xx + yy));
+    const double xx = x.to_double();
+    const double yy = y.to_double();
+    EXPECT_PRED2(ARE_IDENTICAL, static_cast<T>(x + y), static_cast<T>(xx + yy));
   }
 }
 
