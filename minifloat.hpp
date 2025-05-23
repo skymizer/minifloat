@@ -494,8 +494,8 @@ template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 Minifloat<E, M, N, B, D>
 operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
-    return static_cast<Minifloat<E, M, N, B, D>>(x.to_float() + y.to_float());
-  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() + y.to_double());
+    return Minifloat<E, M, N, B, D>{x.to_float() + y.to_float()};
+  return Minifloat<E, M, N, B, D>{x.to_double() + y.to_double()};
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
@@ -503,8 +503,8 @@ template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 Minifloat<E, M, N, B, D>
 operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
-    return static_cast<Minifloat<E, M, N, B, D>>(x.to_float() - y.to_float());
-  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() - y.to_double());
+    return Minifloat<E, M, N, B, D>{x.to_float() - y.to_float()};
+  return Minifloat<E, M, N, B, D>{x.to_double() - y.to_double()};
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
@@ -512,15 +512,15 @@ template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 Minifloat<E, M, N, B, D>
 operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
-    return static_cast<Minifloat<E, M, N, B, D>>(x.to_float() * y.to_float());
-  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() * y.to_double());
+    return Minifloat<E, M, N, B, D>{x.to_float() * y.to_float()};
+  return Minifloat<E, M, N, B, D>{x.to_double() * y.to_double()};
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 Minifloat<E, M, N, B, D>
 operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  return static_cast<Minifloat<E, M, N, B, D>>(x.to_double() / y.to_double());
+  return Minifloat<E, M, N, B, D>{x.to_double() / y.to_double()};
 }
 
 #define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                                                     \

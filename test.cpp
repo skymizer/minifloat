@@ -95,13 +95,13 @@ TEST(SanityCheck, FiniteBits) {
 }
 
 template <typename T> static void test_equality() {
-  EXPECT_EQ(static_cast<float>(T{-3.0F}), -3.0F);
-  EXPECT_EQ(static_cast<double>(T{-3.0}), -3.0);
+  EXPECT_EQ(T{-3.0F}.to_float(), -3.0F);
+  EXPECT_EQ(T{-3.0}.to_double(), -3.0);
   EXPECT_EQ(T{0.0F}, T{-0.0F});
   EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), T::NAN_STYLE == NanStyle::FNUZ);
   EXPECT_TRUE(T{NAN}.isnan());
-  EXPECT_TRUE((std::isnan)(static_cast<float>(T{NAN})));
-  EXPECT_TRUE((std::isnan)(static_cast<double>(T{NAN})));
+  EXPECT_TRUE((std::isnan)(T{NAN}.to_float()));
+  EXPECT_TRUE((std::isnan)(T{NAN}.to_double()));
   iterate<T>([](T x) { EXPECT_EQ(x != x, x.isnan()); });
 }
 
@@ -123,8 +123,8 @@ MAKE_TESTS_FOR_SELECTED_TYPES(UnarySignCheck, test_unary_sign)
 template <typename T> static void test_comparison() {
   iterate<T>([](T x) {
     iterate<T>([x](T y) {
-      EXPECT_EQ(compare(x, y), compare(static_cast<float>(x), static_cast<float>(y)));
-      EXPECT_EQ(compare(x, y), compare(static_cast<double>(x), static_cast<double>(y)));
+      EXPECT_EQ(compare(x, y), compare(x.to_float(), y.to_float()));
+      EXPECT_EQ(compare(x, y), compare(x.to_double(), y.to_double()));
     });
   });
 }
@@ -135,17 +135,15 @@ template <typename T> static void test_identity_conversion() {
   using detail::bit_cast;
   constexpr bool IS_FNUZ = T::NAN_STYLE == NanStyle::FNUZ;
 
-  EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{0.0F})), 0);
-  EXPECT_EQ(bit_cast<std::uint64_t>(static_cast<double>(T{0.0F})), 0);
-  EXPECT_EQ(bit_cast<std::uint32_t>(static_cast<float>(T{-0.0F})), !IS_FNUZ * 0x8000'0000);
-  EXPECT_EQ(
-      bit_cast<std::uint64_t>(static_cast<double>(T{-0.0F})), !IS_FNUZ * 0x8000'0000'0000'0000
-  );
+  EXPECT_EQ(bit_cast<std::uint32_t>(T{0.0F}.to_float()), 0);
+  EXPECT_EQ(bit_cast<std::uint64_t>(T{0.0F}.to_double()), 0);
+  EXPECT_EQ(bit_cast<std::uint32_t>(T{-0.0F}.to_float()), !IS_FNUZ * 0x8000'0000);
+  EXPECT_EQ(bit_cast<std::uint64_t>(T{-0.0F}.to_double()), !IS_FNUZ * 0x8000'0000'0000'0000);
 
   iterate<T>([](T x) {
     EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.bits()));
-    EXPECT_PRED2(ARE_IDENTICAL, x, T{static_cast<float>(x)});
-    EXPECT_PRED2(ARE_IDENTICAL, static_cast<float>(x), static_cast<double>(x));
+    EXPECT_PRED2(ARE_IDENTICAL, x, T{x.to_float()});
+    EXPECT_PRED2(ARE_IDENTICAL, x.to_float(), x.to_double());
   });
 }
 
@@ -156,7 +154,7 @@ static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Prec
   using T = Minifloat<E, M, N, B, D>;
   using Bits = typename T::StorageType;
 
-  const T y(static_cast<float>(x));
+  const T y(x.to_float());
   EXPECT_TRUE(x.signbit() == y.signbit() || (N == NanStyle::FNUZ && !y.bits()));
 
   constexpr Bits THRESHOLD = 1U << M;
@@ -189,7 +187,7 @@ template <typename T, typename F> static void test_exact_arithmetics(F op) {
   iterate<T>([op](T x) {
     iterate<T>([op, x](T y) {
       const T z = op(x, y);
-      const T answer(op(x.to_double(), y.to_double()));
+      const T answer{op(x.to_double(), y.to_double())};
       EXPECT_PRED2(ARE_IDENTICAL, z, answer);
     });
   });
@@ -228,8 +226,8 @@ template <int E, int M, NanStyle N = NanStyle::FN> static void test_snowball_add
   for (Bits lesser = SIGNIFICAND; lesser <= GREATER; lesser += STEP) {
     const T x = T::from_bits(GREATER);
     const T y = T::from_bits(lesser);
-    const T xx(x.to_double());
-    const T yy(y.to_double());
+    const T xx{x.to_double()};
+    const T yy{y.to_double()};
     EXPECT_PRED2(ARE_IDENTICAL, x + y, xx + yy);
   }
 }
