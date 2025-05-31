@@ -50,26 +50,35 @@ using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
   TEST(Suite, E1M6) { (CALLBACK<E1M6>)(); }                                                        \
   TEST(Suite, E1M6FN) { (CALLBACK<E1M6FN>)(); }                                                    \
   TEST(Suite, E1M6FNUZ) { (CALLBACK<E1M6FNUZ>)(); }                                                \
+                                                                                                   \
   TEST(Suite, E2M5) { (CALLBACK<E2M5>)(); }                                                        \
   TEST(Suite, E2M5FN) { (CALLBACK<E2M5FN>)(); }                                                    \
   TEST(Suite, E2M5FNUZ) { (CALLBACK<E2M5FNUZ>)(); }                                                \
+                                                                                                   \
   TEST(Suite, E3M4) { (CALLBACK<E3M4>)(); }                                                        \
   TEST(Suite, E3M4FN) { (CALLBACK<E3M4FN>)(); }                                                    \
   TEST(Suite, E3M4FNUZ) { (CALLBACK<E3M4FNUZ>)(); }                                                \
+                                                                                                   \
   TEST(Suite, E4M3) { (CALLBACK<E4M3>)(); }                                                        \
   TEST(Suite, E4M3FN) { (CALLBACK<E4M3FN>)(); }                                                    \
   TEST(Suite, E4M3FNUZ) { (CALLBACK<E4M3FNUZ>)(); }                                                \
+                                                                                                   \
   TEST(Suite, E4M3B11) { (CALLBACK<E4M3B11>)(); }                                                  \
   TEST(Suite, E4M3B11FN) { (CALLBACK<E4M3B11FN>)(); }                                              \
   TEST(Suite, E4M3B11FNUZ) { (CALLBACK<E4M3B11FNUZ>)(); }                                          \
+                                                                                                   \
   TEST(Suite, E5M2) { (CALLBACK<E5M2>)(); }                                                        \
   TEST(Suite, E5M2FN) { (CALLBACK<E5M2FN>)(); }                                                    \
   TEST(Suite, E5M2FNUZ) { (CALLBACK<E5M2FNUZ>)(); }                                                \
+                                                                                                   \
   TEST(Suite, E6M1) { (CALLBACK<E6M1>)(); }                                                        \
   TEST(Suite, E6M1FN) { (CALLBACK<E6M1FN>)(); }                                                    \
   TEST(Suite, E6M1FNUZ) { (CALLBACK<E6M1FNUZ>)(); }                                                \
+                                                                                                   \
+  /* M0 IEEE is invalid because infinities collide with NaN */                                     \
   TEST(Suite, E7M0FN) { (CALLBACK<E7M0FN>)(); }                                                    \
   TEST(Suite, E7M0FNUZ) { (CALLBACK<E7M0FNUZ>)(); }                                                \
+                                                                                                   \
   TEST(Suite, E5M7FN) { (CALLBACK<E5M7FN>)(); }
 // NOLINTEND(bugprone-macro-parentheses)
 
