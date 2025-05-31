@@ -143,7 +143,7 @@ template <typename T> static void test_identity_conversion() {
   iterate<T>([](T x) {
     EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.bits()));
     EXPECT_PRED2(ARE_IDENTICAL, x, T{x.to_float()});
-    EXPECT_PRED2(ARE_IDENTICAL, x.to_float(), x.to_double());
+    EXPECT_PRED2(ARE_IDENTICAL, double{x.to_float()}, x.to_double());
   });
 }
 

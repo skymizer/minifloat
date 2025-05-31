@@ -1,4 +1,4 @@
-CXXFLAGS = -std=c++17 -Wall -Wextra -pipe -march=native
+CXXFLAGS = -std=c++17 -Wall -Wextra -Wpedantic -march=native
 
 check: test
 	if command -v gtest-parallel; then gtest-parallel ./test; else ./test; fi
