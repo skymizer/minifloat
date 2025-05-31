@@ -61,7 +61,7 @@ using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
   TEST(Suite, E5M2FNUZ) { (CALLBACK<E5M2FNUZ>)(); }                                                \
   TEST(Suite, E4M4FN) { (CALLBACK<E4M4FN>)(); }                                                    \
   TEST(Suite, E4M5FN) { (CALLBACK<E4M5FN>)(); }                                                    \
-  TEST(Suite, E5M4FN) { (CALLBACK<E5M4FN>)(); }
+  TEST(Suite, E5M7FN) { (CALLBACK<E5M7FN>)(); }
 // NOLINTEND(bugprone-macro-parentheses)
 
 template <int E, int M> static void test_finite_bits(float x, unsigned bits) {
