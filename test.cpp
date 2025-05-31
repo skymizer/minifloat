@@ -135,8 +135,8 @@ template <typename T> static void test_identity_conversion() {
   using detail::bit_cast;
   constexpr bool IS_FNUZ = T::NAN_STYLE == NanStyle::FNUZ;
 
-  EXPECT_EQ(bit_cast<std::uint32_t>(T{0.0F}.to_float()), 0);
-  EXPECT_EQ(bit_cast<std::uint64_t>(T{0.0F}.to_double()), 0);
+  EXPECT_EQ(bit_cast<std::uint32_t>(T{0.0F}.to_float()), 0U);
+  EXPECT_EQ(bit_cast<std::uint64_t>(T{0.0F}.to_double()), 0U);
   EXPECT_EQ(bit_cast<std::uint32_t>(T{-0.0F}.to_float()), !IS_FNUZ * 0x8000'0000);
   EXPECT_EQ(bit_cast<std::uint64_t>(T{-0.0F}.to_double()), !IS_FNUZ * 0x8000'0000'0000'0000);
 
