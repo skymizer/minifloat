@@ -147,7 +147,7 @@ enum struct SubnormalStyle {
 ///
 /// Constraints:
 /// - E > 0
-/// - M >= 0 (M > 0 if N is `NanStyle::IEEE`)
+/// - M >= 0 (M > 0 if N is `NanStyle::IEEE`) (∞ ≠ NaN)
 /// - E + M < 16
 template <
     int E, int M, NanStyle N = NanStyle::IEEE, int B = DefaultBias<E>::value,
@@ -162,6 +162,7 @@ public:
 
   static_assert(E > 0);
   static_assert(M >= 0);
+  static_assert(M > 0 || N != NanStyle::IEEE);
   static_assert(E + M < 16);
 
   using StorageType = std::conditional_t<(E + M < 8), std::uint_least8_t, std::uint_least16_t>;
@@ -205,10 +206,10 @@ private:
     if constexpr (N == NanStyle::FNUZ)
       return SIGN_BIT;
 
-    if constexpr (N == NanStyle::FN || M == 0)
-      return MAX;
+    if constexpr (N == NanStyle::IEEE)
+      return MAX << (M - 1) & MAX;
 
-    return MAX << (M - 1) & MAX;
+    return MAX;
   }
 
   [[nodiscard, gnu::const]]
