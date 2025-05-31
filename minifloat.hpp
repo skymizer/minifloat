@@ -146,9 +146,10 @@ enum struct SubnormalStyle {
 /// \tparam D - Subnormal (denormal) encoding style
 ///
 /// Constraints:
+/// - E + M < 16
 /// - E >= 2
 /// - M >= 0 (M > 0 if N is `NanStyle::IEEE`) (∞ ≠ NaN)
-/// - E + M < 16
+/// - D = `SubnormalStyle::Precise` if M = 0
 template <
     int E, int M, NanStyle N = NanStyle::IEEE, int B = DefaultBias<E>::value,
     SubnormalStyle D = SubnormalStyle::Precise>
@@ -160,10 +161,11 @@ public:
   static constexpr int BIAS = B;
   static constexpr SubnormalStyle SUBNORMAL_STYLE = D;
 
+  static_assert(E + M < 16);
   static_assert(E >= 2);
   static_assert(M >= 0);
   static_assert(M > 0 || N != NanStyle::IEEE);
-  static_assert(E + M < 16);
+  static_assert(M > 0 || D == SubnormalStyle::Precise);
 
   using StorageType = std::conditional_t<(E + M < 8), std::uint_least8_t, std::uint_least16_t>;
   static constexpr int RADIX = 2;

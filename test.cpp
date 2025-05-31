@@ -192,6 +192,9 @@ static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Prec
   EXPECT_LE(y.abs(), T::from_bits(1U << M));
 }
 
+template <SubnormalStyle D, int E, NanStyle N, int B>
+static void test_subnormal_conversion(Minifloat<E, 0, N, B, SubnormalStyle::Precise>) {}
+
 template <typename T> static void test_subnormal_conversion() {
   iterate<T>([](T x) {
     test_subnormal_conversion<SubnormalStyle::Reserved>(x);
