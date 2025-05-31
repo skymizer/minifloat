@@ -164,7 +164,7 @@ public:
   static_assert(M >= 0);
   static_assert(E + M < 16);
 
-  using StorageType = std::conditional_t < E + M<8, std::uint_least8_t, std::uint_least16_t>;
+  using StorageType = std::conditional_t<(E + M < 8), std::uint_least8_t, std::uint_least16_t>;
   static constexpr int RADIX = 2;
   static constexpr int MANTISSA_DIGITS = M + 1;
   static constexpr int MAX_EXP = (1 << E) - B - int{N == NanStyle::IEEE};
