@@ -59,8 +59,9 @@ using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
   TEST(Suite, E5M2) { (CALLBACK<E5M2>)(); }                                                        \
   TEST(Suite, E5M2FN) { (CALLBACK<E5M2FN>)(); }                                                    \
   TEST(Suite, E5M2FNUZ) { (CALLBACK<E5M2FNUZ>)(); }                                                \
-  TEST(Suite, E4M4FN) { (CALLBACK<E4M4FN>)(); }                                                    \
-  TEST(Suite, E4M5FN) { (CALLBACK<E4M5FN>)(); }                                                    \
+  TEST(Suite, E1M6FN) { (CALLBACK<E1M6FN>)(); }                                                    \
+  TEST(Suite, E6M1FN) { (CALLBACK<E6M1FN>)(); }                                                    \
+  TEST(Suite, E7M0FN) { (CALLBACK<E7M0FN>)(); }                                                    \
   TEST(Suite, E5M7FN) { (CALLBACK<E5M7FN>)(); }
 // NOLINTEND(bugprone-macro-parentheses)
 
