@@ -146,7 +146,7 @@ enum struct SubnormalStyle {
 /// \tparam D - Subnormal (denormal) encoding style
 ///
 /// Constraints:
-/// - E > 0
+/// - E >= 2
 /// - M >= 0 (M > 0 if N is `NanStyle::IEEE`) (∞ ≠ NaN)
 /// - E + M < 16
 template <
@@ -160,7 +160,7 @@ public:
   static constexpr int BIAS = B;
   static constexpr SubnormalStyle SUBNORMAL_STYLE = D;
 
-  static_assert(E > 0);
+  static_assert(E >= 2);
   static_assert(M >= 0);
   static_assert(M > 0 || N != NanStyle::IEEE);
   static_assert(E + M < 16);

@@ -47,10 +47,6 @@ using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define MAKE_TESTS_FOR_SELECTED_TYPES(Suite, CALLBACK)                                             \
-  TEST(Suite, E1M6) { (CALLBACK<E1M6>)(); }                                                        \
-  TEST(Suite, E1M6FN) { (CALLBACK<E1M6FN>)(); }                                                    \
-  TEST(Suite, E1M6FNUZ) { (CALLBACK<E1M6FNUZ>)(); }                                                \
-                                                                                                   \
   TEST(Suite, E2M5) { (CALLBACK<E2M5>)(); }                                                        \
   TEST(Suite, E2M5FN) { (CALLBACK<E2M5FN>)(); }                                                    \
   TEST(Suite, E2M5FNUZ) { (CALLBACK<E2M5FNUZ>)(); }                                                \
