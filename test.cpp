@@ -104,13 +104,17 @@ TEST(SanityCheck, FiniteBits) {
 }
 
 template <typename T> static void test_equality() {
-  EXPECT_EQ(T{-3.0F}.to_float(), -3.0F);
-  EXPECT_EQ(T{-3.0}.to_double(), -3.0);
+  constexpr float FIXED_POINT = T::MANTISSA_BITS == 0 ? -2.0F : -3.0F;
+  EXPECT_EQ(T{FIXED_POINT}.to_float(), FIXED_POINT);
+  EXPECT_EQ(T{FIXED_POINT}.to_double(), FIXED_POINT);
+
   EXPECT_EQ(T{0.0F}, T{-0.0F});
   EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), T::NAN_STYLE == NanStyle::FNUZ);
+
   EXPECT_TRUE(T{NAN}.isnan());
   EXPECT_TRUE((std::isnan)(T{NAN}.to_float()));
   EXPECT_TRUE((std::isnan)(T{NAN}.to_double()));
+
   iterate<T>([](T x) { EXPECT_EQ(x != x, x.isnan()); });
 }
 
