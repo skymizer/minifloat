@@ -15,6 +15,12 @@
 #include <limits>
 #include <type_traits>
 
+#if __cplusplus >= 202002L
+#include <bit>
+#else
+#include <cstring>
+#endif
+
 /// Namespace for Skymizer
 namespace skymizer {
 
@@ -26,18 +32,18 @@ namespace detail {
 /// Backport of C++20 std::bit_cast
 template <typename To, typename From>
 [[nodiscard, gnu::const]]
-auto bit_cast(const From &from) noexcept -> std::enable_if_t<
-    std::is_trivially_copyable_v<To> && std::is_trivially_copyable_v<From> &&
-        sizeof(To) == sizeof(From),
-    To> {
-#if defined(__has_builtin) && __has_builtin(__builtin_bit_cast)
-  return __builtin_bit_cast(To, from);
+To bit_cast(const From &from) noexcept {
+  static_assert(sizeof(To) == sizeof(From));
+  static_assert(std::is_trivially_copyable_v<To>);
+  static_assert(std::is_trivially_copyable_v<From>);
+
+#if __cplusplus >= 202002L
+  return std::bit_cast<To>(from);
 #else
-  union {
-    From _;
-    To to;
-  } caster = {from};
-  return caster.to;
+  static_assert(std::is_trivially_constructible_v<To>);
+  To to;
+  std::memcpy(&to, &from, sizeof(To));
+  return to;
 #endif
 }
 
