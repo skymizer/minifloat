@@ -1,6 +1,6 @@
 // This file is part of the minifloat project of Skymizer.
 //
-// Copyright (C) 2024 Chen-Pang He <jdh8@skymizer.com>
+// Copyright (C) 2024-2025 Chen-Pang He <jdh8@skymizer.com>
 //
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
@@ -11,7 +11,9 @@
 
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
-template <typename T, typename F> static void iterate(F f) {
+namespace {
+
+template <typename T, typename F> void iterate(F f) {
   constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
 
   for (unsigned i = 0; i < END; ++i)
@@ -24,7 +26,7 @@ template <typename T, typename F> static void iterate(F f) {
  * -0 from +0.  Using this functor, NaNs are considered identical to each
  * other, while +0 and -0 are considered different.
  */
-static const struct {
+struct {
   bool operator()(double x, double y) const {
     return bit_cast<std::uint64_t>(x) == bit_cast<std::uint64_t>(y) || (x != x && y != y);
   }
@@ -37,7 +39,7 @@ static const struct {
   bool operator()(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) const {
     return x.to_bits() == y.to_bits() || (x.isnan() && y.isnan());
   }
-} ARE_IDENTICAL;
+} constexpr ARE_IDENTICAL;
 
 using E4M3B11 = Minifloat<4, 3, NanStyle::IEEE, 11>;
 using E4M3B11FN = Minifloat<4, 3, NanStyle::FN, 11>;
@@ -76,7 +78,7 @@ using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
   TEST(Suite, E5M7FN) { (CALLBACK<E5M7FN>)(); }
 // NOLINTEND(bugprone-macro-parentheses)
 
-template <int E, int M> static void test_finite_bits(float x, unsigned bits) {
+template <int E, int M> void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M>{x}.to_bits()), bits);
   EXPECT_EQ((Minifloat<E, M, NanStyle::FN>{x}.to_bits()), bits);
   EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.to_bits()), bits);
@@ -106,7 +108,7 @@ TEST(SanityCheck, FiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
-template <typename T> static void test_equality() {
+template <typename T> void test_equality() {
   constexpr float FIXED_POINT = T::MANTISSA_BITS == 0 ? -2.0F : -3.0F;
   EXPECT_EQ(T{FIXED_POINT}.to_float(), FIXED_POINT);
   EXPECT_EQ(T{FIXED_POINT}.to_double(), FIXED_POINT);
@@ -123,9 +125,9 @@ template <typename T> static void test_equality() {
 
 MAKE_TESTS_FOR_SELECTED_TYPES(EqualityCheck, test_equality)
 
-template <typename T> static int compare(T x, T y) { return (x > y) - (x < y); }
+template <typename T> int compare(T x, T y) { return (x > y) - (x < y); }
 
-template <typename T> static void test_unary_sign() {
+template <typename T> void test_unary_sign() {
   EXPECT_EQ(T{0.0F}, -T{0.0F});
 
   iterate<T>([](T x) {
@@ -136,7 +138,7 @@ template <typename T> static void test_unary_sign() {
 
 MAKE_TESTS_FOR_SELECTED_TYPES(UnarySignCheck, test_unary_sign)
 
-template <typename T> static void test_comparison() {
+template <typename T> void test_comparison() {
   iterate<T>([](T x) {
     iterate<T>([x](T y) {
       EXPECT_EQ(compare(x, y), compare(x.to_float(), y.to_float()));
@@ -147,7 +149,7 @@ template <typename T> static void test_comparison() {
 
 MAKE_TESTS_FOR_SELECTED_TYPES(ComparisonCheck, test_comparison)
 
-template <typename T> static void test_identity_conversion() {
+template <typename T> void test_identity_conversion() {
   constexpr bool IS_FNUZ = T::NAN_STYLE == NanStyle::FNUZ;
 
   EXPECT_EQ(bit_cast<std::uint32_t>(T{0.0F}.to_float()), 0U);
@@ -165,7 +167,7 @@ template <typename T> static void test_identity_conversion() {
 MAKE_TESTS_FOR_SELECTED_TYPES(IdentityConversionCheck, test_identity_conversion)
 
 template <SubnormalStyle D, int E, int M, NanStyle N, int B>
-static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
+void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
   using T = Minifloat<E, M, N, B, D>;
   using Bits = typename T::Storage;
 
@@ -190,9 +192,9 @@ static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Prec
 }
 
 template <SubnormalStyle D, int E, NanStyle N, int B>
-static void test_subnormal_conversion(Minifloat<E, 0, N, B, SubnormalStyle::Precise>) {}
+void test_subnormal_conversion(Minifloat<E, 0, N, B, SubnormalStyle::Precise>) {}
 
-template <typename T> static void test_subnormal_conversion() {
+template <typename T> void test_subnormal_conversion() {
   iterate<T>([](T x) {
     test_subnormal_conversion<SubnormalStyle::Reserved>(x);
     test_subnormal_conversion<SubnormalStyle::Fast>(x);
@@ -201,7 +203,7 @@ template <typename T> static void test_subnormal_conversion() {
 
 MAKE_TESTS_FOR_SELECTED_TYPES(SubnormalConversionCheck, test_subnormal_conversion)
 
-template <typename T, typename F> static void test_exact_arithmetics(F op) {
+template <typename T, typename F> void test_exact_arithmetics(F op) {
   iterate<T>([op](T x) {
     iterate<T>([op, x](T y) {
       const T z = op(x, y);
@@ -211,28 +213,21 @@ template <typename T, typename F> static void test_exact_arithmetics(F op) {
   });
 }
 
-template <typename T> static void test_exact_addition() {
-  test_exact_arithmetics<T>(std::plus<>());
-}
+template <typename T> void test_exact_addition() { test_exact_arithmetics<T>(std::plus<>()); }
+template <typename T> void test_exact_subtraction() { test_exact_arithmetics<T>(std::minus<>()); }
 
-template <typename T> static void test_exact_subtraction() {
-  test_exact_arithmetics<T>(std::minus<>());
-}
-
-template <typename T> static void test_exact_multiplication() {
+template <typename T> void test_exact_multiplication() {
   test_exact_arithmetics<T>(std::multiplies<>());
 }
 
-template <typename T> static void test_exact_division() {
-  test_exact_arithmetics<T>(std::divides<>());
-}
+template <typename T> void test_exact_division() { test_exact_arithmetics<T>(std::divides<>()); }
 
 MAKE_TESTS_FOR_SELECTED_TYPES(AdditionCheck, test_exact_addition)
 MAKE_TESTS_FOR_SELECTED_TYPES(SubtractionCheck, test_exact_subtraction)
 MAKE_TESTS_FOR_SELECTED_TYPES(MultiplicationCheck, test_exact_multiplication)
 MAKE_TESTS_FOR_SELECTED_TYPES(DivisionCheck, test_exact_division)
 
-template <int E, int M, NanStyle N = NanStyle::FN> static void test_snowball_addition() {
+template <int E, int M, NanStyle N = NanStyle::FN> void test_snowball_addition() {
   using T = Minifloat<E, M, N>;
   using Bits = typename T::Storage;
 
@@ -255,3 +250,5 @@ TEST(SnowballAdditionCheck, e3m11) { test_snowball_addition<3, 11>(); }
 TEST(SnowballAdditionCheck, e4m11) { test_snowball_addition<4, 11>(); }
 TEST(SnowballAdditionCheck, e2m12) { test_snowball_addition<2, 12>(); }
 TEST(SnowballAdditionCheck, e3m12) { test_snowball_addition<3, 12>(); }
+
+} // namespace
