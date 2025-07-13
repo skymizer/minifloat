@@ -169,17 +169,12 @@ public:
   static constexpr Storage ABS_MASK = (1U << (E + M)) - 1U;
 
   static constexpr bool HAS_EXACT_F32_CONVERSION =
-      std::numeric_limits<float>::radix == RADIX &&
-      std::numeric_limits<float>::digits >= MANTISSA_DIGITS &&
-      std::numeric_limits<float>::max_exponent >= MAX_EXP &&
-      std::numeric_limits<float>::min_exponent <= MIN_EXP && std::numeric_limits<float>::is_iec559;
+      FLT_MANT_DIG >= MANTISSA_DIGITS && FLT_MAX_EXP >= MAX_EXP && FLT_MIN_EXP <= MIN_EXP &&
+      std::numeric_limits<float>::radix == RADIX && std::numeric_limits<float>::is_iec559;
 
   static constexpr bool HAS_EXACT_F64_CONVERSION =
-      std::numeric_limits<double>::radix == RADIX &&
-      std::numeric_limits<double>::digits >= MANTISSA_DIGITS &&
-      std::numeric_limits<double>::max_exponent >= MAX_EXP &&
-      std::numeric_limits<double>::min_exponent <= MIN_EXP &&
-      std::numeric_limits<double>::is_iec559;
+      DBL_MANT_DIG >= MANTISSA_DIGITS && DBL_MAX_EXP >= MAX_EXP && DBL_MIN_EXP <= MIN_EXP &&
+      std::numeric_limits<double>::radix == RADIX && std::numeric_limits<double>::is_iec559;
 
 private:
   Storage bits_;
@@ -272,7 +267,7 @@ public:
   [[nodiscard, gnu::const]] static Minifloat from_double(double x) { return Minifloat{x}; }
 
   [[nodiscard, gnu::pure]] constexpr Storage to_bits() const { return bits_; }
-  [[nodiscard, gnu::pure]] constexpr bool sign() const { return bits_ >> (E + M); }
+  [[nodiscard, gnu::pure]] constexpr bool signbit() const { return bits_ >> (E + M) & 1; }
 
   [[nodiscard, gnu::pure]]
   constexpr bool isnan() const {
@@ -283,11 +278,6 @@ public:
       return (bits_ & ABS_MASK) == ABS_MASK;
 
     return (bits_ & ABS_MASK) > inf_bits();
-  }
-
-  [[nodiscard, gnu::pure]]
-  constexpr bool signbit() const {
-    return bits_ >> (E + M) & 1;
   }
 
   [[nodiscard, gnu::pure]]
@@ -310,22 +300,22 @@ public:
     if constexpr (!HAS_EXACT_F32_CONVERSION)
       return static_cast<double>(*this);
 
-    const float sgn = sign() ? -1.0F : 1.0F;
+    const float sign = signbit() ? -1.0F : 1.0F;
     const std::uint32_t magnitude = bits_ & ABS_MASK;
 
     if (isnan())
-      return std::copysign(NAN, sgn);
+      return std::copysign(NAN, sign);
 
     if (N == NanStyle::IEEE && magnitude == inf_bits())
-      return std::copysign(HUGE_VALF, sgn);
+      return std::copysign(HUGE_VALF, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sgn);
+      return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sign);
 
     const std::uint32_t shifted = magnitude << (FLT_MANT_DIG - MANTISSA_DIGITS);
     const std::uint32_t diff = MIN_EXP - FLT_MIN_EXP;
     const std::uint32_t bias = diff << (FLT_MANT_DIG - 1);
-    return bit_cast<float>(sign() << 31 | (shifted + bias));
+    return bit_cast<float>(signbit() << 31 | (shifted + bias));
   }
 
   [[nodiscard, gnu::pure]]
@@ -340,23 +330,22 @@ public:
   /// double.
   [[nodiscard, gnu::pure]]
   std::enable_if_t<HAS_EXACT_F64_CONVERSION, double> to_double() const {
-    const double sgn = sign() ? -1.0 : 1.0;
+    const double sign = signbit() ? -1.0 : 1.0;
     const std::uint64_t magnitude = bits_ & ABS_MASK;
 
     if (isnan())
-      return std::copysign(NAN, sgn);
+      return std::copysign(NAN, sign);
 
     if (N == NanStyle::IEEE && magnitude == inf_bits())
-      return std::copysign(HUGE_VAL, sgn);
+      return std::copysign(HUGE_VAL, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sgn);
+      return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sign);
 
-    const std::uint64_t shifted = magnitude
-                                  << (std::numeric_limits<double>::digits - MANTISSA_DIGITS);
-    const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
-    const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
+    const std::uint64_t shifted = magnitude << (DBL_MANT_DIG - MANTISSA_DIGITS);
+    const std::uint64_t diff = MIN_EXP - DBL_MIN_EXP;
+    const std::uint64_t bias = diff << (DBL_MANT_DIG - 1);
+    return bit_cast<double>(std::uint64_t{signbit()} << 63 | (shifted + bias));
   }
 
   /// Explicit lossy conversion to double
@@ -367,34 +356,34 @@ public:
   [[nodiscard, gnu::pure]]
   std::enable_if_t<INEXACT, double> to_double() const {
     static_assert(std::numeric_limits<double>::radix == RADIX);
-    static_assert(std::numeric_limits<double>::digits >= MANTISSA_DIGITS);
+    static_assert(DBL_MANT_DIG >= MANTISSA_DIGITS);
     static_assert(std::numeric_limits<double>::is_iec559);
 
-    const double sgn = sign() ? -1.0 : 1.0;
+    const double sign = signbit() ? -1.0 : 1.0;
     const std::uint64_t magnitude = bits_ & ABS_MASK;
 
     if (isnan())
-      return std::copysign(NAN, sgn);
+      return std::copysign(NAN, sign);
 
     if (N == NanStyle::IEEE && magnitude == inf_bits())
-      return std::copysign(HUGE_VAL, sgn);
+      return std::copysign(HUGE_VAL, sign);
 
-    if (magnitude >= static_cast<std::uint64_t>(std::numeric_limits<double>::max_exponent + B) << M)
-      return std::copysign(HUGE_VAL, sgn);
+    if (magnitude >= static_cast<std::uint64_t>(DBL_MAX_EXP + B) << M)
+      return std::copysign(HUGE_VAL, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sgn);
+      return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sign);
 
-    if (static_cast<int>(magnitude >> M) < std::numeric_limits<double>::min_exponent + B) {
+    if (static_cast<int>(magnitude >> M) < DBL_MIN_EXP + B) {
       const std::uint64_t significand = (magnitude & ((1U << M) - 1)) | 1U << M;
       const int exponent = static_cast<int>(magnitude >> M) - B;
-      return std::copysign(std::ldexp(significand, exponent - M), sgn);
+      return std::copysign(std::ldexp(significand, exponent - M), sign);
     }
 
-    const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - (E + M));
-    const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
-    const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
+    const std::uint64_t shifted = magnitude << (DBL_MANT_DIG - (E + M));
+    const std::uint64_t diff = MIN_EXP - DBL_MIN_EXP;
+    const std::uint64_t bias = diff << (DBL_MANT_DIG - 1);
+    return bit_cast<double>(std::uint64_t{signbit()} << 63 | (shifted + bias));
   }
 
   [[nodiscard, gnu::pure]]
@@ -482,30 +471,34 @@ constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) {
   constexpr auto ABS_MASK = Minifloat<E, M, N, B, D>::ABS_MASK;
   if (N == NanStyle::FNUZ && (x.to_bits() & ABS_MASK) == 0)
     return x;
+
   return Minifloat<E, M, N, B, D>::from_bits(x.to_bits() ^ (ABS_MASK + 1));
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
+  if constexpr (2 * (M + 1) <= FLT_MANT_DIG)
     return Minifloat<E, M, N, B, D>{x.to_float() + y.to_float()};
+
   return Minifloat<E, M, N, B, D>{x.to_double() + y.to_double()};
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
+  if constexpr (2 * (M + 1) <= FLT_MANT_DIG)
     return Minifloat<E, M, N, B, D>{x.to_float() - y.to_float()};
+
   return Minifloat<E, M, N, B, D>{x.to_double() - y.to_double()};
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 Minifloat<E, M, N, B, D> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
+  if constexpr (2 * (M + 1) <= FLT_MANT_DIG)
     return Minifloat<E, M, N, B, D>{x.to_float() * y.to_float()};
+
   return Minifloat<E, M, N, B, D>{x.to_double() * y.to_double()};
 }
 
