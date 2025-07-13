@@ -26,20 +26,29 @@ template <typename T, typename F> void iterate(F f) {
  * -0 from +0.  Using this functor, NaNs are considered identical to each
  * other, while +0 and -0 are considered different.
  */
-struct {
-  bool operator()(double x, double y) const {
-    return bit_cast<std::uint64_t>(x) == bit_cast<std::uint64_t>(y) || (x != x && y != y);
-  }
+bool same_double(double x, double y) {
+  return bit_cast<std::uint64_t>(x) == bit_cast<std::uint64_t>(y) || (x != x && y != y);
+}
 
-  bool operator()(float x, float y) const {
-    return bit_cast<std::uint32_t>(x) == bit_cast<std::uint32_t>(y) || (x != x && y != y);
-  }
+/** \brief Test floating-point identity like Object.is in JavaScript
+ *
+ * See also `same_double`.
+ */
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
+bool same_mini(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
+  return x.to_bits() == y.to_bits() || (x.isnan() && y.isnan());
+}
 
-  template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-  bool operator()(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) const {
-    return x.to_bits() == y.to_bits() || (x.isnan() && y.isnan());
-  }
-} constexpr ARE_IDENTICAL;
+/** \brief Test floating-point identity like Object.is in JavaScript
+ *
+ * See also `same_double`.
+ */
+template <typename T> bool same(T x, T y) {
+  if constexpr (std::is_same_v<std::decay_t<T>, double>)
+    return same_double(x, y);
+
+  return same_mini(x, y);
+}
 
 using E4M3B11 = Minifloat<4, 3, NanStyle::IEEE, 11>;
 using E4M3B11FN = Minifloat<4, 3, NanStyle::FN, 11>;
@@ -131,8 +140,8 @@ template <typename T> void test_unary_sign() {
   EXPECT_EQ(T{0.0F}, -T{0.0F});
 
   iterate<T>([](T x) {
-    EXPECT_PRED2(ARE_IDENTICAL, x, +x);
-    EXPECT_PRED2(ARE_IDENTICAL, x, - -x);
+    EXPECT_PRED2(same<T>, x, +x);
+    EXPECT_PRED2(same<T>, x, - -x);
   });
 }
 
@@ -158,9 +167,9 @@ template <typename T> void test_identity_conversion() {
   EXPECT_EQ(bit_cast<std::uint64_t>(T{-0.0F}.to_double()), !IS_FNUZ * 0x8000'0000'0000'0000);
 
   iterate<T>([](T x) {
-    EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.to_bits()));
-    EXPECT_PRED2(ARE_IDENTICAL, x, T{x.to_float()});
-    EXPECT_PRED2(ARE_IDENTICAL, double{x.to_float()}, x.to_double());
+    EXPECT_PRED2(same<T>, x, T::from_bits(x.to_bits()));
+    EXPECT_PRED2(same<T>, x, T{x.to_float()});
+    EXPECT_PRED2(same_double, x.to_float(), x.to_double());
   });
 }
 
@@ -208,7 +217,7 @@ template <typename T, typename F> void test_exact_arithmetics(F op) {
     iterate<T>([op, x](T y) {
       const T z = op(x, y);
       const T answer{op(x.to_double(), y.to_double())};
-      EXPECT_PRED2(ARE_IDENTICAL, z, answer);
+      EXPECT_PRED2(same<T>, z, answer);
     });
   });
 }
@@ -239,9 +248,7 @@ template <int E, int M, NanStyle N = NanStyle::FN> void test_snowball_addition()
   for (Bits lesser = SIGNIFICAND; lesser <= GREATER; lesser += STEP) {
     const T x = T::from_bits(GREATER);
     const T y = T::from_bits(lesser);
-    const T xx{x.to_double()};
-    const T yy{y.to_double()};
-    EXPECT_PRED2(ARE_IDENTICAL, x + y, xx + yy);
+    EXPECT_PRED2(same<T>, x + y, T{x.to_double() + y.to_double()});
   }
 }
 
