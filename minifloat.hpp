@@ -10,6 +10,7 @@
 #define SKYMIZER_MINIFLOAT_HPP
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -27,12 +28,10 @@ namespace skymizer {
 /// Namespace for the minifloat library
 namespace minifloat {
 
-namespace detail {
-
 /// Backport of C++20 std::bit_cast
 template <typename To, typename From>
 [[nodiscard, gnu::const]]
-To bit_cast(const From &from) noexcept {
+To bit_cast(const From &from) {
   static_assert(sizeof(To) == sizeof(From));
   static_assert(std::is_trivially_copyable_v<To>);
   static_assert(std::is_trivially_copyable_v<From>);
@@ -47,44 +46,33 @@ To bit_cast(const From &from) noexcept {
 #endif
 }
 
-/// Round a float to the nearest float with the given significand width
-///
-/// \tparam M - Significand (mantissa) width
 template <int M>
 [[nodiscard, gnu::const]]
-float round_to_mantissa(float x) {
+float round_normal_float_to_mantissa(float x) {
+  static_assert(M < FLT_MANT_DIG);
   static_assert(std::numeric_limits<float>::radix == 2);
-  static_assert(M < std::numeric_limits<float>::digits);
   static_assert(std::numeric_limits<float>::is_iec559);
 
   const auto bits = bit_cast<std::uint32_t>(x);
-  const auto ulp = std::uint32_t{1} << (std::numeric_limits<float>::digits - 1 - M);
+  const auto ulp = std::uint32_t{1} << (FLT_MANT_DIG - 1 - M);
   const auto bias = ulp / 2 - !(bits & ulp);
   return bit_cast<float>((bits + bias) & ~(ulp - 1));
 }
 
-/// Round a float to the nearest float with the given significand width
-///
-/// \tparam M - Significand (mantissa) width
 template <int M>
 [[nodiscard, gnu::const]]
-double round_to_mantissa(double x) {
+double round_normal_double_to_mantissa(double x) {
+  static_assert(M < DBL_MANT_DIG);
   static_assert(std::numeric_limits<double>::radix == 2);
-  static_assert(M < std::numeric_limits<double>::digits);
   static_assert(std::numeric_limits<double>::is_iec559);
 
   const auto bits = bit_cast<std::uint64_t>(x);
-  const auto ulp = std::uint64_t{1} << (std::numeric_limits<double>::digits - 1 - M);
+  const auto ulp = std::uint64_t{1} << (DBL_MANT_DIG - 1 - M);
   const auto bias = ulp / 2 - !(bits & ulp);
   return bit_cast<double>((bits + bias) & ~(ulp - 1));
 }
 
-} // namespace detail
-
-/// Default bias for a given exponent width
-///
-/// \tparam E - Exponent width
-template <int E> using DefaultBias = std::integral_constant<int, (1 << (E - 1)) - 1>;
+constexpr int default_bias(int exponent_width) { return (1 << (exponent_width - 1)) - 1; }
 
 /// NaN encoding style
 ///
@@ -157,7 +145,7 @@ enum struct SubnormalStyle {
 /// - M >= 0 (M > 0 if N is `NanStyle::IEEE`) (∞ ≠ NaN)
 /// - D = `SubnormalStyle::Precise` if M = 0
 template <
-    int E, int M, NanStyle N = NanStyle::IEEE, int B = DefaultBias<E>::value,
+    int E, int M, NanStyle N = NanStyle::IEEE, int B = default_bias(E),
     SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
 public:
@@ -173,12 +161,12 @@ public:
   static_assert(M > 0 || N != NanStyle::IEEE);
   static_assert(M > 0 || D == SubnormalStyle::Precise);
 
-  using StorageType = std::conditional_t<(E + M < 8), std::uint_least8_t, std::uint_least16_t>;
+  using Storage = std::conditional_t<(E + M < 8), std::uint_least8_t, std::uint_least16_t>;
   static constexpr int RADIX = 2;
   static constexpr int MANTISSA_DIGITS = M + 1;
   static constexpr int MAX_EXP = (1 << E) - B - int{N == NanStyle::IEEE};
   static constexpr int MIN_EXP = 2 - B;
-  static constexpr StorageType ABS_MASK = (1U << (E + M)) - 1U;
+  static constexpr Storage ABS_MASK = (1U << (E + M)) - 1U;
 
   static constexpr bool HAS_EXACT_F32_CONVERSION =
       std::numeric_limits<float>::radix == RADIX &&
@@ -194,11 +182,11 @@ public:
       std::numeric_limits<double>::is_iec559;
 
 private:
-  StorageType bits_;
+  Storage bits_;
 
   [[nodiscard, gnu::const]]
-  static constexpr StorageType inf_bits() noexcept {
-    const StorageType max = (UINT32_C(1) << (E + M)) - 1;
+  static constexpr Storage inf_bits() {
+    const Storage max = (UINT32_C(1) << (E + M)) - 1;
 
     if constexpr (N == NanStyle::IEEE)
       return max << M & max;
@@ -207,9 +195,9 @@ private:
   }
 
   [[nodiscard, gnu::const]]
-  static constexpr StorageType nan_bits() noexcept {
-    constexpr StorageType SIGN_BIT = UINT32_C(1) << (E + M);
-    constexpr StorageType MAX = SIGN_BIT - 1;
+  static constexpr Storage nan_bits() {
+    constexpr Storage SIGN_BIT = UINT32_C(1) << (E + M);
+    constexpr Storage MAX = SIGN_BIT - 1;
 
     if constexpr (N == NanStyle::FNUZ)
       return SIGN_BIT;
@@ -221,16 +209,15 @@ private:
   }
 
   [[nodiscard, gnu::const]]
-  static StorageType to_bits(float x) noexcept {
-    const auto bits = detail::bit_cast<std::uint32_t>(detail::round_to_mantissa<M>(x));
+  static Storage bits_from_float(float x) {
+    const auto bits = bit_cast<std::uint32_t>(round_normal_float_to_mantissa<M>(x));
     const auto sign = bits >> 31 << (E + M);
 
     if (x != x)
       return sign | nan_bits();
 
-    using Trait = std::numeric_limits<float>;
-    const auto diff = std::int32_t{MIN_EXP - Trait::min_exponent} << M;
-    const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (Trait::digits - M)) - diff;
+    const auto diff = std::int32_t{MIN_EXP - FLT_MIN_EXP} << M;
+    const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (FLT_MANT_DIG - M)) - diff;
 
     if (magnitude < 1 << M) {
       if constexpr (D == SubnormalStyle::Fast)
@@ -239,23 +226,22 @@ private:
       if constexpr (D == SubnormalStyle::Reserved)
         return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
 
-      const StorageType ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
+      const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
     return sign | std::min<std::int32_t>(magnitude, inf_bits());
   }
 
   [[nodiscard, gnu::const]]
-  static StorageType to_bits(double x) noexcept {
-    const auto bits = detail::bit_cast<std::uint64_t>(detail::round_to_mantissa<M>(x));
+  static Storage bits_from_double(double x) {
+    const auto bits = bit_cast<std::uint64_t>(round_normal_double_to_mantissa<M>(x));
     const auto sign = bits >> 63 << (E + M);
 
     if (x != x)
       return sign | nan_bits();
 
-    using Trait = std::numeric_limits<double>;
-    const auto diff = std::int64_t{MIN_EXP - Trait::min_exponent} << M;
-    const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (Trait::digits - M)) - diff;
+    const auto diff = std::int64_t{MIN_EXP - DBL_MIN_EXP} << M;
+    const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (DBL_MANT_DIG - M)) - diff;
 
     if (magnitude < 1 << M) {
       if constexpr (D == SubnormalStyle::Fast)
@@ -264,7 +250,7 @@ private:
       if constexpr (D == SubnormalStyle::Reserved)
         return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
 
-      const StorageType ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
+      const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
     return sign | std::min<std::int64_t>(magnitude, inf_bits());
@@ -272,21 +258,24 @@ private:
 
 public:
   Minifloat() = default;
-  explicit Minifloat(float x) : bits_(to_bits(x)) {};
-  explicit Minifloat(double x) : bits_(to_bits(x)) {};
+  explicit Minifloat(float x) : bits_(bits_from_float(x)) {};
+  explicit Minifloat(double x) : bits_(bits_from_double(x)) {};
 
-  static constexpr Minifloat from_bits(StorageType bits) noexcept {
+  static constexpr Minifloat from_bits(Storage bits) {
     const unsigned mask = (1U << (E + M + 1)) - 1U;
     Minifloat result;
     result.bits_ = bits & mask;
     return result;
   }
 
-  [[nodiscard, gnu::pure]] constexpr StorageType bits() const noexcept { return bits_; }
-  [[nodiscard, gnu::pure]] constexpr bool sign() const noexcept { return bits_ >> (E + M); }
+  [[nodiscard, gnu::const]] static Minifloat from_float(float x) { return Minifloat{x}; }
+  [[nodiscard, gnu::const]] static Minifloat from_double(double x) { return Minifloat{x}; }
+
+  [[nodiscard, gnu::pure]] constexpr Storage to_bits() const { return bits_; }
+  [[nodiscard, gnu::pure]] constexpr bool sign() const { return bits_ >> (E + M); }
 
   [[nodiscard, gnu::pure]]
-  constexpr bool isnan() const noexcept {
+  constexpr bool isnan() const {
     if constexpr (N == NanStyle::FNUZ)
       return bits_ == ABS_MASK + 1U;
 
@@ -297,13 +286,13 @@ public:
   }
 
   [[nodiscard, gnu::pure]]
-  constexpr bool signbit() const noexcept {
+  constexpr bool signbit() const {
     return bits_ >> (E + M) & 1;
   }
 
   [[nodiscard, gnu::pure]]
-  constexpr Minifloat abs() const noexcept {
-    const StorageType magnitude = bits_ & ABS_MASK;
+  constexpr Minifloat abs() const {
+    const Storage magnitude = bits_ & ABS_MASK;
 
     if (N == NanStyle::FNUZ && !magnitude)
       return *this;
@@ -317,7 +306,7 @@ public:
   /// is lossy only when then exponent width is too large.  In this case, a
   /// second conversion to float is safe.
   [[nodiscard, gnu::pure]]
-  float to_float() const noexcept {
+  float to_float() const {
     if constexpr (!HAS_EXACT_F32_CONVERSION)
       return static_cast<double>(*this);
 
@@ -333,15 +322,14 @@ public:
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
       return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sgn);
 
-    using Trait = std::numeric_limits<float>;
-    const std::uint32_t shifted = magnitude << (Trait::digits - MANTISSA_DIGITS);
-    const std::uint32_t diff = MIN_EXP - Trait::min_exponent;
-    const std::uint32_t bias = diff << (Trait::digits - 1);
-    return detail::bit_cast<float>(sign() << 31 | (shifted + bias));
+    const std::uint32_t shifted = magnitude << (FLT_MANT_DIG - MANTISSA_DIGITS);
+    const std::uint32_t diff = MIN_EXP - FLT_MIN_EXP;
+    const std::uint32_t bias = diff << (FLT_MANT_DIG - 1);
+    return bit_cast<float>(sign() << 31 | (shifted + bias));
   }
 
   [[nodiscard, gnu::pure]]
-  explicit operator float() const noexcept {
+  explicit operator float() const {
     return to_float();
   }
 
@@ -351,7 +339,7 @@ public:
   /// time.  If the conversion is lossy, the user must explicitly cast to
   /// double.
   [[nodiscard, gnu::pure]]
-  std::enable_if_t<HAS_EXACT_F64_CONVERSION, double> to_double() const noexcept {
+  std::enable_if_t<HAS_EXACT_F64_CONVERSION, double> to_double() const {
     const double sgn = sign() ? -1.0 : 1.0;
     const std::uint64_t magnitude = bits_ & ABS_MASK;
 
@@ -368,7 +356,7 @@ public:
                                   << (std::numeric_limits<double>::digits - MANTISSA_DIGITS);
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
+    return bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
 
   /// Explicit lossy conversion to double
@@ -377,7 +365,7 @@ public:
   /// is out of range.
   template <bool INEXACT = !HAS_EXACT_F64_CONVERSION>
   [[nodiscard, gnu::pure]]
-  std::enable_if_t<INEXACT, double> to_double() const noexcept {
+  std::enable_if_t<INEXACT, double> to_double() const {
     static_assert(std::numeric_limits<double>::radix == RADIX);
     static_assert(std::numeric_limits<double>::digits >= MANTISSA_DIGITS);
     static_assert(std::numeric_limits<double>::is_iec559);
@@ -406,11 +394,11 @@ public:
     const std::uint64_t shifted = magnitude << (std::numeric_limits<double>::digits - (E + M));
     const std::uint64_t diff = MIN_EXP - std::numeric_limits<double>::min_exponent;
     const std::uint64_t bias = diff << (std::numeric_limits<double>::digits - 1);
-    return detail::bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
+    return bit_cast<double>(std::uint64_t{sign()} << 63 | (shifted + bias));
   }
 
   [[nodiscard, gnu::pure]]
-  explicit operator double() const noexcept {
+  explicit operator double() const {
     return to_double();
   }
 };
@@ -418,10 +406,9 @@ public:
 namespace detail {
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-constexpr bool
-are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  const auto a = x.bits();
-  const auto b = y.bits();
+constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
+  const auto a = x.to_bits();
+  const auto b = y.to_bits();
 
   if constexpr (N == NanStyle::FNUZ)
     return false;
@@ -432,21 +419,21 @@ are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noe
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  return (x.bits() == y.bits() && !x.isnan()) || detail::are_different_zeroes(x, y);
+bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
+  return (x.to_bits() == y.to_bits() && !x.isnan()) || detail::are_different_zeroes(x, y);
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   return !(x == y);
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  const auto a = x.bits();
-  const auto b = y.bits();
+bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
+  const auto a = x.to_bits();
+  const auto b = y.to_bits();
   const bool sign = (a | b) >> (E + M) & 1;
 
   if (x.isnan() || y.isnan() || detail::are_different_zeroes(x, y))
@@ -457,9 +444,9 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept 
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  const auto a = x.bits();
-  const auto b = y.bits();
+bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
+  const auto a = x.to_bits();
+  const auto b = y.to_bits();
   const bool sign = (a | b) >> (E + M) & 1;
 
   if (x.isnan() || y.isnan())
@@ -473,35 +460,34 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-bool operator>(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+bool operator>(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   return y < x;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   return y <= x;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcept {
+constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) {
   return x;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
+constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) {
   constexpr auto ABS_MASK = Minifloat<E, M, N, B, D>::ABS_MASK;
-  if (N == NanStyle::FNUZ && (x.bits() & ABS_MASK) == 0)
+  if (N == NanStyle::FNUZ && (x.to_bits() & ABS_MASK) == 0)
     return x;
-  return Minifloat<E, M, N, B, D>::from_bits(x.bits() ^ (ABS_MASK + 1));
+  return Minifloat<E, M, N, B, D>::from_bits(x.to_bits() ^ (ABS_MASK + 1));
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<E, M, N, B, D>
-operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
     return Minifloat<E, M, N, B, D>{x.to_float() + y.to_float()};
   return Minifloat<E, M, N, B, D>{x.to_double() + y.to_double()};
@@ -509,8 +495,7 @@ operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<E, M, N, B, D>
-operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
     return Minifloat<E, M, N, B, D>{x.to_float() - y.to_float()};
   return Minifloat<E, M, N, B, D>{x.to_double() - y.to_double()};
@@ -518,8 +503,7 @@ operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<E, M, N, B, D>
-operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+Minifloat<E, M, N, B, D> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   if constexpr (2 * (M + 1) <= std::numeric_limits<float>::digits)
     return Minifloat<E, M, N, B, D>{x.to_float() * y.to_float()};
   return Minifloat<E, M, N, B, D>{x.to_double() * y.to_double()};
@@ -527,8 +511,7 @@ operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
-Minifloat<E, M, N, B, D>
-operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+Minifloat<E, M, N, B, D> operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   return Minifloat<E, M, N, B, D>{x.to_double() / y.to_double()};
 }
 

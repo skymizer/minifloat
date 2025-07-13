@@ -26,18 +26,16 @@ template <typename T, typename F> static void iterate(F f) {
  */
 static const struct {
   bool operator()(double x, double y) const {
-    using detail::bit_cast;
     return bit_cast<std::uint64_t>(x) == bit_cast<std::uint64_t>(y) || (x != x && y != y);
   }
 
   bool operator()(float x, float y) const {
-    using detail::bit_cast;
     return bit_cast<std::uint32_t>(x) == bit_cast<std::uint32_t>(y) || (x != x && y != y);
   }
 
   template <int E, int M, NanStyle N, int B, SubnormalStyle D>
   bool operator()(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) const {
-    return x.bits() == y.bits() || (x.isnan() && y.isnan());
+    return x.to_bits() == y.to_bits() || (x.isnan() && y.isnan());
   }
 } ARE_IDENTICAL;
 
@@ -79,9 +77,9 @@ using E4M3B11FNUZ = Minifloat<4, 3, NanStyle::FNUZ, 11>;
 // NOLINTEND(bugprone-macro-parentheses)
 
 template <int E, int M> static void test_finite_bits(float x, unsigned bits) {
-  EXPECT_EQ((Minifloat<E, M>{x}.bits()), bits);
-  EXPECT_EQ((Minifloat<E, M, NanStyle::FN>{x}.bits()), bits);
-  EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.bits()), bits);
+  EXPECT_EQ((Minifloat<E, M>{x}.to_bits()), bits);
+  EXPECT_EQ((Minifloat<E, M, NanStyle::FN>{x}.to_bits()), bits);
+  EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.to_bits()), bits);
 }
 
 TEST(SanityCheck, Copying) {
@@ -114,7 +112,7 @@ template <typename T> static void test_equality() {
   EXPECT_EQ(T{FIXED_POINT}.to_double(), FIXED_POINT);
 
   EXPECT_EQ(T{0.0F}, T{-0.0F});
-  EXPECT_EQ(T{0.0F}.bits() == T{-0.0F}.bits(), T::NAN_STYLE == NanStyle::FNUZ);
+  EXPECT_EQ(T{0.0F}.to_bits() == T{-0.0F}.to_bits(), T::NAN_STYLE == NanStyle::FNUZ);
 
   EXPECT_TRUE(T{NAN}.isnan());
   EXPECT_TRUE((std::isnan)(T{NAN}.to_float()));
@@ -150,7 +148,6 @@ template <typename T> static void test_comparison() {
 MAKE_TESTS_FOR_SELECTED_TYPES(ComparisonCheck, test_comparison)
 
 template <typename T> static void test_identity_conversion() {
-  using detail::bit_cast;
   constexpr bool IS_FNUZ = T::NAN_STYLE == NanStyle::FNUZ;
 
   EXPECT_EQ(bit_cast<std::uint32_t>(T{0.0F}.to_float()), 0U);
@@ -159,7 +156,7 @@ template <typename T> static void test_identity_conversion() {
   EXPECT_EQ(bit_cast<std::uint64_t>(T{-0.0F}.to_double()), !IS_FNUZ * 0x8000'0000'0000'0000);
 
   iterate<T>([](T x) {
-    EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.bits()));
+    EXPECT_PRED2(ARE_IDENTICAL, x, T::from_bits(x.to_bits()));
     EXPECT_PRED2(ARE_IDENTICAL, x, T{x.to_float()});
     EXPECT_PRED2(ARE_IDENTICAL, double{x.to_float()}, x.to_double());
   });
@@ -170,21 +167,21 @@ MAKE_TESTS_FOR_SELECTED_TYPES(IdentityConversionCheck, test_identity_conversion)
 template <SubnormalStyle D, int E, int M, NanStyle N, int B>
 static void test_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> x) {
   using T = Minifloat<E, M, N, B, D>;
-  using Bits = typename T::StorageType;
+  using Bits = typename T::Storage;
 
   const T y(x.to_float());
-  EXPECT_TRUE(x.signbit() == y.signbit() || (N == NanStyle::FNUZ && !y.bits()));
+  EXPECT_TRUE(x.signbit() == y.signbit() || (N == NanStyle::FNUZ && !y.to_bits()));
 
   constexpr Bits THRESHOLD = 1U << M;
-  const Bits magnitude = x.abs().bits();
+  const Bits magnitude = x.abs().to_bits();
 
   if (magnitude == 0 || magnitude >= THRESHOLD) {
-    EXPECT_TRUE(x.bits() == y.bits() || (x.isnan() && y.isnan()));
+    EXPECT_TRUE(x.to_bits() == y.to_bits() || (x.isnan() && y.isnan()));
     return;
   }
 
   if constexpr (D == SubnormalStyle::Reserved) {
-    const Bits magnitude = y.abs().bits();
+    const Bits magnitude = y.abs().to_bits();
     EXPECT_TRUE(magnitude == 0 || magnitude == 1U << M);
     return;
   }
@@ -237,7 +234,7 @@ MAKE_TESTS_FOR_SELECTED_TYPES(DivisionCheck, test_exact_division)
 
 template <int E, int M, NanStyle N = NanStyle::FN> static void test_snowball_addition() {
   using T = Minifloat<E, M, N>;
-  using Bits = typename T::StorageType;
+  using Bits = typename T::Storage;
 
   constexpr Bits STEP = 1U << M;
   constexpr Bits SIGNIFICAND = STEP - 1U;
