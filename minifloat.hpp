@@ -355,8 +355,8 @@ public:
   template <bool INEXACT = !HAS_EXACT_F64_CONVERSION>
   [[nodiscard, gnu::pure]]
   std::enable_if_t<INEXACT, double> to_double() const {
-    static_assert(std::numeric_limits<double>::radix == RADIX);
     static_assert(DBL_MANT_DIG >= MANTISSA_DIGITS);
+    static_assert(std::numeric_limits<double>::radix == RADIX);
     static_assert(std::numeric_limits<double>::is_iec559);
 
     const double sign = signbit() ? -1.0 : 1.0;
