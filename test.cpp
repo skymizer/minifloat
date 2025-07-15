@@ -29,16 +29,6 @@ bool same_mini(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   return x.to_bits() == y.to_bits() || (x.isnan() && y.isnan());
 }
 
-/// Test floating-point identity like Object.is in JavaScript
-///
-/// See also `same_double`.
-template <typename T> bool same(T x, T y) {
-  if constexpr (std::is_same_v<std::decay_t<T>, double>)
-    return same_double(x, y);
-
-  return same_mini(x, y);
-}
-
 /// Comparison result similar to `x <=> y` in C++20
 ///
 /// - +2 if `x > y`
@@ -122,7 +112,7 @@ struct CheckUnarySign {
     using T = Minifloat<E, M, N, B>;
 
     return T{0.0F} == -T{0.0F} &&
-           for_all<T>([](T x) { return same<T>(x, +x) && same<T>(x, - -x); });
+           for_all<T>([](T x) { return same_mini(x, +x) && same_mini(x, - -x); });
   }
 };
 
