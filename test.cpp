@@ -12,29 +12,26 @@
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
 namespace {
-/** \brief Test floating-point identity like Object.is in JavaScript
- *
- * This is necessary because NaN != NaN in C++.  We also want to differentiate
- * -0 from +0.  Using this functor, NaNs are considered identical to each
- * other, while +0 and -0 are considered different.
- */
+/// Test floating-point identity like Object.is in JavaScript
+///
+/// This is necessary because NaN != NaN in C++.  We also want to differentiate
+/// -0 from +0.  Using this functor, NaNs are considered identical to each
+/// other, while +0 and -0 are considered different.
 bool same_double(double x, double y) {
   return bit_cast<std::uint64_t>(x) == bit_cast<std::uint64_t>(y) || (x != x && y != y);
 }
 
-/** \brief Test floating-point identity like Object.is in JavaScript
- *
- * See also `same_double`.
- */
+/// Test floating-point identity like Object.is in JavaScript
+///
+/// See also `same_double`.
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 bool same_mini(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   return x.to_bits() == y.to_bits() || (x.isnan() && y.isnan());
 }
 
-/** \brief Test floating-point identity like Object.is in JavaScript
- *
- * See also `same_double`.
- */
+/// Test floating-point identity like Object.is in JavaScript
+///
+/// See also `same_double`.
 template <typename T> bool same(T x, T y) {
   if constexpr (std::is_same_v<std::decay_t<T>, double>)
     return same_double(x, y);
@@ -42,15 +39,21 @@ template <typename T> bool same(T x, T y) {
   return same_mini(x, y);
 }
 
+/// Comparison result similar to `x <=> y` in C++20
+///
+/// - +2 if `x > y`
+/// - -2 if `x < y`
+/// -  0 if `x == y` or not comparable
 template <typename T> int compare(T x, T y) { return (x > y) - (x < y); }
 
+/// Iterate over all possible values of a minifloat type `T`
 template <typename T, typename Predicate> bool for_all(Predicate pred) {
   constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
 
-  for (unsigned i = 0; i < END; ++i)
+  for (unsigned i = 0; i < END; ++i) {
     if (!pred(T::from_bits(i)))
       return false;
-
+  }
   return true;
 }
 
@@ -117,6 +120,7 @@ struct CheckEquality {
 struct CheckUnarySign {
   template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
     using T = Minifloat<E, M, N, B>;
+
     return T{0.0F} == -T{0.0F} &&
            for_all<T>([](T x) { return same<T>(x, +x) && same<T>(x, - -x); });
   }
@@ -125,6 +129,7 @@ struct CheckUnarySign {
 struct CheckComparison {
   template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
     using T = Minifloat<E, M, N, B>;
+
     return for_all<T>([](T x) {
       return for_all<T>([x](T y) {
         return compare(x, y) == compare(x.to_float(), y.to_float()) &&
@@ -231,7 +236,6 @@ template <int E, int M> void test_finite_bits(float x, unsigned bits) {
   EXPECT_EQ((Minifloat<E, M, NanStyle::FN>{x}.to_bits()), bits);
   EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.to_bits()), bits);
 }
-
 } // namespace
 
 TEST(SkymizerMinifloat, TestFiniteBits) {
