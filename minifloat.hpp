@@ -189,7 +189,7 @@ public:
 private:
   Storage bits_;
 
-  static constexpr Storage INF_REPR = [] {
+  static constexpr Storage HUGE_REPR = [] {
     const Storage max = (UINT32_C(1) << (E + M)) - 1;
 
     if constexpr (N == NanStyle::IEEE)
@@ -232,7 +232,7 @@ private:
       const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
-    return sign | std::min<std::int32_t>(magnitude, INF_REPR);
+    return sign | std::min<std::int32_t>(magnitude, HUGE_REPR);
   }
 
   [[nodiscard, gnu::const]]
@@ -256,7 +256,7 @@ private:
       const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
-    return sign | std::min<std::int64_t>(magnitude, INF_REPR);
+    return sign | std::min<std::int64_t>(magnitude, HUGE_REPR);
   }
 
 public:
@@ -285,7 +285,12 @@ public:
     if constexpr (N == NanStyle::FN)
       return (bits_ & ABS_MASK) == ABS_MASK;
 
-    return (bits_ & ABS_MASK) > INF_REPR;
+    return (bits_ & ABS_MASK) > HUGE_REPR;
+  }
+
+  [[nodiscard, gnu::pure]]
+  constexpr bool isinf() const {
+    return N == NanStyle::IEEE && (bits_ & ABS_MASK) == HUGE_REPR;
   }
 
   [[nodiscard, gnu::pure]]
@@ -314,7 +319,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sign);
 
-    if (N == NanStyle::IEEE && magnitude == INF_REPR)
+    if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
       return std::copysign(HUGE_VALF, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -344,7 +349,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sign);
 
-    if (N == NanStyle::IEEE && magnitude == INF_REPR)
+    if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
       return std::copysign(HUGE_VAL, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -373,7 +378,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sign);
 
-    if (N == NanStyle::IEEE && magnitude == INF_REPR)
+    if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
       return std::copysign(HUGE_VAL, sign);
 
     if (magnitude >= static_cast<std::uint64_t>(DBL_MAX_EXP + B) << M)
