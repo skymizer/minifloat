@@ -186,29 +186,27 @@ public:
 private:
   Storage bits_;
 
-  [[nodiscard, gnu::const]]
-  static constexpr Storage inf_bits() {
+  static constexpr Storage INF_REPR = [] {
     const Storage max = (UINT32_C(1) << (E + M)) - 1;
 
     if constexpr (N == NanStyle::IEEE)
       return max << M & max;
 
     return max - (N == NanStyle::FN);
-  }
+  }();
 
-  [[nodiscard, gnu::const]]
-  static constexpr Storage nan_bits() {
-    constexpr Storage SIGN_BIT = UINT32_C(1) << (E + M);
-    constexpr Storage MAX = SIGN_BIT - 1;
+  static constexpr Storage NAN_REPR = []() -> Storage {
+    const Storage signbit = UINT32_C(1) << (E + M);
+    const Storage max = signbit - 1;
 
     if constexpr (N == NanStyle::FNUZ)
-      return SIGN_BIT;
+      return signbit;
 
     if constexpr (N == NanStyle::IEEE)
-      return MAX << (M - 1) & MAX;
+      return max << (M - 1) & max;
 
-    return MAX;
-  }
+    return max;
+  }();
 
   [[nodiscard, gnu::const]]
   static Storage bits_from_float(float x) {
@@ -216,7 +214,7 @@ private:
     const auto sign = bits >> 31 << (E + M);
 
     if (x != x)
-      return sign | nan_bits();
+      return sign | NAN_REPR;
 
     const auto diff = std::int32_t{MIN_EXP - FLT_MIN_EXP} << M;
     const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (FLT_MANT_DIG - M)) - diff;
@@ -231,7 +229,7 @@ private:
       const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
-    return sign | std::min<std::int32_t>(magnitude, inf_bits());
+    return sign | std::min<std::int32_t>(magnitude, INF_REPR);
   }
 
   [[nodiscard, gnu::const]]
@@ -240,7 +238,7 @@ private:
     const auto sign = bits >> 63 << (E + M);
 
     if (x != x)
-      return sign | nan_bits();
+      return sign | NAN_REPR;
 
     const auto diff = std::int64_t{MIN_EXP - DBL_MIN_EXP} << M;
     const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (DBL_MANT_DIG - M)) - diff;
@@ -255,7 +253,7 @@ private:
       const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
-    return sign | std::min<std::int64_t>(magnitude, inf_bits());
+    return sign | std::min<std::int64_t>(magnitude, INF_REPR);
   }
 
 public:
@@ -284,7 +282,7 @@ public:
     if constexpr (N == NanStyle::FN)
       return (bits_ & ABS_MASK) == ABS_MASK;
 
-    return (bits_ & ABS_MASK) > inf_bits();
+    return (bits_ & ABS_MASK) > INF_REPR;
   }
 
   [[nodiscard, gnu::pure]]
@@ -313,7 +311,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sign);
 
-    if (N == NanStyle::IEEE && magnitude == inf_bits())
+    if (N == NanStyle::IEEE && magnitude == INF_REPR)
       return std::copysign(HUGE_VALF, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -343,7 +341,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sign);
 
-    if (N == NanStyle::IEEE && magnitude == inf_bits())
+    if (N == NanStyle::IEEE && magnitude == INF_REPR)
       return std::copysign(HUGE_VAL, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
@@ -372,7 +370,7 @@ public:
     if (isnan())
       return std::copysign(NAN, sign);
 
-    if (N == NanStyle::IEEE && magnitude == inf_bits())
+    if (N == NanStyle::IEEE && magnitude == INF_REPR)
       return std::copysign(HUGE_VAL, sign);
 
     if (magnitude >= static_cast<std::uint64_t>(DBL_MAX_EXP + B) << M)
