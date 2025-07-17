@@ -176,6 +176,13 @@ public:
       DBL_MANT_DIG >= MANTISSA_DIGITS && DBL_MAX_EXP >= MAX_EXP && DBL_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<double>::radix == RADIX && std::numeric_limits<double>::is_iec559;
 
+  static constexpr bool USE_FLT_ADD =
+      FLT_MANT_DIG >= 2 * MANTISSA_DIGITS && FLT_MAX_EXP > MAX_EXP && FLT_MIN_EXP < MIN_EXP;
+
+  static constexpr bool USE_FLT_MUL = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS &&
+                                      FLT_MAX_EXP >= 2 * MAX_EXP &&
+                                      FLT_MIN_EXP - 1 <= 2 * (MIN_EXP - 1);
+
 private:
   Storage bits_;
 
@@ -298,7 +305,7 @@ public:
   [[nodiscard, gnu::pure]]
   float to_float() const {
     if constexpr (!HAS_EXACT_F32_CONVERSION)
-      return static_cast<double>(*this);
+      return to_double();
 
     const float sign = signbit() ? -1.0F : 1.0F;
     const std::uint32_t magnitude = bits_ & ABS_MASK;
@@ -478,7 +485,7 @@ constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) {
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  if constexpr (2 * (M + 1) <= FLT_MANT_DIG)
+  if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_ADD)
     return Minifloat<E, M, N, B, D>{x.to_float() + y.to_float()};
 
   return Minifloat<E, M, N, B, D>{x.to_double() + y.to_double()};
@@ -487,7 +494,7 @@ Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  if constexpr (2 * (M + 1) <= FLT_MANT_DIG)
+  if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_ADD)
     return Minifloat<E, M, N, B, D>{x.to_float() - y.to_float()};
 
   return Minifloat<E, M, N, B, D>{x.to_double() - y.to_double()};
@@ -496,7 +503,7 @@ Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 Minifloat<E, M, N, B, D> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  if constexpr (2 * (M + 1) <= FLT_MANT_DIG)
+  if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_MUL)
     return Minifloat<E, M, N, B, D>{x.to_float() * y.to_float()};
 
   return Minifloat<E, M, N, B, D>{x.to_double() * y.to_double()};
