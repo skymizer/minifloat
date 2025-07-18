@@ -131,6 +131,9 @@ enum struct SubnormalStyle {
   Fast,
 };
 
+/// FP classification helper for `Minifloat`
+template <NanStyle> struct FpClassifier;
+
 /// Configurable signed floating point type
 ///
 /// \tparam E - Exponent width
@@ -148,6 +151,8 @@ template <
     int E, int M, NanStyle N = NanStyle::IEEE, int B = default_bias(E),
     SubnormalStyle D = SubnormalStyle::Precise>
 class Minifloat {
+  friend FpClassifier<N>;
+
 public:
   static constexpr int EXPONENT_BITS = E;
   static constexpr int MANTISSA_BITS = M;
@@ -277,6 +282,15 @@ public:
   [[nodiscard, gnu::pure]] constexpr Storage to_bits() const { return bits_; }
   [[nodiscard, gnu::pure]] constexpr bool signbit() const { return bits_ >> (E + M) & 1; }
 
+  /// Check if the number is nonzero
+  [[nodiscard, gnu::pure]]
+  constexpr explicit operator bool() const {
+    if constexpr (N == NanStyle::FNUZ)
+      return bits_ != 0;
+
+    return (bits_ & ABS_MASK) != 0;
+  }
+
   [[nodiscard, gnu::pure]]
   constexpr bool is_nan() const {
     if constexpr (N == NanStyle::FNUZ)
@@ -311,6 +325,11 @@ public:
   constexpr bool is_subnormal() const {
     const Storage abs_bits = bits_ & ABS_MASK;
     return 0 < abs_bits && abs_bits < (1U << M);
+  }
+
+  [[nodiscard, gnu::pure]]
+  constexpr int classify() const {
+    return FpClassifier<N>::classify(*this);
   }
 
   [[nodiscard, gnu::pure]]
@@ -422,6 +441,65 @@ public:
   [[nodiscard, gnu::pure]]
   explicit operator double() const {
     return to_double();
+  }
+};
+
+template <> struct FpClassifier<NanStyle::IEEE> {
+  template <int E, int M, int B, SubnormalStyle D>
+  static constexpr int classify(Minifloat<E, M, NanStyle::IEEE, B, D> x) {
+    const decltype(x.ABS_MASK) bits = x.to_bits() & x.ABS_MASK;
+
+    if (bits > x.HUGE_REPR)
+      return FP_NAN;
+
+    if (bits == x.HUGE_REPR)
+      return FP_INFINITE;
+
+    if (bits >= 1U << M)
+      return FP_NORMAL;
+
+    if (bits > 0)
+      return FP_SUBNORMAL;
+
+    return FP_ZERO;
+  }
+};
+
+template <> struct FpClassifier<NanStyle::FN> {
+  template <int E, int M, int B, SubnormalStyle D>
+  static constexpr int classify(Minifloat<E, M, NanStyle::FN, B, D> x) {
+    static_assert(x.NAN_REPR == x.ABS_MASK);
+    const decltype(x.ABS_MASK) bits = x.to_bits() & x.ABS_MASK;
+
+    if (bits == x.ABS_MASK)
+      return FP_NAN;
+
+    if (bits >= 1U << M)
+      return FP_NORMAL;
+
+    if (bits > 0)
+      return FP_SUBNORMAL;
+
+    return FP_ZERO;
+  }
+};
+
+template <> struct FpClassifier<NanStyle::FNUZ> {
+  template <int E, int M, int B, SubnormalStyle D>
+  static constexpr int classify(Minifloat<E, M, NanStyle::FNUZ, B, D> x) {
+    static_assert(x.NAN_REPR == x.ABS_MASK + 1U);
+    const decltype(x.ABS_MASK) bits = x.to_bits() & x.ABS_MASK;
+
+    if (x.is_nan())
+      return FP_NAN;
+
+    if (bits >= 1U << M)
+      return FP_NORMAL;
+
+    if (bits > 0)
+      return FP_SUBNORMAL;
+
+    return FP_ZERO;
   }
 };
 

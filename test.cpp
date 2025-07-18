@@ -129,6 +129,29 @@ struct CheckComparison {
   }
 };
 
+struct CheckClassification {
+  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
+    using T = Minifloat<E, M, N, B>;
+
+    return for_all<T>([](T x) {
+      constexpr int NUM_CATEGORIES = 5;
+      bool categories[NUM_CATEGORIES] = {};
+
+      categories[FP_NAN] = x.is_nan();
+      categories[FP_INFINITE] = x.is_infinite();
+      categories[FP_ZERO] = !x;
+      categories[FP_SUBNORMAL] = x.is_subnormal();
+      categories[FP_NORMAL] = x.is_normal();
+
+      for (int i = 0; i < NUM_CATEGORIES; ++i) {
+        if ((x.classify() == i) != categories[i])
+          return false;
+      }
+      return true;
+    });
+  }
+};
+
 struct CheckIdentityConversion {
   template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
     using T = Minifloat<E, M, N, B>;
@@ -257,6 +280,7 @@ TEST(SkymizerMinifloat, TestCopying) { test_selected_types<CheckCopying>(); }
 TEST(SkymizerMinifloat, TestEquality) { test_selected_types<CheckEquality>(); }
 TEST(SkymizerMinifloat, TestUnarySign) { test_selected_types<CheckUnarySign>(); }
 TEST(SkymizerMinifloat, TestComparison) { test_selected_types<CheckComparison>(); }
+TEST(SkymizerMinifloat, TestClassification) { test_selected_types<CheckClassification>(); }
 TEST(SkymizerMinifloat, TestIdentityConversion) { test_selected_types<CheckIdentityConversion>(); }
 
 TEST(SkymizerMinifloat, TestSubnormalConversion) {
