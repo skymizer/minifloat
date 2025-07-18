@@ -181,11 +181,9 @@ public:
       DBL_MANT_DIG >= MANTISSA_DIGITS && DBL_MAX_EXP >= MAX_EXP && DBL_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<double>::radix == RADIX && std::numeric_limits<double>::is_iec559;
 
-  // clang-format off
-  static constexpr bool USE_FLT_ADD = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS &&
-                                      FLT_MAX_EXP > MAX_EXP &&
-                                      FLT_MIN_EXP < MIN_EXP;
-  // clang-format on
+  static constexpr bool USE_FLT_ADD = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS && //
+                                      (FLT_MAX_EXP > MAX_EXP) &&             //
+                                      (FLT_MIN_EXP < MIN_EXP);
 
   static constexpr bool USE_FLT_MUL = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS &&
                                       FLT_MAX_EXP >= 2 * MAX_EXP &&

@@ -134,20 +134,12 @@ struct CheckClassification {
     using T = Minifloat<E, M, N, B>;
 
     return for_all<T>([](T x) {
-      constexpr int NUM_CATEGORIES = 5;
-      bool categories[NUM_CATEGORIES] = {};
-
-      categories[FP_NAN] = x.is_nan();
-      categories[FP_INFINITE] = x.is_infinite();
-      categories[FP_ZERO] = !x;
-      categories[FP_SUBNORMAL] = x.is_subnormal();
-      categories[FP_NORMAL] = x.is_normal();
-
-      for (int i = 0; i < NUM_CATEGORIES; ++i) {
-        if ((x.classify() == i) != categories[i])
-          return false;
-      }
-      return true;
+      const int category = x.is_nan() << FP_NAN |             //
+                           x.is_infinite() << FP_INFINITE |   //
+                           !x << FP_ZERO |                    //
+                           x.is_subnormal() << FP_SUBNORMAL | //
+                           x.is_normal() << FP_NORMAL;
+      return category == 1 << x.classify();
     });
   }
 };
