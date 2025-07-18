@@ -294,6 +294,14 @@ public:
   }
 
   [[nodiscard, gnu::pure]]
+  constexpr bool isfinite() const {
+    if constexpr (N == NanStyle::IEEE)
+      return (bits_ & ABS_MASK) < HUGE_REPR;
+    
+    return !isnan();
+  }
+
+  [[nodiscard, gnu::pure]]
   constexpr Minifloat abs() const {
     const Storage magnitude = bits_ & ABS_MASK;
 
