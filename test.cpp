@@ -26,7 +26,7 @@ bool same_double(double x, double y) {
 /// See also `same_double`.
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 bool same_mini(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  return x.to_bits() == y.to_bits() || (x.isnan() && y.isnan());
+  return x.to_bits() == y.to_bits() || (x.is_nan() && y.is_nan());
 }
 
 /// Comparison result similar to `x <=> y` in C++20
@@ -99,11 +99,11 @@ struct CheckEquality {
     EXPECT_EQ(T{0.0F}, T{-0.0F});
     EXPECT_EQ(T{0.0F}.to_bits() == T{-0.0F}.to_bits(), N == NanStyle::FNUZ);
 
-    EXPECT_TRUE(T{NAN}.isnan());
+    EXPECT_TRUE(T{NAN}.is_nan());
     EXPECT_TRUE((std::isnan)(T{NAN}.to_float()));
     EXPECT_TRUE((std::isnan)(T{NAN}.to_double()));
 
-    return for_all<T>([](T x) { return (x != x) == x.isnan(); });
+    return for_all<T>([](T x) { return (x != x) == x.is_nan(); });
   }
 };
 
@@ -163,7 +163,7 @@ bool check_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> p
   const Bits magnitude = prec.abs().to_bits();
 
   if (magnitude == 0 || magnitude >= THRESHOLD)
-    return prec.to_bits() == conv.to_bits() || (prec.isnan() && conv.isnan());
+    return prec.to_bits() == conv.to_bits() || (prec.is_nan() && conv.is_nan());
 
   if constexpr (D == SubnormalStyle::Reserved) {
     const Bits magnitude = conv.abs().to_bits();

@@ -278,7 +278,7 @@ public:
   [[nodiscard, gnu::pure]] constexpr bool signbit() const { return bits_ >> (E + M) & 1; }
 
   [[nodiscard, gnu::pure]]
-  constexpr bool isnan() const {
+  constexpr bool is_nan() const {
     if constexpr (N == NanStyle::FNUZ)
       return bits_ == ABS_MASK + 1U;
 
@@ -289,16 +289,28 @@ public:
   }
 
   [[nodiscard, gnu::pure]]
-  constexpr bool isinf() const {
+  constexpr bool is_infinite() const {
     return N == NanStyle::IEEE && (bits_ & ABS_MASK) == HUGE_REPR;
   }
 
   [[nodiscard, gnu::pure]]
-  constexpr bool isfinite() const {
+  constexpr bool is_finite() const {
     if constexpr (N == NanStyle::IEEE)
       return (bits_ & ABS_MASK) < HUGE_REPR;
-    
-    return !isnan();
+
+    return !is_nan();
+  }
+
+  [[nodiscard, gnu::pure]]
+  constexpr bool is_normal() const {
+    return is_finite() && (bits_ & ABS_MASK) >= (1U << M);
+  }
+
+  /// Check if the number is nonzero subnormal
+  [[nodiscard, gnu::pure]]
+  constexpr bool is_subnormal() const {
+    const Storage abs_bits = bits_ & ABS_MASK;
+    return 0 < abs_bits && abs_bits < (1U << M);
   }
 
   [[nodiscard, gnu::pure]]
@@ -324,7 +336,7 @@ public:
     const float sign = signbit() ? -1.0F : 1.0F;
     const std::uint32_t magnitude = bits_ & ABS_MASK;
 
-    if (isnan())
+    if (is_nan())
       return std::copysign(NAN, sign);
 
     if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
@@ -354,7 +366,7 @@ public:
     const double sign = signbit() ? -1.0 : 1.0;
     const std::uint64_t magnitude = bits_ & ABS_MASK;
 
-    if (isnan())
+    if (is_nan())
       return std::copysign(NAN, sign);
 
     if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
@@ -383,7 +395,7 @@ public:
     const double sign = signbit() ? -1.0 : 1.0;
     const std::uint64_t magnitude = bits_ & ABS_MASK;
 
-    if (isnan())
+    if (is_nan())
       return std::copysign(NAN, sign);
 
     if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
@@ -430,7 +442,7 @@ constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 [[gnu::const]]
 bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
-  return (x.to_bits() == y.to_bits() && !x.isnan()) || detail::are_different_zeroes(x, y);
+  return (x.to_bits() == y.to_bits() && !x.is_nan()) || detail::are_different_zeroes(x, y);
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
@@ -446,7 +458,7 @@ bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   const auto b = y.to_bits();
   const bool sign = (a | b) >> (E + M) & 1;
 
-  if (x.isnan() || y.isnan() || detail::are_different_zeroes(x, y))
+  if (x.is_nan() || y.is_nan() || detail::are_different_zeroes(x, y))
     return false;
 
   return sign ? a > b : a < b;
@@ -459,7 +471,7 @@ bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   const auto b = y.to_bits();
   const bool sign = (a | b) >> (E + M) & 1;
 
-  if (x.isnan() || y.isnan())
+  if (x.is_nan() || y.is_nan())
     return false;
 
   if (detail::are_different_zeroes(x, y))
