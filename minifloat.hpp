@@ -652,7 +652,7 @@ struct IntegerDecode {
 //! [`num::traits::float::FloatCore::integer_decode`](https://docs.rs/num/0.4.3/num/traits/float/trait.FloatCore.html#tymethod.integer_decode).
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x) {
-  constexpr int BIAS = Minifloat<E, M, N, B, D>::MAX_EXP + M - 1;
+  constexpr int BIAS = M + 2 - Minifloat<E, M, N, B, D>::MIN_EXP;
   const auto bit_mask = [](int width) { return width > 0 ? UINT32_MAX >> (32 - width) : 0; };
 
   const auto bits = x.to_bits();

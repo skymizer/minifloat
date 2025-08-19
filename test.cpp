@@ -202,6 +202,29 @@ struct CheckSubnormalConversion {
   }
 };
 
+struct CheckIntegerDecodeReconstruction {
+  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
+    using T = Minifloat<E, M, N, B>;
+    return for_all<T>([](T x) {
+      if (x.is_nan() || x.is_infinite())
+        return true;
+
+      const auto parts = integer_decode(x);
+      const double integer = parts.sign * static_cast<std::int64_t>(parts.mantissa);
+
+      const double y = std::ldexp(integer, +parts.exponent);
+      const double z = x.to_float();
+
+      if (y != z) {
+        std::cout << y << ',' << z << ' ' << E << ',' << M << '\n';
+        EXPECT_TRUE(false);
+      }
+
+      return true;
+    });
+  }
+};
+
 template <typename Operation> struct CheckExactArithmetics {
   template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
     using T = Minifloat<E, M, N, B>;
@@ -277,6 +300,10 @@ TEST(SkymizerMinifloat, TestIdentityConversion) { test_selected_types<CheckIdent
 
 TEST(SkymizerMinifloat, TestSubnormalConversion) {
   test_selected_types<CheckSubnormalConversion>();
+}
+
+TEST(SkymizerMinifloat, TestIntegerDecodeReconstruction) {
+  test_selected_types<CheckIntegerDecodeReconstruction>();
 }
 
 TEST(SkymizerMinifloat, TestExactAddition) {
