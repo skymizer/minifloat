@@ -22,13 +22,13 @@
 #include <cstring>
 #endif
 
-/// Namespace for Skymizer
+//! Namespace for Skymizer
 namespace skymizer {
 
-/// Namespace for the minifloat library
+//! Namespace for the minifloat library
 namespace minifloat {
 
-/// Backport of C++20 std::bit_cast
+//! Backport of C++20 std::bit_cast
 template <typename To, typename From>
 [[nodiscard, gnu::const]]
 To bit_cast(const From &from) {
@@ -74,79 +74,79 @@ double round_normal_double_to_mantissa(double x) {
 
 constexpr int default_bias(int exponent_width) { return (1 << (exponent_width - 1)) - 1; }
 
-/// NaN encoding style
-///
-/// The variants follow [LLVM/MLIR naming conventions][llvm] derived from
-/// their differences to [IEEE 754][ieee].
-///
-/// [llvm]: https://llvm.org/doxygen/structllvm_1_1APFloatBase.html
-/// [ieee]: https://en.wikipedia.org/wiki/IEEE_754
+//! NaN encoding style
+//!
+//! The variants follow [LLVM/MLIR naming conventions][llvm] derived from
+//! their differences to [IEEE 754][ieee].
+//!
+//! [llvm]: https://llvm.org/doxygen/structllvm_1_1APFloatBase.html
+//! [ieee]: https://en.wikipedia.org/wiki/IEEE_754
 enum struct NanStyle {
-  /// IEEE 754 NaN encoding
-  ///
-  /// The maximum exponent is reserved for non-finite numbers.  The zero
-  /// mantissa stands for infinity, while any other value represents a NaN.
+  //! IEEE 754 NaN encoding
+  //!
+  //! The maximum exponent is reserved for non-finite numbers.  The zero
+  //! mantissa stands for infinity, while any other value represents a NaN.
   IEEE,
 
-  /// `FN` suffix as in LLVM/MLIR
-  ///
-  /// `F` is for finite, `N` for a special NaN encoding.  There are no
-  /// infinities.  The maximum magnitude is reserved for NaNs, where the
-  /// exponent and mantissa are all ones.
+  //! `FN` suffix as in LLVM/MLIR
+  //!
+  //! `F` is for finite, `N` for a special NaN encoding.  There are no
+  //! infinities.  The maximum magnitude is reserved for NaNs, where the
+  //! exponent and mantissa are all ones.
   FN,
 
-  /// `FNUZ` suffix as in LLVM/MLIR
-  ///
-  /// `F` is for finite, `N` for a special NaN encoding, `UZ` for unsigned
-  /// zero.  There are no infinities.  The negative zero (&minus;0.0)
-  /// representation is reserved for NaN.  As a result, there is only one
-  /// (+0.0) unsigned zero.
+  //! `FNUZ` suffix as in LLVM/MLIR
+  //!
+  //! `F` is for finite, `N` for a special NaN encoding, `UZ` for unsigned
+  //! zero.  There are no infinities.  The negative zero (&minus;0.0)
+  //! representation is reserved for NaN.  As a result, there is only one
+  //! (+0.0) unsigned zero.
   FNUZ,
 };
 
-/// Subnormal handling style
+//! Subnormal handling style
 enum struct SubnormalStyle {
-  /// IEEE 754 subnormal numbers
-  ///
-  /// Subnormal numbers have the smallest exponent (same as the smallest normal
-  /// numbers) but without the implicit leading bit.  Subnormal numbers provide
-  /// a smooth transition from zero to normal numbers.
+  //! IEEE 754 subnormal numbers
+  //!
+  //! Subnormal numbers have the smallest exponent (same as the smallest normal
+  //! numbers) but without the implicit leading bit.  Subnormal numbers provide
+  //! a smooth transition from zero to normal numbers.
   Precise,
 
-  /// Do not use subnormal representations
-  ///
-  /// I (jdh8) do not recommend this option, but one of our users requested it.
-  /// If you want to reserve floating-point representations, I strongly suggest
-  /// using NaN boxing instead.
+  //! Do not use subnormal representations
+  //!
+  //! I (jdh8) do not recommend this option, but one of our users requested it.
+  //! If you want to reserve floating-point representations, I strongly suggest
+  //! using NaN boxing instead.
   Reserved,
 
-  /// I am speed
-  ///
-  /// Subnormal numbers are valid representations, but they are not
-  /// guaranteed to be precise.  This is useful for fast emulation of
-  /// subnormal numbers.
-  ///
-  /// The fast representations still have a correct sign and a magnitude between
-  /// zero and the smallest positive normal number.
+  //! I am speed
+  //!
+  //! Subnormal numbers are valid representations, but they are not
+  //! guaranteed to be precise.  This is useful for fast emulation of
+  //! subnormal numbers.
+  //!
+  //! The fast representations still have a correct sign and a magnitude between
+  //! zero and the smallest positive normal number.
   Fast,
 };
 
-/// FP classification helper for `Minifloat`
+//! FP classification helper for `Minifloat`
 template <NanStyle> struct FpClassifier;
 
-/// Configurable signed floating point type
-///
-/// \tparam E - Exponent width
-/// \tparam M - Mantissa (significand) width
-/// \tparam N - NaN encoding style
-/// \tparam B - Exponent bias
-/// \tparam D - Subnormal (denormal) encoding style
-///
-/// Constraints:
-/// - E + M < 16
-/// - E >= 2
-/// - M >= 0 (M > 0 if N is `NanStyle::IEEE`) (∞ ≠ NaN)
-/// - D = `SubnormalStyle::Precise` if M = 0
+//! Configurable signed floating point type
+//!
+//! \tparam E - Exponent width
+//! \tparam M - Mantissa (significand) width
+//! \tparam N - NaN encoding style
+//! \tparam B - Exponent bias
+//! \tparam D - Subnormal (denormal) encoding style
+//!
+//! Constraints:
+//! - E + M < 16
+//! - E >= 2
+//! - M >= 0 (M > 0 if N is `NanStyle::IEEE`) (∞ ≠ NaN)
+//! - D = `SubnormalStyle::Precise` if M = 0
 template <
     int E, int M, NanStyle N = NanStyle::IEEE, int B = default_bias(E),
     SubnormalStyle D = SubnormalStyle::Precise>
@@ -280,7 +280,7 @@ public:
   [[nodiscard, gnu::pure]] constexpr Storage to_bits() const { return bits_; }
   [[nodiscard, gnu::pure]] constexpr bool signbit() const { return bits_ >> (E + M) & 1; }
 
-  /// Check if the number is nonzero
+  //! Check if the number is nonzero
   [[nodiscard, gnu::pure]]
   constexpr explicit operator bool() const {
     if constexpr (N == NanStyle::FNUZ)
@@ -318,7 +318,7 @@ public:
     return is_finite() && (bits_ & ABS_MASK) >= (1U << M);
   }
 
-  /// Check if the number is nonzero subnormal
+  //! Check if the number is nonzero subnormal
   [[nodiscard, gnu::pure]]
   constexpr bool is_subnormal() const {
     const Storage abs_bits = bits_ & ABS_MASK;
@@ -340,11 +340,11 @@ public:
     return from_bits(magnitude);
   }
 
-  /// Explicit conversion to float
-  ///
-  /// The lossy branch makes use of conversion to double.  Conversion to double
-  /// is lossy only when then exponent width is too large.  In this case, a
-  /// second conversion to float is safe.
+  //! Explicit conversion to float
+  //!
+  //! The lossy branch makes use of conversion to double.  Conversion to double
+  //! is lossy only when then exponent width is too large.  In this case, a
+  //! second conversion to float is safe.
   [[nodiscard, gnu::pure]]
   float to_float() const {
     if constexpr (!HAS_EXACT_F32_CONVERSION)
@@ -373,11 +373,11 @@ public:
     return to_float();
   }
 
-  /// Implicit lossless conversion to double
-  ///
-  /// The conversion is only enabled if it is proven to be lossless at compile
-  /// time.  If the conversion is lossy, the user must explicitly cast to
-  /// double.
+  //! Implicit lossless conversion to double
+  //!
+  //! The conversion is only enabled if it is proven to be lossless at compile
+  //! time.  If the conversion is lossy, the user must explicitly cast to
+  //! double.
   [[nodiscard, gnu::pure]]
   std::enable_if_t<HAS_EXACT_F64_CONVERSION, double> to_double() const {
     const double sign = signbit() ? -1.0 : 1.0;
@@ -398,10 +398,10 @@ public:
     return bit_cast<double>(std::uint64_t{signbit()} << 63 | (shifted + bias));
   }
 
-  /// Explicit lossy conversion to double
-  ///
-  /// This variant assumes that the conversion is lossy only when the exponent
-  /// is out of range.
+  //! Explicit lossy conversion to double
+  //!
+  //! This variant assumes that the conversion is lossy only when the exponent
+  //! is out of range.
   template <bool INEXACT = !HAS_EXACT_F64_CONVERSION>
   [[nodiscard, gnu::pure]]
   std::enable_if_t<INEXACT, double> to_double() const {

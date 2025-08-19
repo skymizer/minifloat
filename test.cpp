@@ -12,31 +12,31 @@
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
 namespace {
-/// Test floating-point identity like Object.is in JavaScript
-///
-/// This is necessary because NaN != NaN in C++.  We also want to differentiate
-/// -0 from +0.  Using this functor, NaNs are considered identical to each
-/// other, while +0 and -0 are considered different.
+//! Test floating-point identity like Object.is in JavaScript
+//!
+//! This is necessary because NaN != NaN in C++.  We also want to differentiate
+//! -0 from +0.  Using this functor, NaNs are considered identical to each
+//! other, while +0 and -0 are considered different.
 bool same_double(double x, double y) {
   return bit_cast<std::uint64_t>(x) == bit_cast<std::uint64_t>(y) || (x != x && y != y);
 }
 
-/// Test floating-point identity like Object.is in JavaScript
-///
-/// See also `same_double`.
+//! Test floating-point identity like Object.is in JavaScript
+//!
+//! See also `same_double`.
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 bool same_mini(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
   return x.to_bits() == y.to_bits() || (x.is_nan() && y.is_nan());
 }
 
-/// Comparison result similar to `x <=> y` in C++20
-///
-/// - +2 if `x > y`
-/// - -2 if `x < y`
-/// -  0 if `x == y` or not comparable
+//! Comparison result similar to `x <=> y` in C++20
+//!
+//! - +2 if `x > y`
+//! - -2 if `x < y`
+//! -  0 if `x == y` or not comparable
 template <typename T> int compare(T x, T y) { return (x > y) - (x < y); }
 
-/// Iterate over all possible values of a minifloat type `T`
+//! Iterate over all possible values of a minifloat type `T`
 template <typename T, typename Predicate> bool for_all(Predicate pred) {
   constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
 
