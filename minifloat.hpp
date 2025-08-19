@@ -180,7 +180,7 @@ public:
       std::numeric_limits<double>::radix == 2 && std::numeric_limits<double>::is_iec559;
 
   static constexpr bool USE_FLT_ADD = FLT_MANT_DIG >= 2 * MANTISSA_BITS && //
-                                      (FLT_MAX_EXP > MAX_EXP) &&             //
+                                      (FLT_MAX_EXP > MAX_EXP) &&           //
                                       (FLT_MIN_EXP < MIN_EXP);
 
   static constexpr bool USE_FLT_MUL = FLT_MANT_DIG >= 2 * MANTISSA_BITS &&
@@ -274,6 +274,20 @@ public:
 
   [[nodiscard, gnu::const]] static Minifloat from_float(float x) { return Minifloat{x}; }
   [[nodiscard, gnu::const]] static Minifloat from_double(double x) { return Minifloat{x}; }
+
+  //! Minimum positive value, which is probably subnormal
+  //!
+  //! This can be normal when bitwidth is low.  Therefore, it is named after
+  //! `FLT_TRUE_MIN` instead of `numeric_limits::denorm_min()`.
+  [[nodiscard, gnu::const]] static Minifloat true_min() { return from_bits(1); }
+
+  /// Minimum positive normal value
+  [[nodiscard, gnu::const]] static Minifloat min() { return from_bits(1 << M); }
+
+  /// Maximum finite value
+  [[nodiscard, gnu::const]] static Minifloat max() {
+    return from_bits(HUGE_REPR - (N == NanStyle::IEEE));
+  }
 
   [[nodiscard, gnu::pure]] constexpr Storage to_bits() const { return bits_; }
   [[nodiscard, gnu::pure]] constexpr bool signbit() const { return bits_ >> (E + M) & 1; }
@@ -621,8 +635,7 @@ Minifloat<E, M, N, B, D> operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
 //! `sign * mantissa * 2**exponent` unless it is NaN.
 //!
 //! See also `integer_decode`.
-struct IntegerDecode
-{
+struct IntegerDecode {
   std::uint64_t mantissa;
   std::int16_t exponent;
   std::int8_t sign;
@@ -638,8 +651,7 @@ struct IntegerDecode
 //! See Rust
 //! [`num::traits::float::FloatCore::integer_decode`](https://docs.rs/num/0.4.3/num/traits/float/trait.FloatCore.html#tymethod.integer_decode).
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x)
-{
+IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x) {
   constexpr int BIAS = Minifloat<E, M, N, B, D>::MAX_EXP + M - 1;
   const auto bit_mask = [](int width) { return width > 0 ? UINT32_MAX >> (32 - width) : 0; };
 
@@ -651,9 +663,9 @@ IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x)
   const std::uint32_t mantissa = exponent == 0 ? payload << 1 : payload | (UINT32_C(1) << M);
 
   return {
-    mantissa,
-    static_cast<std::int16_t>(exponent - BIAS),
-    static_cast<std::int8_t>(sign),
+      mantissa,
+      static_cast<std::int16_t>(exponent - BIAS),
+      static_cast<std::int8_t>(sign),
   };
 }
 
