@@ -617,6 +617,48 @@ Minifloat<E, M, N, B, D> operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
   return Minifloat<E, M, N, B, D>{x.to_double() / y.to_double()};
 }
 
+//! Mantissa, base 2 exponent, and sign as integer
+//!
+//! The original floating point number can be reconstructed as
+//! `sign * mantissa * 2**exponent` unless it is NaN.
+//!
+//! See also `integer_decode`.
+struct IntegerDecode
+{
+  std::uint64_t mantissa;
+  std::int16_t exponent;
+  std::int8_t sign;
+};
+
+//! Decode the argument into mantissa, exponent, and sign
+//!
+//! Note that NaN produces undefined results.  Infinities are decoded as results
+//! that overflow in reconstruction.
+//!
+//! **Additional promise**: LSB of `mantissa` aligns with ULP of a normal `x`.
+//!
+//! See Rust
+//! [`num::traits::float::FloatCore::integer_decode`](https://docs.rs/num/0.4.3/num/traits/float/trait.FloatCore.html#tymethod.integer_decode).
+template <int E, int M, NanStyle N, int B, SubnormalStyle D>
+IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x)
+{
+  constexpr int BIAS = Minifloat<E, M, N, B, D>::MAX_EXP + M - 1;
+  const auto bit_mask = [](int width) { return width > 0 ? UINT32_MAX >> (32 - width) : 0; };
+
+  const auto bits = x.to_bits();
+  const int sign = bits >> (E + M) ? -1 : 1;
+  const int exponent = bits >> M & bit_mask(E);
+
+  const std::uint32_t payload = bits & bit_mask(M);
+  const std::uint32_t mantissa = exponent == 0 ? payload << 1 : payload | (UINT32_C(1) << M);
+
+  return {
+    mantissa,
+    static_cast<std::int16_t>(exponent - BIAS),
+    static_cast<std::int8_t>(sign),
+  };
+}
+
 #define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                                                     \
   using E##EXP##M##MANT = Minifloat<EXP, MANT>;                                                    \
   using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NanStyle::FN>;                                  \
