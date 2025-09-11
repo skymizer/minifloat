@@ -230,7 +230,7 @@ private:
       if constexpr (D == SubnormalStyle::Reserved)
         return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
 
-      const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_BITS - MIN_EXP));
+      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_BITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
     return sign | std::min<std::int32_t>(magnitude, HUGE_REPR);
@@ -254,7 +254,7 @@ private:
       if constexpr (D == SubnormalStyle::Reserved)
         return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
 
-      const Storage ticks = std::rint(std::abs(x) * std::exp2(MANTISSA_BITS - MIN_EXP));
+      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_BITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
     return sign | std::min<std::int64_t>(magnitude, HUGE_REPR);
