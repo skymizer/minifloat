@@ -8,6 +8,7 @@
 
 #include "minifloat.hpp"
 #include <gtest/gtest.h>
+#include <cassert>
 
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
@@ -130,16 +131,35 @@ struct CheckComparison {
 };
 
 struct CheckClassification {
+  // Safe on all platforms, fast on glibc
+  constexpr static int to_shift(int category) {
+    switch (category) {
+    case FP_NAN:
+      return 0;
+    case FP_INFINITE:
+      return 1;
+    case FP_ZERO:
+      return 2;
+    case FP_SUBNORMAL:
+      return 3;
+    case FP_NORMAL:
+      return 4;
+    default:
+      assert(!"Invalid floating-point category");
+      return category;
+    }
+  }
+
   template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
     using T = Minifloat<E, M, N, B>;
 
     return for_all<T>([](T x) {
-      const int category = x.is_nan() << FP_NAN |             //
-                           x.is_infinite() << FP_INFINITE |   //
-                           !x << FP_ZERO |                    //
-                           x.is_subnormal() << FP_SUBNORMAL | //
-                           x.is_normal() << FP_NORMAL;
-      return category == 1 << x.classify();
+      const int category = x.is_nan() << to_shift(FP_NAN) |             //
+                           x.is_infinite() << to_shift(FP_INFINITE) |   //
+                           !x << to_shift(FP_ZERO) |                    //
+                           x.is_subnormal() << to_shift(FP_SUBNORMAL) | //
+                           x.is_normal() << to_shift(FP_NORMAL);
+      return category == 1 << to_shift(x.classify());
     });
   }
 };
