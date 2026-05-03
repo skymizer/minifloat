@@ -303,6 +303,16 @@ TEST(SkymizerMinifloat, TestFiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
+TEST(SkymizerMinifloat, TestDefaultConstructionIsZero) {
+  // bits_ is value-initialized; a default-constructed Minifloat must read as
+  // a positive zero rather than being indeterminate UB.
+  using T = Minifloat<3, 4>;
+  T x;
+  EXPECT_EQ(x.to_bits(), 0u);
+  EXPECT_FALSE(static_cast<bool>(x));
+  EXPECT_FALSE(x.signbit());
+}
+
 TEST(SkymizerMinifloat, TestLargeExponentInstantiation) {
   // Regression for the previously latent SFINAE bug: when
   // HAS_EXACT_F64_CONVERSION is false, the lossless to_double overload used a

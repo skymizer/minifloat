@@ -189,7 +189,7 @@ public:
                                       FLT_MIN_EXP - 1 <= 2 * (MIN_EXP - 1);
 
 private:
-  Storage bits_;
+  Storage bits_{};
 
   static constexpr Storage HUGE_REPR = [] {
     const Storage max = (UINT32_C(1) << (E + M)) - 1;
