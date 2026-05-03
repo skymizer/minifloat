@@ -385,38 +385,12 @@ public:
     return to_float();
   }
 
-  //! Implicit lossless conversion to double
+  //! Conversion to double
   //!
-  //! The conversion is only enabled if it is proven to be lossless at compile
-  //! time.  If the conversion is lossy, the user must explicitly cast to
-  //! double.
+  //! When `HAS_EXACT_F64_CONVERSION` holds, the result is exact; otherwise the
+  //! conversion may saturate to `HUGE_VAL` for out-of-range exponents.
   [[nodiscard, gnu::pure]]
-  std::enable_if_t<HAS_EXACT_F64_CONVERSION, double> to_double() const {
-    const double sign = signbit() ? -1.0 : 1.0;
-    const std::uint64_t magnitude = bits_ & ABS_MASK;
-
-    if (is_nan())
-      return std::copysign(NAN, sign);
-
-    if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
-      return std::copysign(HUGE_VAL, sign);
-
-    if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_BITS), sign);
-
-    const std::uint64_t shifted = magnitude << (DBL_MANT_DIG - MANTISSA_BITS);
-    const std::uint64_t diff = MIN_EXP - DBL_MIN_EXP;
-    const std::uint64_t bias = diff << (DBL_MANT_DIG - 1);
-    return bit_cast<double>(std::uint64_t{signbit()} << 63 | (shifted + bias));
-  }
-
-  //! Explicit lossy conversion to double
-  //!
-  //! This variant assumes that the conversion is lossy only when the exponent
-  //! is out of range.
-  template <bool INEXACT = !HAS_EXACT_F64_CONVERSION>
-  [[nodiscard, gnu::pure]]
-  std::enable_if_t<INEXACT, double> to_double() const {
+  double to_double() const {
     static_assert(DBL_MANT_DIG >= MANTISSA_BITS);
     static_assert(std::numeric_limits<double>::radix == 2);
     static_assert(std::numeric_limits<double>::is_iec559);
@@ -430,19 +404,29 @@ public:
     if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
       return std::copysign(HUGE_VAL, sign);
 
-    if (magnitude >= static_cast<std::uint64_t>(DBL_MAX_EXP + B) << M)
-      return std::copysign(HUGE_VAL, sign);
-
-    if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_BITS), sign);
-
-    if (static_cast<int>(magnitude >> M) < DBL_MIN_EXP + B) {
-      const std::uint64_t significand = (magnitude & ((1U << M) - 1)) | 1U << M;
-      const int exponent = static_cast<int>(magnitude >> M) - B;
-      return std::copysign(std::ldexp(significand, exponent - M), sign);
+    if constexpr (!HAS_EXACT_F64_CONVERSION) {
+      if (magnitude >= static_cast<std::uint64_t>(DBL_MAX_EXP + B) << M)
+        return std::copysign(HUGE_VAL, sign);
     }
 
-    const std::uint64_t shifted = magnitude << (DBL_MANT_DIG - (E + M));
+    if (D == SubnormalStyle::Precise && magnitude < 1 << M) {
+      if constexpr (HAS_EXACT_F64_CONVERSION)
+        return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_BITS), sign);
+      else
+        return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_BITS), sign);
+    }
+
+    if constexpr (!HAS_EXACT_F64_CONVERSION) {
+      if (static_cast<int>(magnitude >> M) < DBL_MIN_EXP + B) {
+        const std::uint64_t significand = (magnitude & ((1U << M) - 1)) | 1U << M;
+        const int exponent = static_cast<int>(magnitude >> M) - B;
+        return std::copysign(std::ldexp(significand, exponent - M), sign);
+      }
+    }
+
+    constexpr int SHIFT = HAS_EXACT_F64_CONVERSION ? DBL_MANT_DIG - MANTISSA_BITS
+                                                   : DBL_MANT_DIG - (E + M);
+    const std::uint64_t shifted = magnitude << SHIFT;
     const std::uint64_t diff = MIN_EXP - DBL_MIN_EXP;
     const std::uint64_t bias = diff << (DBL_MANT_DIG - 1);
     return bit_cast<double>(std::uint64_t{signbit()} << 63 | (shifted + bias));

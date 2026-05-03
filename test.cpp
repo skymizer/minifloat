@@ -303,6 +303,15 @@ TEST(SkymizerMinifloat, TestFiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
+TEST(SkymizerMinifloat, TestLargeExponentInstantiation) {
+  // Regression for the previously latent SFINAE bug: when
+  // HAS_EXACT_F64_CONVERSION is false, the lossless to_double overload used a
+  // non-template enable_if, which caused class instantiation itself to fail.
+  using T = Minifloat<12, 3>;
+  static_assert(!T::HAS_EXACT_F64_CONVERSION);
+  EXPECT_EQ(T::from_bits(0).to_double(), 0.0);
+}
+
 TEST(SkymizerMinifloat, TestSnowballSum) {
   test_snowball_sum<2, 11>();
   test_snowball_sum<3, 11>();
