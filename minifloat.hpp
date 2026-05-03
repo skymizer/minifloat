@@ -654,44 +654,50 @@ IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x) {
   };
 }
 
-#define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                                                     \
-  using E##EXP##M##MANT = Minifloat<EXP, MANT>;                                                    \
+// IEEE encoding requires M > 0 (the all-zero mantissa with the maximum
+// exponent is reserved for infinity, distinct from NaN), so for M = 0 we emit
+// only the FN and FNUZ aliases.
+#define SKYMIZER_MINIFLOAT_TYPEDEFS_NO_IEEE(EXP, MANT)                                             \
   using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NanStyle::FN>;                                  \
   using E##EXP##M##MANT##FNUZ = Minifloat<EXP, MANT, NanStyle::FNUZ>;
 
-#define SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(EXP)                                                     \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 0)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 1)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 2)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 3)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 4)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 5)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 6)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 7)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 8)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 9)                                                              \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 10)                                                             \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 11)                                                             \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 12)                                                             \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 13)                                                             \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 14)                                                             \
-  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 15)
+#define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                                                     \
+  using E##EXP##M##MANT = Minifloat<EXP, MANT>;                                                    \
+  SKYMIZER_MINIFLOAT_TYPEDEFS_NO_IEEE(EXP, MANT)
 
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(1)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(2)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(3)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(4)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(5)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(6)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(7)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(8)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(9)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(10)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(11)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(12)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(13)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(14)
-SKYMIZER_MINIFLOAT_TYPEDEFS_ALL_M(15)
+// One macro per non-zero M ceiling — chained so M_TO_n includes everything
+// from M=0 up through M=n. This lets each row stop exactly at the
+// E + M < 16 boundary instead of generating typedefs that would static_assert
+// on use.
+#define SKYMIZER_MINIFLOAT_M_TO_0(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS_NO_IEEE(EXP, 0)
+#define SKYMIZER_MINIFLOAT_M_TO_1(EXP)  SKYMIZER_MINIFLOAT_M_TO_0(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 1)
+#define SKYMIZER_MINIFLOAT_M_TO_2(EXP)  SKYMIZER_MINIFLOAT_M_TO_1(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 2)
+#define SKYMIZER_MINIFLOAT_M_TO_3(EXP)  SKYMIZER_MINIFLOAT_M_TO_2(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 3)
+#define SKYMIZER_MINIFLOAT_M_TO_4(EXP)  SKYMIZER_MINIFLOAT_M_TO_3(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 4)
+#define SKYMIZER_MINIFLOAT_M_TO_5(EXP)  SKYMIZER_MINIFLOAT_M_TO_4(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 5)
+#define SKYMIZER_MINIFLOAT_M_TO_6(EXP)  SKYMIZER_MINIFLOAT_M_TO_5(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 6)
+#define SKYMIZER_MINIFLOAT_M_TO_7(EXP)  SKYMIZER_MINIFLOAT_M_TO_6(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 7)
+#define SKYMIZER_MINIFLOAT_M_TO_8(EXP)  SKYMIZER_MINIFLOAT_M_TO_7(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 8)
+#define SKYMIZER_MINIFLOAT_M_TO_9(EXP)  SKYMIZER_MINIFLOAT_M_TO_8(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 9)
+#define SKYMIZER_MINIFLOAT_M_TO_10(EXP) SKYMIZER_MINIFLOAT_M_TO_9(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 10)
+#define SKYMIZER_MINIFLOAT_M_TO_11(EXP) SKYMIZER_MINIFLOAT_M_TO_10(EXP) SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 11)
+#define SKYMIZER_MINIFLOAT_M_TO_12(EXP) SKYMIZER_MINIFLOAT_M_TO_11(EXP) SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 12)
+#define SKYMIZER_MINIFLOAT_M_TO_13(EXP) SKYMIZER_MINIFLOAT_M_TO_12(EXP) SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 13)
+
+SKYMIZER_MINIFLOAT_M_TO_13(2)
+SKYMIZER_MINIFLOAT_M_TO_12(3)
+SKYMIZER_MINIFLOAT_M_TO_11(4)
+SKYMIZER_MINIFLOAT_M_TO_10(5)
+SKYMIZER_MINIFLOAT_M_TO_9(6)
+SKYMIZER_MINIFLOAT_M_TO_8(7)
+SKYMIZER_MINIFLOAT_M_TO_7(8)
+SKYMIZER_MINIFLOAT_M_TO_6(9)
+SKYMIZER_MINIFLOAT_M_TO_5(10)
+SKYMIZER_MINIFLOAT_M_TO_4(11)
+SKYMIZER_MINIFLOAT_M_TO_3(12)
+SKYMIZER_MINIFLOAT_M_TO_2(13)
+SKYMIZER_MINIFLOAT_M_TO_1(14)
+SKYMIZER_MINIFLOAT_M_TO_0(15)
 
 } // namespace minifloat
 
