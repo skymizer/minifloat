@@ -155,7 +155,8 @@ class Minifloat {
 
 public:
   static constexpr int EXPONENT_BITS = E;
-  static constexpr int MANTISSA_BITS = M + 1;
+  static constexpr int MANTISSA_BITS = M;
+  static constexpr int MANTISSA_DIGITS = M + 1;
   static constexpr NanStyle NAN_STYLE = N;
   static constexpr int BIAS = B;
   static constexpr SubnormalStyle SUBNORMAL_STYLE = D;
@@ -172,18 +173,18 @@ public:
   static constexpr Storage ABS_MASK = (1U << (E + M)) - 1U;
 
   static constexpr bool HAS_EXACT_F32_CONVERSION =
-      FLT_MANT_DIG >= MANTISSA_BITS && FLT_MAX_EXP >= MAX_EXP && FLT_MIN_EXP <= MIN_EXP &&
+      FLT_MANT_DIG >= MANTISSA_DIGITS && FLT_MAX_EXP >= MAX_EXP && FLT_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<float>::radix == 2 && std::numeric_limits<float>::is_iec559;
 
   static constexpr bool HAS_EXACT_F64_CONVERSION =
-      DBL_MANT_DIG >= MANTISSA_BITS && DBL_MAX_EXP >= MAX_EXP && DBL_MIN_EXP <= MIN_EXP &&
+      DBL_MANT_DIG >= MANTISSA_DIGITS && DBL_MAX_EXP >= MAX_EXP && DBL_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<double>::radix == 2 && std::numeric_limits<double>::is_iec559;
 
-  static constexpr bool USE_FLT_ADD = FLT_MANT_DIG >= 2 * MANTISSA_BITS && //
+  static constexpr bool USE_FLT_ADD = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS && //
                                       (FLT_MAX_EXP > MAX_EXP) &&           //
                                       (FLT_MIN_EXP < MIN_EXP);
 
-  static constexpr bool USE_FLT_MUL = FLT_MANT_DIG >= 2 * MANTISSA_BITS &&
+  static constexpr bool USE_FLT_MUL = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS &&
                                       FLT_MAX_EXP >= 2 * MAX_EXP &&
                                       FLT_MIN_EXP - 1 <= 2 * (MIN_EXP - 1);
 
@@ -230,7 +231,7 @@ private:
       if constexpr (D == SubnormalStyle::Reserved)
         return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
 
-      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_BITS - MIN_EXP));
+      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
     return sign | std::min<std::int32_t>(magnitude, HUGE_REPR);
@@ -254,7 +255,7 @@ private:
       if constexpr (D == SubnormalStyle::Reserved)
         return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
 
-      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_BITS - MIN_EXP));
+      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
       return (N != NanStyle::FNUZ || ticks) * sign | ticks;
     }
     return sign | std::min<std::int64_t>(magnitude, HUGE_REPR);
@@ -372,9 +373,9 @@ public:
       return std::copysign(HUGE_VALF, sign);
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_BITS), sign);
+      return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sign);
 
-    const std::uint32_t shifted = magnitude << (FLT_MANT_DIG - MANTISSA_BITS);
+    const std::uint32_t shifted = magnitude << (FLT_MANT_DIG - MANTISSA_DIGITS);
     const std::uint32_t diff = MIN_EXP - FLT_MIN_EXP;
     const std::uint32_t bias = diff << (FLT_MANT_DIG - 1);
     return bit_cast<float>(signbit() << 31 | (shifted + bias));
@@ -391,7 +392,7 @@ public:
   //! conversion may saturate to `HUGE_VAL` for out-of-range exponents.
   [[nodiscard, gnu::pure]]
   double to_double() const {
-    static_assert(DBL_MANT_DIG >= MANTISSA_BITS);
+    static_assert(DBL_MANT_DIG >= MANTISSA_DIGITS);
     static_assert(std::numeric_limits<double>::radix == 2);
     static_assert(std::numeric_limits<double>::is_iec559);
 
@@ -411,9 +412,9 @@ public:
 
     if (D == SubnormalStyle::Precise && magnitude < 1 << M) {
       if constexpr (HAS_EXACT_F64_CONVERSION)
-        return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_BITS), sign);
+        return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sign);
       else
-        return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_BITS), sign);
+        return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sign);
     }
 
     if constexpr (!HAS_EXACT_F64_CONVERSION) {
@@ -424,7 +425,7 @@ public:
       }
     }
 
-    constexpr int SHIFT = HAS_EXACT_F64_CONVERSION ? DBL_MANT_DIG - MANTISSA_BITS
+    constexpr int SHIFT = HAS_EXACT_F64_CONVERSION ? DBL_MANT_DIG - MANTISSA_DIGITS
                                                    : DBL_MANT_DIG - (E + M);
     const std::uint64_t shifted = magnitude << SHIFT;
     const std::uint64_t diff = MIN_EXP - DBL_MIN_EXP;
