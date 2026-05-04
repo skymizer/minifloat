@@ -291,6 +291,13 @@ public:
   }
 
   [[nodiscard, gnu::pure]] constexpr Storage to_bits() const { return bits_; }
+
+  //! Sign bit
+  //!
+  //! Note for `NanStyle::FNUZ`: the sole NaN representation has the sign bit
+  //! set, so `signbit()` returns `true` for a FNUZ NaN even though there is
+  //! no negative-zero counterpart to compare it to. Callers that filter by
+  //! `signbit()` should test `is_nan()` first when working with FNUZ.
   [[nodiscard, gnu::pure]] constexpr bool signbit() const { return bits_ >> (E + M) & 1; }
 
   //! Check if the number is nonzero
