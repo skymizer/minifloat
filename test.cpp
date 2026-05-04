@@ -316,6 +316,19 @@ TEST(SkymizerMinifloat, TestFiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
+TEST(SkymizerMinifloat, TestCompoundAssignment) {
+  using T = Minifloat<5, 2>;  // covers a wider range than 3,4
+  T x{2.0F};
+  x += T{1.0F};
+  EXPECT_EQ(x, T{3.0F});
+  x -= T{0.5F};
+  EXPECT_EQ(x, T{2.5F});
+  x *= T{2.0F};
+  EXPECT_EQ(x, T{5.0F});
+  x /= T{2.0F};
+  EXPECT_EQ(x, T{2.5F});
+}
+
 TEST(SkymizerMinifloat, TestStdHash) {
   using T = Minifloat<3, 4>;
   std::hash<T> h;

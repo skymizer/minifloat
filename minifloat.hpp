@@ -445,6 +445,11 @@ public:
   explicit operator double() const noexcept {
     return to_double();
   }
+
+  Minifloat &operator+=(Minifloat y) noexcept { return *this = *this + y; }
+  Minifloat &operator-=(Minifloat y) noexcept { return *this = *this - y; }
+  Minifloat &operator*=(Minifloat y) noexcept { return *this = *this * y; }
+  Minifloat &operator/=(Minifloat y) noexcept { return *this = *this / y; }
 };
 
 template <> struct FpClassifier<NanStyle::IEEE> {
