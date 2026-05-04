@@ -23,6 +23,17 @@
 #include <cstring>
 #endif
 
+// The `gnu::const` and `gnu::pure` attributes are GCC/Clang extensions. Other
+// compilers (notably MSVC under strict warning flags) may warn on the
+// attribute namespace. Wrap them so we degrade to a no-op elsewhere.
+#if defined(__GNUC__) || defined(__clang__)
+#define SKYMIZER_MINIFLOAT_CONST [[gnu::const]]
+#define SKYMIZER_MINIFLOAT_PURE [[gnu::pure]]
+#else
+#define SKYMIZER_MINIFLOAT_CONST
+#define SKYMIZER_MINIFLOAT_PURE
+#endif
+
 //! Namespace for Skymizer
 namespace skymizer {
 
@@ -31,7 +42,7 @@ namespace minifloat {
 
 //! Backport of C++20 std::bit_cast
 template <typename To, typename From>
-[[nodiscard, gnu::const]]
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST
 To bit_cast(const From &from) noexcept {
   static_assert(sizeof(To) == sizeof(From));
   static_assert(std::is_trivially_copyable_v<To>);
@@ -48,7 +59,7 @@ To bit_cast(const From &from) noexcept {
 }
 
 template <int M>
-[[nodiscard, gnu::const]]
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST
 float round_normal_float_to_mantissa(float x) noexcept {
   static_assert(M < FLT_MANT_DIG);
   static_assert(std::numeric_limits<float>::radix == 2);
@@ -61,7 +72,7 @@ float round_normal_float_to_mantissa(float x) noexcept {
 }
 
 template <int M>
-[[nodiscard, gnu::const]]
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST
 double round_normal_double_to_mantissa(double x) noexcept {
   static_assert(M < DBL_MANT_DIG);
   static_assert(std::numeric_limits<double>::radix == 2);
@@ -214,7 +225,7 @@ private:
     return max;
   }();
 
-  [[nodiscard, gnu::const]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST
   static Storage bits_from_float(float x) noexcept {
     const auto bits = bit_cast<std::uint32_t>(round_normal_float_to_mantissa<M>(x));
     const auto sign = bits >> 31 << (E + M);
@@ -238,7 +249,7 @@ private:
     return sign | std::min<std::int32_t>(magnitude, HUGE_REPR);
   }
 
-  [[nodiscard, gnu::const]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST
   static Storage bits_from_double(double x) noexcept {
     const auto bits = bit_cast<std::uint64_t>(round_normal_double_to_mantissa<M>(x));
     const auto sign = bits >> 63 << (E + M);
@@ -283,26 +294,26 @@ public:
     return result;
   }
 
-  [[nodiscard, gnu::const]] static Minifloat from_float(float x) noexcept { return Minifloat{x}; }
-  [[nodiscard, gnu::const]] static Minifloat from_double(double x) noexcept { return Minifloat{x}; }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat from_float(float x) noexcept { return Minifloat{x}; }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat from_double(double x) noexcept { return Minifloat{x}; }
 
   //! Minimum positive value, which is probably subnormal
   //!
   //! This can be normal when bitwidth is low.  Therefore, it is named after
   //! `FLT_TRUE_MIN` instead of `numeric_limits::denorm_min()`.
-  [[nodiscard, gnu::const]] static Minifloat true_min() noexcept { return from_bits(1); }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat true_min() noexcept { return from_bits(1); }
 
   /// Minimum positive normal value
-  [[nodiscard, gnu::const]] static Minifloat min() noexcept { return from_bits(1 << M); }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat min() noexcept { return from_bits(1 << M); }
 
   /// Maximum finite value
-  [[nodiscard, gnu::const]] static Minifloat max() noexcept {
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat max() noexcept {
     return from_bits(HUGE_REPR - (N == NanStyle::IEEE));
   }
 
   //! Positive infinity for `NanStyle::IEEE`, or `+0.0` for the other NaN
   //! styles (which do not represent infinity at all).
-  [[nodiscard, gnu::const]] static constexpr Minifloat infinity() noexcept {
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static constexpr Minifloat infinity() noexcept {
     if constexpr (N == NanStyle::IEEE)
       return from_bits(HUGE_REPR);
     else
@@ -310,11 +321,11 @@ public:
   }
 
   /// Quiet NaN
-  [[nodiscard, gnu::const]] static constexpr Minifloat quiet_NaN() noexcept {
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static constexpr Minifloat quiet_NaN() noexcept {
     return from_bits(NAN_REPR);
   }
 
-  [[nodiscard, gnu::pure]] constexpr Storage to_bits() const noexcept { return bits_; }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr Storage to_bits() const noexcept { return bits_; }
 
   //! Sign bit
   //!
@@ -322,10 +333,10 @@ public:
   //! set, so `signbit()` returns `true` for a FNUZ NaN even though there is
   //! no negative-zero counterpart to compare it to. Callers that filter by
   //! `signbit()` should test `is_nan()` first when working with FNUZ.
-  [[nodiscard, gnu::pure]] constexpr bool signbit() const noexcept { return bits_ >> (E + M) & 1; }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool signbit() const noexcept { return bits_ >> (E + M) & 1; }
 
   //! Check if the number is nonzero
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr explicit operator bool() const noexcept {
     if constexpr (N == NanStyle::FNUZ)
       return bits_ != 0;
@@ -333,7 +344,7 @@ public:
     return (bits_ & ABS_MASK) != 0;
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr bool is_nan() const noexcept {
     if constexpr (N == NanStyle::FNUZ)
       return bits_ == ABS_MASK + 1U;
@@ -344,12 +355,12 @@ public:
     return (bits_ & ABS_MASK) > HUGE_REPR;
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr bool is_infinite() const noexcept {
     return N == NanStyle::IEEE && (bits_ & ABS_MASK) == HUGE_REPR;
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr bool is_finite() const noexcept {
     if constexpr (N == NanStyle::IEEE)
       return (bits_ & ABS_MASK) < HUGE_REPR;
@@ -357,24 +368,24 @@ public:
     return !is_nan();
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr bool is_normal() const noexcept {
     return is_finite() && (bits_ & ABS_MASK) >= (1U << M);
   }
 
   //! Check if the number is nonzero subnormal
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr bool is_subnormal() const noexcept {
     const Storage abs_bits = bits_ & ABS_MASK;
     return 0 < abs_bits && abs_bits < (1U << M);
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr int classify() const noexcept {
     return FpClassifier<N>::classify(*this);
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   constexpr Minifloat abs() const noexcept {
     const Storage magnitude = bits_ & ABS_MASK;
 
@@ -389,7 +400,7 @@ public:
   //! The lossy branch makes use of conversion to double.  Conversion to double
   //! is lossy only when then exponent width is too large.  In this case, a
   //! second conversion to float is safe.
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   float to_float() const noexcept {
     if constexpr (!HAS_EXACT_F32_CONVERSION)
       return to_double();
@@ -412,7 +423,7 @@ public:
     return bit_cast<float>(signbit() << 31 | (shifted + bias));
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   explicit operator float() const noexcept {
     return to_float();
   }
@@ -421,7 +432,7 @@ public:
   //!
   //! When `HAS_EXACT_F64_CONVERSION` holds, the result is exact; otherwise the
   //! conversion may saturate to `HUGE_VAL` for out-of-range exponents.
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   double to_double() const noexcept {
     static_assert(DBL_MANT_DIG >= MANTISSA_DIGITS);
     static_assert(std::numeric_limits<double>::radix == 2);
@@ -464,7 +475,7 @@ public:
     return bit_cast<double>(std::uint64_t{signbit()} << 63 | (shifted + bias));
   }
 
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   explicit operator double() const noexcept {
     return to_double();
   }
@@ -477,7 +488,7 @@ public:
             std::enable_if_t<std::is_integral_v<Int> &&
                                  !std::is_same_v<std::remove_cv_t<Int>, bool>,
                              int> = 0>
-  [[nodiscard, gnu::pure]]
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
   explicit operator Int() const noexcept {
     return static_cast<Int>(to_double());
   }
@@ -549,7 +560,7 @@ template <> struct FpClassifier<NanStyle::FNUZ> {
 
 namespace detail {
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.to_bits();
   const auto b = y.to_bits();
@@ -562,19 +573,19 @@ constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, 
 } // namespace detail
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return (x.to_bits() == y.to_bits() && !x.is_nan()) || detail::are_different_zeroes(x, y);
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return !(x == y);
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.to_bits();
   const auto b = y.to_bits();
@@ -587,7 +598,7 @@ constexpr bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y)
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   const auto a = x.to_bits();
   const auto b = y.to_bits();
@@ -603,25 +614,25 @@ constexpr bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr bool operator>(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return y < x;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return y <= x;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcept {
   return x;
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
   constexpr auto ABS_MASK = Minifloat<E, M, N, B, D>::ABS_MASK;
   if (N == NanStyle::FNUZ && (x.to_bits() & ABS_MASK) == 0)
@@ -631,7 +642,7 @@ constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcep
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_ADD)
     return Minifloat<E, M, N, B, D>{x.to_float() + y.to_float()};
@@ -640,7 +651,7 @@ Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_ADD)
     return Minifloat<E, M, N, B, D>{x.to_float() - y.to_float()};
@@ -649,7 +660,7 @@ Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 Minifloat<E, M, N, B, D> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_MUL)
     return Minifloat<E, M, N, B, D>{x.to_float() * y.to_float()};
@@ -658,7 +669,7 @@ Minifloat<E, M, N, B, D> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
 }
 
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-[[gnu::const]]
+SKYMIZER_MINIFLOAT_CONST
 Minifloat<E, M, N, B, D> operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
   return Minifloat<E, M, N, B, D>{x.to_double() / y.to_double()};
 }
