@@ -246,10 +246,7 @@ struct CheckIntegerDecodeReconstruction {
     return for_all<T>([](T x) {
       if (x.is_nan()) {
         const auto parts = integer_decode(x);
-        EXPECT_EQ(parts.sign, 0);
-        EXPECT_EQ(parts.mantissa, 0u);
-        EXPECT_EQ(parts.exponent, 0);
-        return true;
+        return parts.sign == 0 && parts.mantissa == 0u && parts.exponent == 0;
       }
       if (x.is_infinite())
         return true;
@@ -260,12 +257,7 @@ struct CheckIntegerDecodeReconstruction {
       const double y = std::ldexp(integer, +parts.exponent);
       const double z = x.to_float();
 
-      if (y != z) {
-        std::cout << y << ',' << z << ' ' << E << ',' << M << '\n';
-        EXPECT_TRUE(false);
-      }
-
-      return true;
+      return y == z;
     });
   }
 };
