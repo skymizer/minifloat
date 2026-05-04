@@ -239,7 +239,14 @@ struct CheckIntegerDecodeReconstruction {
   template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
     using T = Minifloat<E, M, N, B>;
     return for_all<T>([](T x) {
-      if (x.is_nan() || x.is_infinite())
+      if (x.is_nan()) {
+        const auto parts = integer_decode(x);
+        EXPECT_EQ(parts.sign, 0);
+        EXPECT_EQ(parts.mantissa, 0u);
+        EXPECT_EQ(parts.exponent, 0);
+        return true;
+      }
+      if (x.is_infinite())
         return true;
 
       const auto parts = integer_decode(x);

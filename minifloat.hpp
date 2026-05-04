@@ -655,8 +655,10 @@ struct IntegerDecode {
 
 //! Decode the argument into mantissa, exponent, and sign
 //!
-//! Note that NaN produces undefined results.  Infinities are decoded as results
-//! that overflow in reconstruction.
+//! NaN inputs produce the sentinel `{0, 0, 0}` (sign zero) — finite values
+//! always have sign `+1` or `-1`, so `sign == 0` unambiguously signals NaN.
+//! Infinities are decoded as ordinary integer triples whose reconstruction
+//! overflows the host floating-point range.
 //!
 //! **Additional promise**: LSB of `mantissa` aligns with ULP of a normal `x`.
 //!
@@ -664,6 +666,9 @@ struct IntegerDecode {
 //! [`num::traits::float::FloatCore::integer_decode`](https://docs.rs/num/0.4.3/num/traits/float/trait.FloatCore.html#tymethod.integer_decode).
 template <int E, int M, NanStyle N, int B, SubnormalStyle D>
 IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x) noexcept {
+  if (x.is_nan())
+    return {0, 0, 0};
+
   constexpr int BIAS = M + 2 - Minifloat<E, M, N, B, D>::MIN_EXP;
   const auto bit_mask = [](int width) { return width > 0 ? UINT32_MAX >> (32 - width) : 0; };
 
