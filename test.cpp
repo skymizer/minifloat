@@ -26,6 +26,11 @@ static_assert(std::is_nothrow_move_constructible_v<NoexceptCheck>);
 static_assert(std::is_nothrow_copy_assignable_v<NoexceptCheck>);
 static_assert(std::is_nothrow_move_assignable_v<NoexceptCheck>);
 static_assert(std::is_nothrow_destructible_v<NoexceptCheck>);
+
+// Comparison operators are constexpr.
+static_assert(NoexceptCheck::from_bits(0) == NoexceptCheck::from_bits(0));
+static_assert(NoexceptCheck::from_bits(1) != NoexceptCheck::from_bits(2));
+static_assert(NoexceptCheck::from_bits(1) < NoexceptCheck::from_bits(2));
 //! Test floating-point identity like Object.is in JavaScript
 //!
 //! This is necessary because NaN != NaN in C++.  We also want to differentiate
