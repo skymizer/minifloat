@@ -291,6 +291,20 @@ public:
     return from_bits(HUGE_REPR - (N == NanStyle::IEEE));
   }
 
+  //! Positive infinity for `NanStyle::IEEE`, or `+0.0` for the other NaN
+  //! styles (which do not represent infinity at all).
+  [[nodiscard, gnu::const]] static constexpr Minifloat infinity() noexcept {
+    if constexpr (N == NanStyle::IEEE)
+      return from_bits(HUGE_REPR);
+    else
+      return from_bits(0);
+  }
+
+  /// Quiet NaN
+  [[nodiscard, gnu::const]] static constexpr Minifloat quiet_NaN() noexcept {
+    return from_bits(NAN_REPR);
+  }
+
   [[nodiscard, gnu::pure]] constexpr Storage to_bits() const noexcept { return bits_; }
 
   //! Sign bit
@@ -732,6 +746,67 @@ struct hash<::skymizer::minifloat::Minifloat<E, M, N, B, D>> {
       bits = 0;
     return static_cast<size_t>(bits);
   }
+};
+
+//! Standard `numeric_limits` specialization for `Minifloat`. Mirrors the
+//! traits/methods that built-in floating types provide so generic numeric code
+//! (algorithms, type-erased wrappers, math libraries) can introspect a
+//! Minifloat just like `float` or `double`.
+template <int E, int M, ::skymizer::minifloat::NanStyle N, int B,
+          ::skymizer::minifloat::SubnormalStyle D>
+struct numeric_limits<::skymizer::minifloat::Minifloat<E, M, N, B, D>> {
+private:
+  using T = ::skymizer::minifloat::Minifloat<E, M, N, B, D>;
+  using NS = ::skymizer::minifloat::NanStyle;
+  using SS = ::skymizer::minifloat::SubnormalStyle;
+
+  // Bit pattern for 2^k. Saturates to zero when k is below the subnormal
+  // range; saturates to max() when k overflows the exponent. Used to derive
+  // epsilon() and round_error().
+  static constexpr T pow2(int k) noexcept {
+    const int biased = k + B;
+    if (biased >= 1)
+      return T::from_bits(static_cast<typename T::Storage>(biased) << M);
+    if (biased + M >= 1)
+      return T::from_bits(typename T::Storage{1} << (biased + M - 1));
+    return T::from_bits(0);
+  }
+
+public:
+  static constexpr bool is_specialized = true;
+  static constexpr bool is_signed = true;
+  static constexpr bool is_integer = false;
+  static constexpr bool is_exact = false;
+  static constexpr bool has_infinity = (N == NS::IEEE);
+  static constexpr bool has_quiet_NaN = true;
+  static constexpr bool has_signaling_NaN = false;
+  static constexpr float_denorm_style has_denorm =
+      D == SS::Reserved ? denorm_absent : denorm_present;
+  static constexpr bool has_denorm_loss = (D == SS::Fast);
+  static constexpr float_round_style round_style = round_to_nearest;
+  static constexpr bool is_iec559 = (N == NS::IEEE) && (D == SS::Precise);
+  static constexpr bool is_bounded = true;
+  static constexpr bool is_modulo = false;
+  static constexpr int radix = 2;
+  static constexpr int digits = T::MANTISSA_DIGITS;
+  static constexpr int digits10 = (digits - 1) * 30103 / 100000;
+  static constexpr int max_digits10 = digits * 30103 / 100000 + 2;
+  static constexpr int min_exponent = T::MIN_EXP;
+  static constexpr int max_exponent = T::MAX_EXP;
+  static constexpr int min_exponent10 = (T::MIN_EXP - 1) * 30103 / 100000;
+  static constexpr int max_exponent10 = T::MAX_EXP * 30103 / 100000;
+  static constexpr bool traps = false;
+  static constexpr bool tinyness_before = false;
+
+  static constexpr T min() noexcept { return T::min(); }
+  static constexpr T max() noexcept { return T::max(); }
+  static constexpr T lowest() noexcept { return -T::max(); }
+  static constexpr T denorm_min() noexcept { return T::true_min(); }
+  static constexpr T epsilon() noexcept { return pow2(1 - digits); }
+  static constexpr T round_error() noexcept { return pow2(-1); }
+  static constexpr T infinity() noexcept { return T::infinity(); }
+  static constexpr T quiet_NaN() noexcept { return T::quiet_NaN(); }
+  static constexpr T signaling_NaN() noexcept { return T::quiet_NaN(); }
 };
 } // namespace std
 

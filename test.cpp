@@ -316,6 +316,38 @@ TEST(SkymizerMinifloat, TestFiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
+TEST(SkymizerMinifloat, TestNumericLimits) {
+  using T = Minifloat<5, 10>;  // half-precision shape (binary16)
+  using L = std::numeric_limits<T>;
+
+  static_assert(L::is_specialized);
+  static_assert(L::is_signed);
+  static_assert(!L::is_integer);
+  static_assert(L::has_infinity);  // IEEE NaN style by default
+  static_assert(L::has_quiet_NaN);
+  static_assert(L::is_iec559);     // IEEE + Precise default
+  static_assert(L::radix == 2);
+  static_assert(L::digits == T::MANTISSA_DIGITS);
+
+  EXPECT_EQ(L::min(), T::min());
+  EXPECT_EQ(L::max(), T::max());
+  EXPECT_EQ(L::lowest(), -T::max());
+  EXPECT_EQ(L::denorm_min(), T::true_min());
+
+  // epsilon: 1.0 + epsilon must be representable and distinct from 1.0.
+  EXPECT_EQ(L::epsilon().to_double(), std::ldexp(1.0, 1 - L::digits));
+  EXPECT_NE(T{1.0F} + L::epsilon(), T{1.0F});
+
+  EXPECT_EQ(L::round_error().to_double(), 0.5);
+  EXPECT_TRUE(std::isinf(L::infinity().to_double()));
+  EXPECT_TRUE(L::quiet_NaN().is_nan());
+
+  // FN style has no infinity but still has NaN.
+  using FN = Minifloat<5, 2, NanStyle::FN>;
+  static_assert(!std::numeric_limits<FN>::has_infinity);
+  EXPECT_TRUE(std::numeric_limits<FN>::quiet_NaN().is_nan());
+}
+
 TEST(SkymizerMinifloat, TestCompoundAssignment) {
   using T = Minifloat<5, 2>;  // covers a wider range than 3,4
   T x{2.0F};
