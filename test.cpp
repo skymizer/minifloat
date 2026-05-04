@@ -9,6 +9,7 @@
 #include "minifloat.hpp"
 #include <gtest/gtest.h>
 #include <cassert>
+#include <unordered_set>
 
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
@@ -313,6 +314,16 @@ TEST(SkymizerMinifloat, TestFiniteBits) {
   test_finite_bits<4, 3>(-1.25F, 0b1'0111'010);
   test_finite_bits<5, 2>(-1.25F, 0b1'01111'01);
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
+}
+
+TEST(SkymizerMinifloat, TestStdHash) {
+  using T = Minifloat<3, 4>;
+  std::hash<T> h;
+  // +0 and -0 compare equal, so their hashes must agree.
+  EXPECT_EQ(h(T{0.0F}), h(T{-0.0F}));
+  // Distinct nonzero values should hash to distinct slots in this small space.
+  std::unordered_set<T> s{T{1.0F}, T{2.0F}, T{-1.0F}, T{0.0F}, T{-0.0F}};
+  EXPECT_EQ(s.size(), 4u);
 }
 
 TEST(SkymizerMinifloat, TestDefaultConstructionIsZero) {

@@ -13,6 +13,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <type_traits>
 
@@ -711,5 +712,22 @@ SKYMIZER_MINIFLOAT_M_TO_0(15)
 using minifloat::Minifloat;
 
 } // namespace skymizer
+
+namespace std {
+//! Hash specialization for `Minifloat` so it can be used in unordered
+//! containers. Positive and negative zero are normalized so that values that
+//! compare equal hash equally.
+template <int E, int M, ::skymizer::minifloat::NanStyle N, int B,
+          ::skymizer::minifloat::SubnormalStyle D>
+struct hash<::skymizer::minifloat::Minifloat<E, M, N, B, D>> {
+  size_t operator()(::skymizer::minifloat::Minifloat<E, M, N, B, D> x) const noexcept {
+    using T = ::skymizer::minifloat::Minifloat<E, M, N, B, D>;
+    auto bits = x.to_bits();
+    if ((bits & T::ABS_MASK) == 0)
+      bits = 0;
+    return static_cast<size_t>(bits);
+  }
+};
+} // namespace std
 
 #endif
