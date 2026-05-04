@@ -13,6 +13,18 @@
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
 namespace {
+// Compile-time check: the noexcept annotations on the public API propagate to
+// the standard "is_nothrow_*" traits that STL containers use to pick faster
+// move / value paths.
+using NoexceptCheck = Minifloat<3, 4>;
+static_assert(std::is_nothrow_default_constructible_v<NoexceptCheck>);
+static_assert(std::is_nothrow_constructible_v<NoexceptCheck, float>);
+static_assert(std::is_nothrow_constructible_v<NoexceptCheck, double>);
+static_assert(std::is_nothrow_copy_constructible_v<NoexceptCheck>);
+static_assert(std::is_nothrow_move_constructible_v<NoexceptCheck>);
+static_assert(std::is_nothrow_copy_assignable_v<NoexceptCheck>);
+static_assert(std::is_nothrow_move_assignable_v<NoexceptCheck>);
+static_assert(std::is_nothrow_destructible_v<NoexceptCheck>);
 //! Test floating-point identity like Object.is in JavaScript
 //!
 //! This is necessary because NaN != NaN in C++.  We also want to differentiate
