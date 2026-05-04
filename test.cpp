@@ -360,6 +360,23 @@ TEST(SkymizerMinifloat, TestNumericLimits) {
   EXPECT_TRUE(std::numeric_limits<FN>::quiet_NaN().is_nan());
 }
 
+TEST(SkymizerMinifloat, TestIntegerInterop) {
+  using T = Minifloat<5, 2>;
+  EXPECT_EQ(T{3}.to_float(), 3.0F);
+  EXPECT_EQ(T{-7}.to_float(), -7.0F);
+  EXPECT_EQ(T{0u}.to_float(), 0.0F);
+  EXPECT_EQ(T{8L}.to_float(), 8.0F);
+
+  // Conversion back to integer truncates toward zero.
+  EXPECT_EQ(static_cast<int>(T{3.5F}), 3);
+  EXPECT_EQ(static_cast<int>(T{-3.5F}), -3);
+  EXPECT_EQ(static_cast<long>(T{0.0F}), 0L);
+
+  // bool conversion still routes through operator bool() (true if nonzero).
+  EXPECT_TRUE(static_cast<bool>(T{1.0F}));
+  EXPECT_FALSE(static_cast<bool>(T{0.0F}));
+}
+
 TEST(SkymizerMinifloat, TestCompoundAssignment) {
   using T = Minifloat<5, 2>;  // covers a wider range than 3,4
   T x{2.0F};

@@ -267,6 +267,15 @@ public:
   explicit Minifloat(float x) noexcept : bits_(bits_from_float(x)) {};
   explicit Minifloat(double x) noexcept : bits_(bits_from_double(x)) {};
 
+  //! Construct from any non-bool integer type by routing through double.
+  //! `bool` is excluded so it routes through `operator bool()` instead and
+  //! does not collide with that overload.
+  template <typename Int,
+            std::enable_if_t<std::is_integral_v<Int> &&
+                                 !std::is_same_v<std::remove_cv_t<Int>, bool>,
+                             int> = 0>
+  explicit Minifloat(Int x) noexcept : bits_(bits_from_double(static_cast<double>(x))) {}
+
   static constexpr Minifloat from_bits(Storage bits) noexcept {
     const unsigned mask = (1U << (E + M + 1)) - 1U;
     Minifloat result;
@@ -458,6 +467,19 @@ public:
   [[nodiscard, gnu::pure]]
   explicit operator double() const noexcept {
     return to_double();
+  }
+
+  //! Truncating conversion to any non-bool integer type. Out-of-range values
+  //! invoke the host's float-to-integer truncation, matching what
+  //! `static_cast<Int>(double)` would do — for IEEE NaN/infinity this is
+  //! implementation-defined per the C++ standard.
+  template <typename Int,
+            std::enable_if_t<std::is_integral_v<Int> &&
+                                 !std::is_same_v<std::remove_cv_t<Int>, bool>,
+                             int> = 0>
+  [[nodiscard, gnu::pure]]
+  explicit operator Int() const noexcept {
+    return static_cast<Int>(to_double());
   }
 
   Minifloat &operator+=(Minifloat y) noexcept { return *this = *this + y; }
