@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,15 +20,23 @@ jobs:
           - name: GCC / Linux / C++17
             os: ubuntu-latest
             standard: 17
-          - name: Apple Clang / macOS / C++17
-            os: macos-latest
-            standard: 17
-          - name: MSVC / Windows / C++17
-            os: windows-latest
-            standard: 17
+            compiler_args: -DCMAKE_CXX_COMPILER=g++
           - name: GCC / Linux / C++20
             os: ubuntu-latest
             standard: 20
+            compiler_args: -DCMAKE_CXX_COMPILER=g++
+          - name: Clang / Linux / C++17
+            os: ubuntu-latest
+            standard: 17
+            compiler_args: -DCMAKE_CXX_COMPILER=clang++
+          - name: Apple Clang / macOS / C++17
+            os: macos-latest
+            standard: 17
+            compiler_args: -DCMAKE_CXX_COMPILER=clang++
+          - name: MSVC / Windows / C++17
+            os: windows-latest
+            standard: 17
+            compiler_args: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -36,6 +45,7 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_CXX_STANDARD=${{ matrix.standard }}
+          ${{ matrix.compiler_args }}
           -DSKYMIZER_MINIFLOAT_BUILD_TESTS=ON
           -DSKYMIZER_MINIFLOAT_FETCH_GTEST=ON
       - name: Build
