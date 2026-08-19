@@ -10,6 +10,7 @@
 #define SKYMIZER_MINIFLOAT_HPP
 
 #include <algorithm>
+#include <cassert>
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
@@ -42,8 +43,7 @@ namespace minifloat {
 
 //! Backport of C++20 std::bit_cast
 template <typename To, typename From>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST
-To bit_cast(const From &from) noexcept {
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST To bit_cast(const From &from) noexcept {
   static_assert(sizeof(To) == sizeof(From));
   static_assert(std::is_trivially_copyable_v<To>);
   static_assert(std::is_trivially_copyable_v<From>);
@@ -58,131 +58,217 @@ To bit_cast(const From &from) noexcept {
 #endif
 }
 
-template <int M>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST
-float round_normal_float_to_mantissa(float x) noexcept {
-  static_assert(M < FLT_MANT_DIG);
-  static_assert(std::numeric_limits<float>::radix == 2);
-  static_assert(std::numeric_limits<float>::is_iec559);
-
-  const auto bits = bit_cast<std::uint32_t>(x);
-  const auto ulp = std::uint32_t{1} << (FLT_MANT_DIG - 1 - M);
-  const auto bias = ulp / 2 - !(bits & ulp);
-  return bit_cast<float>((bits + bias) & ~(ulp - 1));
-}
-
-template <int M>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST
-double round_normal_double_to_mantissa(double x) noexcept {
-  static_assert(M < DBL_MANT_DIG);
-  static_assert(std::numeric_limits<double>::radix == 2);
-  static_assert(std::numeric_limits<double>::is_iec559);
-
-  const auto bits = bit_cast<std::uint64_t>(x);
-  const auto ulp = std::uint64_t{1} << (DBL_MANT_DIG - 1 - M);
-  const auto bias = ulp / 2 - !(bits & ulp);
-  return bit_cast<double>((bits + bias) & ~(ulp - 1));
-}
-
+//! Default exponent bias, the IEEE 754 one
 constexpr int default_bias(int exponent_width) { return (1 << (exponent_width - 1)) - 1; }
 
-//! NaN encoding style
+namespace detail {
+
+//! Unsigned integer type as wide as the host floating-point type `Float`
+template <typename Float>
+using BitsOf =
+    std::conditional_t<sizeof(Float) == sizeof(std::uint32_t), std::uint32_t, std::uint64_t>;
+
+//! Round a *normal* (or infinite, or NaN) host float to `M` mantissa bits
 //!
-//! The variants follow [LLVM/MLIR naming conventions][llvm] derived from
-//! their differences to [IEEE 754][ieee].
+//! Ties go to even.  The result keeps the host format, so the caller still has
+//! to encode it.  Subnormal and zero inputs must be scaled into the normal
+//! range first — their exponent field does not mean what this bit trick
+//! assumes.
+template <int M, typename Float>
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST Float round_normal_to_mantissa(Float x) noexcept {
+  using Bits = BitsOf<Float>;
+  constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
+
+  static_assert(M < MANT_DIG);
+  static_assert(std::numeric_limits<Float>::radix == 2);
+  static_assert(std::numeric_limits<Float>::is_iec559);
+
+  const auto bits = bit_cast<Bits>(x);
+  const auto ulp = Bits{1} << (MANT_DIG - 1 - M);
+  const auto bias = static_cast<Bits>(ulp / 2 - !(bits & ulp));
+  return bit_cast<Float>(static_cast<Bits>((bits + bias) & ~(ulp - 1)));
+}
+
+//! What a bit pattern denotes
+enum struct Kind { Zero, Subnormal, Normal, Infinite, NaN };
+
+//! Plain scientific reading of the magnitude field
 //!
-//! [llvm]: https://llvm.org/doxygen/structllvm_1_1APFloatBase.html
-//! [ieee]: https://en.wikipedia.org/wiki/IEEE_754
-enum struct NanStyle {
-  //! IEEE 754 NaN encoding
-  //!
-  //! The maximum exponent is reserved for non-finite numbers.  The zero
-  //! mantissa stands for infinity, while any other value represents a NaN.
-  IEEE,
-
-  //! `FN` suffix as in LLVM/MLIR
-  //!
-  //! `F` is for finite, `N` for a special NaN encoding.  There are no
-  //! infinities.  The maximum magnitude is reserved for NaNs, where the
-  //! exponent and mantissa are all ones.
-  FN,
-
-  //! `FNUZ` suffix as in LLVM/MLIR
-  //!
-  //! `F` is for finite, `N` for a special NaN encoding, `UZ` for unsigned
-  //! zero.  There are no infinities.  The negative zero (&minus;0.0)
-  //! representation is reserved for NaN.  As a result, there is only one
-  //! (+0.0) unsigned zero.
-  FNUZ,
-};
-
-//! Subnormal handling style
-enum struct SubnormalStyle {
-  //! IEEE 754 subnormal numbers
-  //!
-  //! Subnormal numbers have the smallest exponent (same as the smallest normal
-  //! numbers) but without the implicit leading bit.  Subnormal numbers provide
-  //! a smooth transition from zero to normal numbers.
-  Precise,
-
-  //! Do not use subnormal representations
-  //!
-  //! I (jdh8) do not recommend this option, but one of our users requested it.
-  //! If you want to reserve floating-point representations, I strongly suggest
-  //! using NaN boxing instead.
-  Reserved,
-
-  //! I am speed
-  //!
-  //! Subnormal numbers are valid representations, but they are not
-  //! guaranteed to be precise.  This is useful for fast emulation of
-  //! subnormal numbers.
-  //!
-  //! The fast representations still have a correct sign and a magnitude between
-  //! zero and the smallest positive normal number.
-  Fast,
-};
-
-//! FP classification helper for `Minifloat`
-template <NanStyle> struct FpClassifier;
-
-//! Configurable signed floating point type
-//!
-//! \tparam E - Exponent width
-//! \tparam M - Mantissa (significand) width
-//! \tparam N - NaN encoding style
-//! \tparam B - Exponent bias
-//! \tparam D - Subnormal (denormal) encoding style
-//!
-//! Constraints:
-//! - E + M < 16
-//! - E >= 2
-//! - M >= 0 (M > 0 if N is `NanStyle::IEEE`) (∞ ≠ NaN)
-//! - D = `SubnormalStyle::Precise` if M = 0
-template <
-    int E, int M, NanStyle N = NanStyle::IEEE, int B = default_bias(E),
-    SubnormalStyle D = SubnormalStyle::Precise>
-class Minifloat {
-  friend FpClassifier<N>;
-
-public:
-  static constexpr int EXPONENT_BITS = E;
-  static constexpr int MANTISSA_BITS = M;
-  static constexpr int MANTISSA_DIGITS = M + 1;
-  static constexpr NanStyle NAN_STYLE = N;
-  static constexpr int BIAS = B;
-  static constexpr SubnormalStyle SUBNORMAL_STYLE = D;
-
+//! Every magnitude `(e << M) | m` denotes `(1 + m / 2**M) * 2**(e - B)`.  This
+//! layer owns the bit space and nothing else: no zero, no subnormal, no
+//! reserved code point.  The layers above reinterpret parts of it.
+template <int E, int M, int B> struct ScientificFormat {
   static_assert(E + M < 16);
   static_assert(E >= 2);
   static_assert(M >= 0);
-  static_assert(M > 0 || N != NanStyle::IEEE);
-  static_assert(M > 0 || D == SubnormalStyle::Precise);
 
   using Storage = std::conditional_t<(E + M < 8), std::uint_least8_t, std::uint_least16_t>;
-  static constexpr int MAX_EXP = (1 << E) - B - int{N == NanStyle::IEEE};
-  static constexpr int MIN_EXP = 2 - B;
-  static constexpr Storage ABS_MASK = (1U << (E + M)) - 1U;
+
+  static constexpr Storage MAG_MASK = static_cast<Storage>((1U << (E + M)) - 1U);
+  static constexpr Storage SIGN_MASK = static_cast<Storage>(1U << (E + M));
+
+  //! Least exponent of a representable magnitude, `FLT_MIN_EXP` style
+  static constexpr int MIN_EXP = 1 - B;
+  //! One past the greatest exponent, `FLT_MAX_EXP` style
+  static constexpr int MAX_EXP = (1 << E) - B;
+
+  static constexpr Kind kind(Storage) noexcept { return Kind::Normal; }
+};
+
+//! `ScientificFormat` with row 0 spent on zero and subnormals
+//!
+//! Magnitudes below `2**M` denote `m * 2**(MIN_EXP - 1 - M)`, so the format
+//! gains a zero (and a negative zero) and loses the `2**-B` scientific row.
+//! Nothing is reserved for infinity or NaN, hence *finite*.
+template <int E, int M, int B> struct FiniteFormat {
+  using Inner = ScientificFormat<E, M, B>;
+  using Storage = typename Inner::Storage;
+
+  static constexpr int EXPONENT_BITS = E, MANTISSA_BITS = M, BIAS = B;
+  static constexpr Storage MAG_MASK = Inner::MAG_MASK, SIGN_MASK = Inner::SIGN_MASK;
+
+  //! Row 0 no longer denotes `2**-B`, so the least normal exponent moves up
+  static constexpr int MIN_EXP = Inner::MIN_EXP + 1;
+  static constexpr int MAX_EXP = Inner::MAX_EXP;
+
+  static constexpr bool HAS_INF = false, HAS_NAN = false, HAS_NEG_ZERO = true;
+
+  static constexpr Storage MAX_FINITE_MAG = MAG_MASK;
+  static constexpr Storage OVERFLOW_MAG = MAG_MASK;
+
+  static constexpr bool is_nan(Storage) noexcept { return false; }
+
+  static constexpr Kind kind(Storage bits) noexcept {
+    const Storage mag = bits & MAG_MASK;
+    if (mag == 0)
+      return Kind::Zero;
+    if (mag < (Storage{1} << M))
+      return Kind::Subnormal;
+    return Inner::kind(mag);
+  }
+};
+
+//! `FiniteFormat` with the top exponent row reserved, as in IEEE 754
+//!
+//! A zero mantissa there denotes an infinity, any other value a NaN.
+template <int E, int M, int B> struct IeeeFormat {
+  using Inner = FiniteFormat<E, M, B>;
+  using Storage = typename Inner::Storage;
+
+  static_assert(M > 0, "IEEE 754 needs a mantissa bit to tell infinity from NaN");
+
+  static constexpr int EXPONENT_BITS = E, MANTISSA_BITS = M, BIAS = B;
+  static constexpr Storage MAG_MASK = Inner::MAG_MASK, SIGN_MASK = Inner::SIGN_MASK;
+
+  static constexpr int MIN_EXP = Inner::MIN_EXP;
+  //! The top row is not finite, so the exponent range loses its last step
+  static constexpr int MAX_EXP = Inner::MAX_EXP - 1;
+
+  static constexpr bool HAS_INF = true, HAS_NAN = true, HAS_NEG_ZERO = true;
+
+  static constexpr Storage INF_MAG = static_cast<Storage>(MAG_MASK << M & MAG_MASK);
+  static constexpr Storage MAX_FINITE_MAG = static_cast<Storage>(INF_MAG - 1U);
+  static constexpr Storage OVERFLOW_MAG = INF_MAG;
+  static constexpr Storage NAN_BITS = static_cast<Storage>(MAG_MASK << (M - 1) & MAG_MASK);
+
+  static constexpr bool is_nan(Storage bits) noexcept { return (bits & MAG_MASK) > INF_MAG; }
+
+  static constexpr Kind kind(Storage bits) noexcept {
+    const Storage mag = bits & MAG_MASK;
+    if (mag > INF_MAG)
+      return Kind::NaN;
+    if (mag == INF_MAG)
+      return Kind::Infinite;
+    return Inner::kind(mag);
+  }
+};
+
+//! `FiniteFormat` with the all-ones magnitude reserved for NaN
+//!
+//! `FN` as in LLVM/MLIR: `F` for finite (there is no infinity), `N` for a
+//! special NaN encoding.
+template <int E, int M, int B> struct FnFormat {
+  using Inner = FiniteFormat<E, M, B>;
+  using Storage = typename Inner::Storage;
+
+  static constexpr int EXPONENT_BITS = E, MANTISSA_BITS = M, BIAS = B;
+  static constexpr Storage MAG_MASK = Inner::MAG_MASK, SIGN_MASK = Inner::SIGN_MASK;
+
+  static constexpr int MIN_EXP = Inner::MIN_EXP;
+  static constexpr int MAX_EXP = Inner::MAX_EXP;
+
+  static constexpr bool HAS_INF = false, HAS_NAN = true, HAS_NEG_ZERO = true;
+
+  static constexpr Storage NAN_BITS = MAG_MASK;
+  static constexpr Storage MAX_FINITE_MAG = static_cast<Storage>(MAG_MASK - 1U);
+  static constexpr Storage OVERFLOW_MAG = MAX_FINITE_MAG;
+
+  static constexpr bool is_nan(Storage bits) noexcept { return (bits & MAG_MASK) == MAG_MASK; }
+
+  static constexpr Kind kind(Storage bits) noexcept {
+    const Storage mag = bits & MAG_MASK;
+    return mag == MAG_MASK ? Kind::NaN : Inner::kind(mag);
+  }
+};
+
+//! `FiniteFormat` with the negative zero reserved for NaN
+//!
+//! `FNUZ` as in LLVM/MLIR: `F` for finite, `N` for a special NaN encoding,
+//! `UZ` for unsigned zero.  Since the sole NaN is the would-be negative zero,
+//! it is the one format whose NaN test needs the sign bit.
+template <int E, int M, int B> struct FnuzFormat {
+  using Inner = FiniteFormat<E, M, B>;
+  using Storage = typename Inner::Storage;
+
+  static constexpr int EXPONENT_BITS = E, MANTISSA_BITS = M, BIAS = B;
+  static constexpr Storage MAG_MASK = Inner::MAG_MASK, SIGN_MASK = Inner::SIGN_MASK;
+
+  static constexpr int MIN_EXP = Inner::MIN_EXP;
+  static constexpr int MAX_EXP = Inner::MAX_EXP;
+
+  static constexpr bool HAS_INF = false, HAS_NAN = true, HAS_NEG_ZERO = false;
+
+  static constexpr Storage NAN_BITS = SIGN_MASK;
+  static constexpr Storage MAX_FINITE_MAG = MAG_MASK;
+  static constexpr Storage OVERFLOW_MAG = MAG_MASK;
+
+  static constexpr bool is_nan(Storage bits) noexcept { return bits == SIGN_MASK; }
+
+  static constexpr Kind kind(Storage bits) noexcept {
+    return bits == SIGN_MASK ? Kind::NaN : Inner::kind(bits & MAG_MASK);
+  }
+};
+
+} // namespace detail
+
+//! Configurable signed floating-point type up to 16 bits
+//!
+//! `Format` is one of the layered policies in `detail`, each of which
+//! reinterprets one part of the bit space in terms of the layer below it.
+//! Spell types through the `Finite`, `IEEE`, `FN`, and `FNUZ` alias templates
+//! rather than naming a policy directly.
+template <class Format> class Minifloat {
+  static constexpr int E = Format::EXPONENT_BITS;
+  static constexpr int M = Format::MANTISSA_BITS;
+  static constexpr int B = Format::BIAS;
+
+public:
+  using Storage = typename Format::Storage;
+
+  static constexpr int EXPONENT_BITS = E;
+  static constexpr int MANTISSA_BITS = M;
+  static constexpr int MANTISSA_DIGITS = M + 1;
+  static constexpr int BIAS = B;
+  static constexpr int MAX_EXP = Format::MAX_EXP;
+  static constexpr int MIN_EXP = Format::MIN_EXP;
+  static constexpr Storage ABS_MASK = Format::MAG_MASK;
+
+  //! Does this format reserve code points for infinities?
+  static constexpr bool HAS_INF = Format::HAS_INF;
+  //! Does this format reserve code points for NaNs?
+  static constexpr bool HAS_NAN = Format::HAS_NAN;
+  //! Does this format distinguish &minus;0.0 from +0.0?
+  static constexpr bool HAS_NEG_ZERO = Format::HAS_NEG_ZERO;
 
   static constexpr bool HAS_EXACT_F32_CONVERSION =
       FLT_MANT_DIG >= MANTISSA_DIGITS && FLT_MAX_EXP >= MAX_EXP && FLT_MIN_EXP <= MIN_EXP &&
@@ -193,7 +279,7 @@ public:
       std::numeric_limits<double>::radix == 2 && std::numeric_limits<double>::is_iec559;
 
   static constexpr bool USE_FLT_ADD = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS && //
-                                      (FLT_MAX_EXP > MAX_EXP) &&           //
+                                      (FLT_MAX_EXP > MAX_EXP) &&             //
                                       (FLT_MIN_EXP < MIN_EXP);
 
   static constexpr bool USE_FLT_MUL = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS &&
@@ -203,293 +289,273 @@ public:
 private:
   Storage bits_{};
 
-  static constexpr Storage HUGE_REPR = [] {
-    const Storage max = (UINT32_C(1) << (E + M)) - 1;
+  //! Encode a host float, rounding to nearest with ties to even
+  //!
+  //! A NaN input needs `Format::HAS_NAN`; see the constructors.
+  template <typename Float>
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
+    using Bits = detail::BitsOf<Float>;
+    using Int = std::make_signed_t<Bits>;
+    constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
+    constexpr int SRC_MIN_EXP = std::numeric_limits<Float>::min_exponent;
 
-    if constexpr (N == NanStyle::IEEE)
-      return max << M & max;
+    const auto sign = static_cast<unsigned>(std::signbit(x)) << (E + M);
 
-    return max - (N == NanStyle::FN);
-  }();
-
-  static constexpr Storage NAN_REPR = []() -> Storage {
-    const Storage signbit = UINT32_C(1) << (E + M);
-    const Storage max = signbit - 1;
-
-    if constexpr (N == NanStyle::FNUZ)
-      return signbit;
-
-    if constexpr (N == NanStyle::IEEE)
-      return max << (M - 1) & max;
-
-    return max;
-  }();
-
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST
-  static Storage bits_from_float(float x) noexcept {
-    const auto bits = bit_cast<std::uint32_t>(round_normal_float_to_mantissa<M>(x));
-    const auto sign = bits >> 31 << (E + M);
-
-    if (x != x)
-      return sign | NAN_REPR;
-
-    const auto diff = std::int32_t{MIN_EXP - FLT_MIN_EXP} << M;
-    const auto magnitude = static_cast<std::int32_t>(bits << 1 >> (FLT_MANT_DIG - M)) - diff;
-
-    if (magnitude < 1 << M) {
-      if constexpr (D == SubnormalStyle::Fast)
-        return magnitude <= 0 ? (N != NanStyle::FNUZ) * sign : sign | magnitude;
-
-      if constexpr (D == SubnormalStyle::Reserved)
-        return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
-
-      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
-      return (N != NanStyle::FNUZ || ticks) * sign | ticks;
+    if ((std::isnan)(x)) {
+      if constexpr (Format::HAS_NAN)
+        return static_cast<Storage>(sign | Format::NAN_BITS);
+      else // Precondition violation; saturate rather than emit a wild pattern.
+        return static_cast<Storage>(sign | Format::MAX_FINITE_MAG);
     }
-    return sign | std::min<std::int32_t>(magnitude, HUGE_REPR);
+
+    Float normalized = x;
+    Int offset = 0;
+
+    // A zero or subnormal source has a zero exponent field, which the linear
+    // magnitude below misreads. Only formats reaching under the source's own
+    // normal range ever get here, and for them the scaling is exact.
+    if constexpr (MIN_EXP < SRC_MIN_EXP) {
+      if (!(std::abs(x) >= (std::numeric_limits<Float>::min)())) {
+        if (x == Float{0})
+          return static_cast<Storage>(Format::HAS_NEG_ZERO * sign);
+
+        normalized = x * static_cast<Float>(Bits{1} << MANT_DIG);
+        offset = Int{MANT_DIG} << M;
+      }
+    }
+
+    const auto bits = bit_cast<Bits>(detail::round_normal_to_mantissa<M>(normalized));
+    const Int diff = Int{MIN_EXP - SRC_MIN_EXP} * (Int{1} << M) + offset;
+    const Int magnitude = static_cast<Int>(bits << 1 >> (MANT_DIG - M)) - diff;
+
+    if (magnitude < Int{1} << M) {
+      // The scale stays double: it overflows `float` for the wider formats.
+      const auto ticks =
+          static_cast<Storage>(std::nearbyint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP)));
+      return static_cast<Storage>((Format::HAS_NEG_ZERO || ticks) * sign | ticks);
+    }
+    return static_cast<Storage>(sign | std::min<Int>(magnitude, Format::OVERFLOW_MAG));
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST
-  static Storage bits_from_double(double x) noexcept {
-    const auto bits = bit_cast<std::uint64_t>(round_normal_double_to_mantissa<M>(x));
-    const auto sign = bits >> 63 << (E + M);
+  //! Exact reconstruction into `Float`
+  //!
+  //! Requires the matching `HAS_EXACT_*_CONVERSION`.
+  template <typename Float> [[nodiscard]] SKYMIZER_MINIFLOAT_PURE Float to_exact() const noexcept {
+    using Bits = detail::BitsOf<Float>;
+    constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
+    constexpr int DST_MIN_EXP = std::numeric_limits<Float>::min_exponent;
 
-    if (x != x)
-      return sign | NAN_REPR;
+    const Float sign = signbit() ? Float{-1} : Float{1};
+    const auto magnitude = static_cast<Bits>(bits_ & ABS_MASK);
 
-    const auto diff = std::int64_t{MIN_EXP - DBL_MIN_EXP} << M;
-    const auto magnitude = static_cast<std::int64_t>(bits << 1 >> (DBL_MANT_DIG - M)) - diff;
+    if constexpr (Format::HAS_NAN)
+      if (Format::is_nan(bits_))
+        return std::copysign(std::numeric_limits<Float>::quiet_NaN(), sign);
 
-    if (magnitude < 1 << M) {
-      if constexpr (D == SubnormalStyle::Fast)
-        return magnitude <= 0 ? (N != NanStyle::FNUZ) * sign : sign | magnitude;
+    if constexpr (Format::HAS_INF)
+      if (magnitude == Format::INF_MAG)
+        return std::copysign(std::numeric_limits<Float>::infinity(), sign);
 
-      if constexpr (D == SubnormalStyle::Reserved)
-        return magnitude <= 1 << M >> 1 ? (N != NanStyle::FNUZ) * sign : sign | 1 << M;
+    if (magnitude < Bits{1} << M)
+      return magnitude *
+             std::copysign(std::exp2(static_cast<Float>(MIN_EXP - MANTISSA_DIGITS)), sign);
 
-      const Storage ticks = std::nearbyint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP));
-      return (N != NanStyle::FNUZ || ticks) * sign | ticks;
-    }
-    return sign | std::min<std::int64_t>(magnitude, HUGE_REPR);
+    const auto shifted = static_cast<Bits>(magnitude << (MANT_DIG - MANTISSA_DIGITS));
+    const auto bias = static_cast<Bits>(Bits{MIN_EXP - DST_MIN_EXP} << (MANT_DIG - 1));
+    const auto sign_bit =
+        static_cast<Bits>(Bits{signbit()} << (std::numeric_limits<Bits>::digits - 1));
+    return bit_cast<Float>(static_cast<Bits>(sign_bit | (shifted + bias)));
   }
 
 public:
   Minifloat() = default;
-  explicit Minifloat(float x) noexcept : bits_(bits_from_float(x)) {};
-  explicit Minifloat(double x) noexcept : bits_(bits_from_double(x)) {};
+
+  explicit Minifloat(float x) noexcept : bits_(bits_from(x)) {
+    assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
+  }
+
+  explicit Minifloat(double x) noexcept : bits_(bits_from(x)) {
+    assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
+  }
 
   //! Construct from any non-bool integer type by routing through double.
   //! `bool` is excluded so it routes through `operator bool()` instead and
   //! does not collide with that overload.
-  template <typename Int,
-            std::enable_if_t<std::is_integral_v<Int> &&
-                                 !std::is_same_v<std::remove_cv_t<Int>, bool>,
-                             int> = 0>
-  explicit Minifloat(Int x) noexcept : bits_(bits_from_double(static_cast<double>(x))) {}
+  template <
+      typename Int,
+      std::enable_if_t<
+          std::is_integral_v<Int> && !std::is_same_v<std::remove_cv_t<Int>, bool>, int> = 0>
+  explicit Minifloat(Int x) noexcept : bits_(bits_from(static_cast<double>(x))) {}
 
   static constexpr Minifloat from_bits(Storage bits) noexcept {
-    const unsigned mask = (1U << (E + M + 1)) - 1U;
     Minifloat result;
-    result.bits_ = bits & mask;
+    result.bits_ = static_cast<Storage>(bits & (Format::MAG_MASK | Format::SIGN_MASK));
     return result;
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat from_float(float x) noexcept { return Minifloat{x}; }
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat from_double(double x) noexcept { return Minifloat{x}; }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat from_float(float x) noexcept {
+    return Minifloat{x};
+  }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat from_double(double x) noexcept {
+    return Minifloat{x};
+  }
 
   //! Minimum positive value, which is probably subnormal
   //!
   //! This can be normal when bitwidth is low.  Therefore, it is named after
   //! `FLT_TRUE_MIN` instead of `numeric_limits::denorm_min()`.
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat true_min() noexcept { return from_bits(1); }
+  [[nodiscard]] static constexpr Minifloat true_min() noexcept { return from_bits(1); }
 
   /// Minimum positive normal value
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat min() noexcept { return from_bits(1 << M); }
-
-  /// Maximum finite value
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Minifloat max() noexcept {
-    return from_bits(HUGE_REPR - (N == NanStyle::IEEE));
+  [[nodiscard]] static constexpr Minifloat min() noexcept {
+    return from_bits(static_cast<Storage>(1U << M));
   }
 
-  //! Positive infinity for `NanStyle::IEEE`, or `+0.0` for the other NaN
-  //! styles (which do not represent infinity at all).
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static constexpr Minifloat infinity() noexcept {
-    if constexpr (N == NanStyle::IEEE)
-      return from_bits(HUGE_REPR);
+  /// Maximum finite value
+  [[nodiscard]] static constexpr Minifloat max() noexcept {
+    return from_bits(Format::MAX_FINITE_MAG);
+  }
+
+  //! Positive infinity, or `+0.0` for the formats that have none
+  [[nodiscard]] static constexpr Minifloat infinity() noexcept {
+    if constexpr (Format::HAS_INF)
+      return from_bits(Format::INF_MAG);
     else
       return from_bits(0);
   }
 
-  /// Quiet NaN
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static constexpr Minifloat quiet_NaN() noexcept {
-    return from_bits(NAN_REPR);
+  //! Quiet NaN, or `+0.0` for the formats that have none
+  [[nodiscard]] static constexpr Minifloat quiet_NaN() noexcept {
+    if constexpr (Format::HAS_NAN)
+      return from_bits(Format::NAN_BITS);
+    else
+      return from_bits(0);
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr Storage to_bits() const noexcept { return bits_; }
 
   //! Sign bit
   //!
-  //! Note for `NanStyle::FNUZ`: the sole NaN representation has the sign bit
-  //! set, so `signbit()` returns `true` for a FNUZ NaN even though there is
-  //! no negative-zero counterpart to compare it to. Callers that filter by
+  //! Note for `FNUZ`: the sole NaN representation has the sign bit set, so
+  //! `signbit()` returns `true` for a FNUZ NaN even though there is no
+  //! negative-zero counterpart to compare it to. Callers that filter by
   //! `signbit()` should test `is_nan()` first when working with FNUZ.
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool signbit() const noexcept { return bits_ >> (E + M) & 1; }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool signbit() const noexcept {
+    return (bits_ & Format::SIGN_MASK) != 0;
+  }
 
   //! Check if the number is nonzero
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr explicit operator bool() const noexcept {
-    if constexpr (N == NanStyle::FNUZ)
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr explicit operator bool() const noexcept {
+    if constexpr (!Format::HAS_NEG_ZERO)
       return bits_ != 0;
 
     return (bits_ & ABS_MASK) != 0;
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr bool is_nan() const noexcept {
-    if constexpr (N == NanStyle::FNUZ)
-      return bits_ == ABS_MASK + 1U;
-
-    if constexpr (N == NanStyle::FN)
-      return (bits_ & ABS_MASK) == ABS_MASK;
-
-    return (bits_ & ABS_MASK) > HUGE_REPR;
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_nan() const noexcept {
+    return Format::is_nan(bits_);
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr bool is_infinite() const noexcept {
-    return N == NanStyle::IEEE && (bits_ & ABS_MASK) == HUGE_REPR;
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_infinite() const noexcept {
+    if constexpr (Format::HAS_INF)
+      return (bits_ & ABS_MASK) == Format::INF_MAG;
+
+    return false;
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr bool is_finite() const noexcept {
-    if constexpr (N == NanStyle::IEEE)
-      return (bits_ & ABS_MASK) < HUGE_REPR;
-
-    return !is_nan();
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_finite() const noexcept {
+    return !is_nan() && !is_infinite();
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr bool is_normal() const noexcept {
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_normal() const noexcept {
     return is_finite() && (bits_ & ABS_MASK) >= (1U << M);
   }
 
   //! Check if the number is nonzero subnormal
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr bool is_subnormal() const noexcept {
-    const Storage abs_bits = bits_ & ABS_MASK;
-    return 0 < abs_bits && abs_bits < (1U << M);
-  }
-
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr int classify() const noexcept {
-    return FpClassifier<N>::classify(*this);
-  }
-
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  constexpr Minifloat abs() const noexcept {
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_subnormal() const noexcept {
     const Storage magnitude = bits_ & ABS_MASK;
+    return 0 < magnitude && magnitude < (1U << M);
+  }
 
-    if (N == NanStyle::FNUZ && !magnitude)
-      return *this;
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr int classify() const noexcept {
+    const detail::Kind kind = Format::kind(bits_);
+    if (kind == detail::Kind::NaN)
+      return FP_NAN;
+    if (kind == detail::Kind::Infinite)
+      return FP_INFINITE;
+    if (kind == detail::Kind::Subnormal)
+      return FP_SUBNORMAL;
+    if (kind == detail::Kind::Zero)
+      return FP_ZERO;
+    return FP_NORMAL;
+  }
 
-    return from_bits(magnitude);
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr Minifloat abs() const noexcept {
+    // A FNUZ NaN is the would-be negative zero; clearing its sign would turn
+    // it into a zero.
+    if constexpr (!Format::HAS_NEG_ZERO)
+      if (!(bits_ & ABS_MASK))
+        return *this;
+
+    return from_bits(static_cast<Storage>(bits_ & ABS_MASK));
   }
 
   //! Explicit conversion to float
   //!
-  //! The lossy branch makes use of conversion to double.  Conversion to double
-  //! is lossy only when then exponent width is too large.  In this case, a
-  //! second conversion to float is safe.
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  float to_float() const noexcept {
-    if constexpr (!HAS_EXACT_F32_CONVERSION)
-      return to_double();
+  //! The lossy branch goes through double.  Conversion to double is lossy only
+  //! when the exponent range is too wide, and in that case a second conversion
+  //! to float is safe.
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE float to_float() const noexcept {
+    if constexpr (HAS_EXACT_F32_CONVERSION)
+      return to_exact<float>();
 
-    const float sign = signbit() ? -1.0F : 1.0F;
-    const std::uint32_t magnitude = bits_ & ABS_MASK;
-
-    if (is_nan())
-      return std::copysign(NAN, sign);
-
-    if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
-      return std::copysign(HUGE_VALF, sign);
-
-    if (D == SubnormalStyle::Precise && magnitude < 1 << M)
-      return magnitude * std::copysign(std::exp2f(MIN_EXP - MANTISSA_DIGITS), sign);
-
-    const std::uint32_t shifted = magnitude << (FLT_MANT_DIG - MANTISSA_DIGITS);
-    const std::uint32_t diff = MIN_EXP - FLT_MIN_EXP;
-    const std::uint32_t bias = diff << (FLT_MANT_DIG - 1);
-    return bit_cast<float>(signbit() << 31 | (shifted + bias));
+    return static_cast<float>(to_double());
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  explicit operator float() const noexcept {
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE explicit operator float() const noexcept {
     return to_float();
   }
 
   //! Conversion to double
   //!
   //! When `HAS_EXACT_F64_CONVERSION` holds, the result is exact; otherwise the
-  //! conversion may saturate to `HUGE_VAL` for out-of-range exponents.
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  double to_double() const noexcept {
-    static_assert(DBL_MANT_DIG >= MANTISSA_DIGITS);
-    static_assert(std::numeric_limits<double>::radix == 2);
-    static_assert(std::numeric_limits<double>::is_iec559);
+  //! exponent range overflows to `HUGE_VAL` or underflows toward zero.
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE double to_double() const noexcept {
+    if constexpr (HAS_EXACT_F64_CONVERSION)
+      return to_exact<double>();
 
     const double sign = signbit() ? -1.0 : 1.0;
-    const std::uint64_t magnitude = bits_ & ABS_MASK;
+    const auto magnitude = static_cast<std::uint32_t>(bits_ & ABS_MASK);
 
-    if (is_nan())
-      return std::copysign(NAN, sign);
+    if constexpr (Format::HAS_NAN)
+      if (Format::is_nan(bits_))
+        return std::copysign(NAN, sign);
 
-    if (N == NanStyle::IEEE && magnitude == HUGE_REPR)
-      return std::copysign(HUGE_VAL, sign);
-
-    if constexpr (!HAS_EXACT_F64_CONVERSION) {
-      if (magnitude >= static_cast<std::uint64_t>(DBL_MAX_EXP + B) << M)
+    if constexpr (Format::HAS_INF)
+      if (magnitude == Format::INF_MAG)
         return std::copysign(HUGE_VAL, sign);
-    }
 
-    if (D == SubnormalStyle::Precise && magnitude < 1 << M) {
-      if constexpr (HAS_EXACT_F64_CONVERSION)
-        return magnitude * std::copysign(std::exp2(MIN_EXP - MANTISSA_DIGITS), sign);
-      else
-        return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sign);
-    }
+    if (magnitude < 1U << M)
+      return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sign);
 
-    if constexpr (!HAS_EXACT_F64_CONVERSION) {
-      if (static_cast<int>(magnitude >> M) < DBL_MIN_EXP + B) {
-        const std::uint64_t significand = (magnitude & ((1U << M) - 1)) | 1U << M;
-        const int exponent = static_cast<int>(magnitude >> M) - B;
-        return std::copysign(std::ldexp(significand, exponent - M), sign);
-      }
-    }
-
-    constexpr int SHIFT = HAS_EXACT_F64_CONVERSION ? DBL_MANT_DIG - MANTISSA_DIGITS
-                                                   : DBL_MANT_DIG - (E + M);
-    const std::uint64_t shifted = magnitude << SHIFT;
-    const std::uint64_t diff = MIN_EXP - DBL_MIN_EXP;
-    const std::uint64_t bias = diff << (DBL_MANT_DIG - 1);
-    return bit_cast<double>(std::uint64_t{signbit()} << 63 | (shifted + bias));
+    const auto significand = static_cast<std::uint32_t>((magnitude & ((1U << M) - 1U)) | 1U << M);
+    const int exponent = static_cast<int>(magnitude >> M) - B;
+    return std::copysign(std::ldexp(significand, exponent - M), sign);
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  explicit operator double() const noexcept {
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE explicit operator double() const noexcept {
     return to_double();
   }
 
   //! Truncating conversion to any non-bool integer type. Out-of-range values
   //! invoke the host's float-to-integer truncation, matching what
-  //! `static_cast<Int>(double)` would do — for IEEE NaN/infinity this is
+  //! `static_cast<Int>(double)` would do — for NaN and infinity this is
   //! implementation-defined per the C++ standard.
-  template <typename Int,
-            std::enable_if_t<std::is_integral_v<Int> &&
-                                 !std::is_same_v<std::remove_cv_t<Int>, bool>,
-                             int> = 0>
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE
-  explicit operator Int() const noexcept {
+  template <
+      typename Int,
+      std::enable_if_t<
+          std::is_integral_v<Int> && !std::is_same_v<std::remove_cv_t<Int>, bool>, int> = 0>
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE explicit operator Int() const noexcept {
     return static_cast<Int>(to_double());
   }
 
@@ -499,97 +565,36 @@ public:
   Minifloat &operator/=(Minifloat y) noexcept { return *this = *this / y; }
 };
 
-template <> struct FpClassifier<NanStyle::IEEE> {
-  template <int E, int M, int B, SubnormalStyle D>
-  static constexpr int classify(Minifloat<E, M, NanStyle::IEEE, B, D> x) noexcept {
-    const decltype(x.ABS_MASK) bits = x.to_bits() & x.ABS_MASK;
-
-    if (bits > x.HUGE_REPR)
-      return FP_NAN;
-
-    if (bits == x.HUGE_REPR)
-      return FP_INFINITE;
-
-    if (bits >= 1U << M)
-      return FP_NORMAL;
-
-    if (bits > 0)
-      return FP_SUBNORMAL;
-
-    return FP_ZERO;
-  }
-};
-
-template <> struct FpClassifier<NanStyle::FN> {
-  template <int E, int M, int B, SubnormalStyle D>
-  static constexpr int classify(Minifloat<E, M, NanStyle::FN, B, D> x) noexcept {
-    static_assert(x.NAN_REPR == x.ABS_MASK);
-    const decltype(x.ABS_MASK) bits = x.to_bits() & x.ABS_MASK;
-
-    if (bits == x.ABS_MASK)
-      return FP_NAN;
-
-    if (bits >= 1U << M)
-      return FP_NORMAL;
-
-    if (bits > 0)
-      return FP_SUBNORMAL;
-
-    return FP_ZERO;
-  }
-};
-
-template <> struct FpClassifier<NanStyle::FNUZ> {
-  template <int E, int M, int B, SubnormalStyle D>
-  static constexpr int classify(Minifloat<E, M, NanStyle::FNUZ, B, D> x) noexcept {
-    static_assert(x.NAN_REPR == x.ABS_MASK + 1U);
-    const decltype(x.ABS_MASK) bits = x.to_bits() & x.ABS_MASK;
-
-    if (x.is_nan())
-      return FP_NAN;
-
-    if (bits >= 1U << M)
-      return FP_NORMAL;
-
-    if (bits > 0)
-      return FP_SUBNORMAL;
-
-    return FP_ZERO;
-  }
-};
-
 namespace detail {
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr bool are_different_zeroes(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  const auto a = x.to_bits();
-  const auto b = y.to_bits();
-
-  if constexpr (N == NanStyle::FNUZ)
+//! Are both operands zero, in a format where that can happen with unequal bits?
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr bool
+are_different_zeroes(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (!Format::HAS_NEG_ZERO)
     return false;
 
-  return ((a | b) & Minifloat<E, M, N, B, D>::ABS_MASK) == 0;
+  return ((x.to_bits() | y.to_bits()) & Format::MAG_MASK) == 0;
 }
 } // namespace detail
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr bool operator==(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr bool
+operator==(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   return (x.to_bits() == y.to_bits() && !x.is_nan()) || detail::are_different_zeroes(x, y);
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr bool operator!=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr bool
+operator!=(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   return !(x == y);
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr bool
+operator<(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   const auto a = x.to_bits();
   const auto b = y.to_bits();
-  const bool sign = (a | b) >> (E + M) & 1;
+  const bool sign = ((a | b) & Format::SIGN_MASK) != 0;
 
   if (x.is_nan() || y.is_nan() || detail::are_different_zeroes(x, y))
     return false;
@@ -597,12 +602,12 @@ constexpr bool operator<(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y)
   return sign ? a > b : a < b;
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr bool
+operator<=(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   const auto a = x.to_bits();
   const auto b = y.to_bits();
-  const bool sign = (a | b) >> (E + M) & 1;
+  const bool sign = ((a | b) & Format::SIGN_MASK) != 0;
 
   if (x.is_nan() || y.is_nan())
     return false;
@@ -613,65 +618,66 @@ constexpr bool operator<=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y
   return sign ? a >= b : a <= b;
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr bool operator>(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr bool
+operator>(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   return y < x;
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr bool operator>=(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr bool
+operator>=(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   return y <= x;
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x) noexcept {
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format> operator+(Minifloat<Format> x) noexcept {
   return x;
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-constexpr Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x) noexcept {
-  constexpr auto ABS_MASK = Minifloat<E, M, N, B, D>::ABS_MASK;
-  if (N == NanStyle::FNUZ && (x.to_bits() & ABS_MASK) == 0)
-    return x;
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format> operator-(Minifloat<Format> x) noexcept {
+  // Flipping the sign of a FNUZ zero would produce its NaN.
+  if constexpr (!Format::HAS_NEG_ZERO)
+    if (!(x.to_bits() & Format::MAG_MASK))
+      return x;
 
-  return Minifloat<E, M, N, B, D>::from_bits(x.to_bits() ^ (ABS_MASK + 1));
+  return Minifloat<Format>::from_bits(
+      static_cast<typename Format::Storage>(x.to_bits() ^ Format::SIGN_MASK)
+  );
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-Minifloat<E, M, N, B, D> operator+(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_ADD)
-    return Minifloat<E, M, N, B, D>{x.to_float() + y.to_float()};
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+operator+(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (Minifloat<Format>::USE_FLT_ADD)
+    return Minifloat<Format>{x.to_float() + y.to_float()};
 
-  return Minifloat<E, M, N, B, D>{x.to_double() + y.to_double()};
+  return Minifloat<Format>{x.to_double() + y.to_double()};
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-Minifloat<E, M, N, B, D> operator-(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_ADD)
-    return Minifloat<E, M, N, B, D>{x.to_float() - y.to_float()};
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+operator-(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (Minifloat<Format>::USE_FLT_ADD)
+    return Minifloat<Format>{x.to_float() - y.to_float()};
 
-  return Minifloat<E, M, N, B, D>{x.to_double() - y.to_double()};
+  return Minifloat<Format>{x.to_double() - y.to_double()};
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-Minifloat<E, M, N, B, D> operator*(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  if constexpr (Minifloat<E, M, N, B, D>::USE_FLT_MUL)
-    return Minifloat<E, M, N, B, D>{x.to_float() * y.to_float()};
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (Minifloat<Format>::USE_FLT_MUL)
+    return Minifloat<Format>{x.to_float() * y.to_float()};
 
-  return Minifloat<E, M, N, B, D>{x.to_double() * y.to_double()};
+  return Minifloat<Format>{x.to_double() * y.to_double()};
 }
 
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-SKYMIZER_MINIFLOAT_CONST
-Minifloat<E, M, N, B, D> operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) noexcept {
-  return Minifloat<E, M, N, B, D>{x.to_double() / y.to_double()};
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  return Minifloat<Format>{x.to_double() / y.to_double()};
 }
 
 //! Mantissa, base 2 exponent, and sign as integer
@@ -699,16 +705,17 @@ struct IntegerDecode {
 //!
 //! See Rust
 //! [`num::traits::float::FloatCore::integer_decode`](https://docs.rs/num/0.4.3/num/traits/float/trait.FloatCore.html#tymethod.integer_decode).
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x) noexcept {
+template <class Format> IntegerDecode integer_decode(Minifloat<Format> x) noexcept {
   if (x.is_nan())
     return {0, 0, 0};
 
-  constexpr int BIAS = M + 2 - Minifloat<E, M, N, B, D>::MIN_EXP;
+  constexpr int E = Format::EXPONENT_BITS;
+  constexpr int M = Format::MANTISSA_BITS;
+  constexpr int BIAS = M + Format::BIAS;
   const auto bit_mask = [](int width) { return width > 0 ? UINT32_MAX >> (32 - width) : 0; };
 
   const auto bits = x.to_bits();
-  const int sign = bits >> (E + M) ? -1 : 1;
+  const int sign = (bits & Format::SIGN_MASK) ? -1 : 1;
   const int exponent = bits >> M & bit_mask(E);
 
   const std::uint32_t payload = bits & bit_mask(M);
@@ -721,67 +728,40 @@ IntegerDecode integer_decode(Minifloat<E, M, N, B, D> x) noexcept {
   };
 }
 
-// IEEE encoding requires M > 0 (the all-zero mantissa with the maximum
-// exponent is reserved for infinity, distinct from NaN), so for M = 0 we emit
-// only the FN and FNUZ aliases.
-#define SKYMIZER_MINIFLOAT_TYPEDEFS_NO_IEEE(EXP, MANT)                                             \
-  using E##EXP##M##MANT##FN = Minifloat<EXP, MANT, NanStyle::FN>;                                  \
-  using E##EXP##M##MANT##FNUZ = Minifloat<EXP, MANT, NanStyle::FNUZ>;
+//! Finite-only format: every bit pattern is a number, none is NaN or infinity
+template <int E, int M, int B = default_bias(E)>
+using Finite = Minifloat<detail::FiniteFormat<E, M, B>>;
 
-#define SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, MANT)                                                     \
-  using E##EXP##M##MANT = Minifloat<EXP, MANT>;                                                    \
-  SKYMIZER_MINIFLOAT_TYPEDEFS_NO_IEEE(EXP, MANT)
+//! IEEE 754 format: the top exponent row holds the infinities and the NaNs
+template <int E, int M, int B = default_bias(E)>
+using IEEE = Minifloat<detail::IeeeFormat<E, M, B>>;
 
-// One macro per non-zero M ceiling — chained so M_TO_n includes everything
-// from M=0 up through M=n. This lets each row stop exactly at the
-// E + M < 16 boundary instead of generating typedefs that would static_assert
-// on use.
-#define SKYMIZER_MINIFLOAT_M_TO_0(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS_NO_IEEE(EXP, 0)
-#define SKYMIZER_MINIFLOAT_M_TO_1(EXP)  SKYMIZER_MINIFLOAT_M_TO_0(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 1)
-#define SKYMIZER_MINIFLOAT_M_TO_2(EXP)  SKYMIZER_MINIFLOAT_M_TO_1(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 2)
-#define SKYMIZER_MINIFLOAT_M_TO_3(EXP)  SKYMIZER_MINIFLOAT_M_TO_2(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 3)
-#define SKYMIZER_MINIFLOAT_M_TO_4(EXP)  SKYMIZER_MINIFLOAT_M_TO_3(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 4)
-#define SKYMIZER_MINIFLOAT_M_TO_5(EXP)  SKYMIZER_MINIFLOAT_M_TO_4(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 5)
-#define SKYMIZER_MINIFLOAT_M_TO_6(EXP)  SKYMIZER_MINIFLOAT_M_TO_5(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 6)
-#define SKYMIZER_MINIFLOAT_M_TO_7(EXP)  SKYMIZER_MINIFLOAT_M_TO_6(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 7)
-#define SKYMIZER_MINIFLOAT_M_TO_8(EXP)  SKYMIZER_MINIFLOAT_M_TO_7(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 8)
-#define SKYMIZER_MINIFLOAT_M_TO_9(EXP)  SKYMIZER_MINIFLOAT_M_TO_8(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 9)
-#define SKYMIZER_MINIFLOAT_M_TO_10(EXP) SKYMIZER_MINIFLOAT_M_TO_9(EXP)  SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 10)
-#define SKYMIZER_MINIFLOAT_M_TO_11(EXP) SKYMIZER_MINIFLOAT_M_TO_10(EXP) SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 11)
-#define SKYMIZER_MINIFLOAT_M_TO_12(EXP) SKYMIZER_MINIFLOAT_M_TO_11(EXP) SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 12)
-#define SKYMIZER_MINIFLOAT_M_TO_13(EXP) SKYMIZER_MINIFLOAT_M_TO_12(EXP) SKYMIZER_MINIFLOAT_TYPEDEFS(EXP, 13)
+//! LLVM/MLIR `FN` format: no infinity, all-ones magnitude is NaN
+template <int E, int M, int B = default_bias(E)> using FN = Minifloat<detail::FnFormat<E, M, B>>;
 
-SKYMIZER_MINIFLOAT_M_TO_13(2)
-SKYMIZER_MINIFLOAT_M_TO_12(3)
-SKYMIZER_MINIFLOAT_M_TO_11(4)
-SKYMIZER_MINIFLOAT_M_TO_10(5)
-SKYMIZER_MINIFLOAT_M_TO_9(6)
-SKYMIZER_MINIFLOAT_M_TO_8(7)
-SKYMIZER_MINIFLOAT_M_TO_7(8)
-SKYMIZER_MINIFLOAT_M_TO_6(9)
-SKYMIZER_MINIFLOAT_M_TO_5(10)
-SKYMIZER_MINIFLOAT_M_TO_4(11)
-SKYMIZER_MINIFLOAT_M_TO_3(12)
-SKYMIZER_MINIFLOAT_M_TO_2(13)
-SKYMIZER_MINIFLOAT_M_TO_1(14)
-SKYMIZER_MINIFLOAT_M_TO_0(15)
+//! LLVM/MLIR `FNUZ` format: no infinity, no &minus;0.0, that code point is NaN
+//!
+//! The default bias is one greater than `default_bias(E)`, as in LLVM.
+template <int E, int M, int B = default_bias(E) + 1>
+using FNUZ = Minifloat<detail::FnuzFormat<E, M, B>>;
 
-#undef SKYMIZER_MINIFLOAT_TYPEDEFS_NO_IEEE
-#undef SKYMIZER_MINIFLOAT_TYPEDEFS
-#undef SKYMIZER_MINIFLOAT_M_TO_0
-#undef SKYMIZER_MINIFLOAT_M_TO_1
-#undef SKYMIZER_MINIFLOAT_M_TO_2
-#undef SKYMIZER_MINIFLOAT_M_TO_3
-#undef SKYMIZER_MINIFLOAT_M_TO_4
-#undef SKYMIZER_MINIFLOAT_M_TO_5
-#undef SKYMIZER_MINIFLOAT_M_TO_6
-#undef SKYMIZER_MINIFLOAT_M_TO_7
-#undef SKYMIZER_MINIFLOAT_M_TO_8
-#undef SKYMIZER_MINIFLOAT_M_TO_9
-#undef SKYMIZER_MINIFLOAT_M_TO_10
-#undef SKYMIZER_MINIFLOAT_M_TO_11
-#undef SKYMIZER_MINIFLOAT_M_TO_12
-#undef SKYMIZER_MINIFLOAT_M_TO_13
+// Aliases for the formats LLVM's APFloat knows at 16 bits or fewer, without
+// its `FloatN` prefix. The `FN` suffix is LLVM's name for the format, not a
+// promise about NaN: the OCP MX types below (FP4 E2M1, FP6 E2M3 and E3M2) have
+// no NaN at all, so they are `Finite`. The `FN` *template* always means
+// "all-ones magnitude is NaN", hence `FN<2, 1>` differs from `E2M1FN`.
+using E2M1FN = Finite<2, 1>; //!< OCP MX FP4
+using E2M3FN = Finite<2, 3>; //!< OCP MX FP6
+using E3M2FN = Finite<3, 2>; //!< OCP MX FP6
+using E3M4 = IEEE<3, 4>;
+using E4M3 = IEEE<4, 3>;
+using E4M3FN = FN<4, 3>;
+using E4M3FNUZ = FNUZ<4, 3>;
+using E4M3B11FNUZ = FNUZ<4, 3, 11>;
+using E5M2 = IEEE<5, 2>;
+using E5M2FNUZ = FNUZ<5, 2>;
+using E5M10 = IEEE<5, 10>; //!< IEEE 754 binary16
+using E8M7 = IEEE<8, 7>;   //!< bfloat16
 
 } // namespace minifloat
 
@@ -793,13 +773,10 @@ namespace std {
 //! Hash specialization for `Minifloat` so it can be used in unordered
 //! containers. Positive and negative zero are normalized so that values that
 //! compare equal hash equally.
-template <int E, int M, ::skymizer::minifloat::NanStyle N, int B,
-          ::skymizer::minifloat::SubnormalStyle D>
-struct hash<::skymizer::minifloat::Minifloat<E, M, N, B, D>> {
-  size_t operator()(::skymizer::minifloat::Minifloat<E, M, N, B, D> x) const noexcept {
-    using T = ::skymizer::minifloat::Minifloat<E, M, N, B, D>;
+template <class Format> struct hash<::skymizer::minifloat::Minifloat<Format>> {
+  size_t operator()(::skymizer::minifloat::Minifloat<Format> x) const noexcept {
     auto bits = x.to_bits();
-    if ((bits & T::ABS_MASK) == 0)
+    if ((bits & Format::MAG_MASK) == 0)
       bits = 0;
     return static_cast<size_t>(bits);
   }
@@ -809,23 +786,19 @@ struct hash<::skymizer::minifloat::Minifloat<E, M, N, B, D>> {
 //! traits/methods that built-in floating types provide so generic numeric code
 //! (algorithms, type-erased wrappers, math libraries) can introspect a
 //! Minifloat just like `float` or `double`.
-template <int E, int M, ::skymizer::minifloat::NanStyle N, int B,
-          ::skymizer::minifloat::SubnormalStyle D>
-struct numeric_limits<::skymizer::minifloat::Minifloat<E, M, N, B, D>> {
+template <class Format> struct numeric_limits<::skymizer::minifloat::Minifloat<Format>> {
 private:
-  using T = ::skymizer::minifloat::Minifloat<E, M, N, B, D>;
-  using NS = ::skymizer::minifloat::NanStyle;
-  using SS = ::skymizer::minifloat::SubnormalStyle;
+  using T = ::skymizer::minifloat::Minifloat<Format>;
 
   // Bit pattern for 2^k. Saturates to zero when k is below the subnormal
   // range; saturates to max() when k overflows the exponent. Used to derive
   // epsilon() and round_error().
   static constexpr T pow2(int k) noexcept {
-    const int biased = k + B;
+    const int biased = k + T::BIAS;
     if (biased >= 1)
-      return T::from_bits(static_cast<typename T::Storage>(biased) << M);
-    if (biased + M >= 1)
-      return T::from_bits(typename T::Storage{1} << (biased + M - 1));
+      return T::from_bits(static_cast<typename T::Storage>(biased) << T::MANTISSA_BITS);
+    if (biased + T::MANTISSA_BITS >= 1)
+      return T::from_bits(typename T::Storage{1} << (biased + T::MANTISSA_BITS - 1));
     return T::from_bits(0);
   }
 
@@ -834,14 +807,15 @@ public:
   static constexpr bool is_signed = true;
   static constexpr bool is_integer = false;
   static constexpr bool is_exact = false;
-  static constexpr bool has_infinity = (N == NS::IEEE);
-  static constexpr bool has_quiet_NaN = true;
+  static constexpr bool has_infinity = T::HAS_INF;
+  static constexpr bool has_quiet_NaN = T::HAS_NAN;
   static constexpr bool has_signaling_NaN = false;
   static constexpr float_denorm_style has_denorm =
-      D == SS::Reserved ? denorm_absent : denorm_present;
-  static constexpr bool has_denorm_loss = (D == SS::Fast);
+      T::MANTISSA_BITS > 0 ? denorm_present : denorm_absent;
+  static constexpr bool has_denorm_loss = false;
   static constexpr float_round_style round_style = round_to_nearest;
-  static constexpr bool is_iec559 = (N == NS::IEEE) && (D == SS::Precise);
+  //! Only the IEEE layer reserves both an infinity and a NaN
+  static constexpr bool is_iec559 = T::HAS_INF && T::HAS_NAN;
   static constexpr bool is_bounded = true;
   static constexpr bool is_modulo = false;
   static constexpr int radix = 2;
