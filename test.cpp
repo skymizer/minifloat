@@ -7,8 +7,9 @@
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #include "minifloat.hpp"
-#include <gtest/gtest.h>
 #include <cassert>
+#include <gtest/gtest.h>
+#include <string>
 #include <unordered_set>
 
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
@@ -17,7 +18,7 @@ namespace {
 // Compile-time check: the noexcept annotations on the public API propagate to
 // the standard "is_nothrow_*" traits that STL containers use to pick faster
 // move / value paths.
-using NoexceptCheck = Minifloat<3, 4>;
+using NoexceptCheck = IEEE<3, 4>;
 static_assert(std::is_nothrow_default_constructible_v<NoexceptCheck>);
 static_assert(std::is_nothrow_constructible_v<NoexceptCheck, float>);
 static_assert(std::is_nothrow_constructible_v<NoexceptCheck, double>);
@@ -31,6 +32,7 @@ static_assert(std::is_nothrow_destructible_v<NoexceptCheck>);
 static_assert(NoexceptCheck::from_bits(0) == NoexceptCheck::from_bits(0));
 static_assert(NoexceptCheck::from_bits(1) != NoexceptCheck::from_bits(2));
 static_assert(NoexceptCheck::from_bits(1) < NoexceptCheck::from_bits(2));
+
 //! Test floating-point identity like Object.is in JavaScript
 //!
 //! This is necessary because NaN != NaN in C++.  We also want to differentiate
@@ -43,8 +45,7 @@ bool same_double(double x, double y) {
 //! Test floating-point identity like Object.is in JavaScript
 //!
 //! See also `same_double`.
-template <int E, int M, NanStyle N, int B, SubnormalStyle D>
-bool same_mini(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
+template <class Format> bool same_mini(Minifloat<Format> x, Minifloat<Format> y) {
   return x.to_bits() == y.to_bits() || (x.is_nan() && y.is_nan());
 }
 
@@ -55,90 +56,95 @@ bool same_mini(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N, B, D> y) {
 //! -  0 if `x == y` or not comparable
 template <typename T> int compare(T x, T y) { return (x > y) - (x < y); }
 
+//! Name a type in a failure message, since the checkers run over a type list
+template <typename T> std::string describe() {
+  return "E" + std::to_string(T::EXPONENT_BITS) + "M" + std::to_string(T::MANTISSA_BITS) +
+         " B=" + std::to_string(T::BIAS) + (T::HAS_INF ? " inf" : "") + (T::HAS_NAN ? " nan" : "") +
+         (T::HAS_NEG_ZERO ? " -0" : "");
+}
+
 //! Iterate over all possible values of a minifloat type `T`
 template <typename T, typename Predicate> bool for_all(Predicate pred) {
   constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
 
   for (unsigned i = 0; i < END; ++i) {
-    if (!pred(T::from_bits(i)))
+    if (!pred(T::from_bits(static_cast<typename T::Storage>(i))))
       return false;
   }
   return true;
 }
 
+//! Run `Checker::check<T>()` for every `T` in the pack
+template <typename Checker, typename... Ts> void check_each() {
+  const auto run = [](auto sample) {
+    using T = decltype(sample);
+    EXPECT_TRUE(Checker::template check<T>()) << describe<T>();
+  };
+  (run(Ts{}), ...);
+}
+
+//! Types for the linear checkers: every format layer, both biases, the full
+//! width range, plus every public alias shape.
 template <typename Checker> void test_selected_types() {
-  EXPECT_TRUE((Checker::template check<2, 5, NanStyle::IEEE>)());
-  EXPECT_TRUE((Checker::template check<2, 5, NanStyle::FN>)());
-  EXPECT_TRUE((Checker::template check<2, 5, NanStyle::FNUZ>)());
+  check_each<
+      Checker, //
+      Finite<2, 1>, Finite<2, 3>, Finite<3, 2>, Finite<3, 4>, Finite<5, 2>, Finite<7, 0>,
+      IEEE<2, 5>, IEEE<3, 4>, IEEE<4, 3>, IEEE<4, 3, 11>, IEEE<5, 2>, IEEE<5, 7>, IEEE<5, 10>,
+      IEEE<8, 7>, //
+      FN<2, 5>, FN<3, 4>, FN<4, 3>, FN<4, 3, 11>, FN<5, 2>, FN<5, 7>, FN<6, 1>, FN<7, 0>,
+      FNUZ<2, 5>, FNUZ<3, 4>, FNUZ<4, 3>, FNUZ<4, 3, 11>, FNUZ<5, 2>, FNUZ<5, 7>, FNUZ<6, 1>,
+      FNUZ<7, 0>>();
+}
 
-  EXPECT_TRUE((Checker::template check<3, 4, NanStyle::IEEE>)());
-  EXPECT_TRUE((Checker::template check<3, 4, NanStyle::FN>)());
-  EXPECT_TRUE((Checker::template check<3, 4, NanStyle::FNUZ>)());
-
-  EXPECT_TRUE((Checker::template check<4, 3, NanStyle::IEEE>)());
-  EXPECT_TRUE((Checker::template check<4, 3, NanStyle::FN>)());
-  EXPECT_TRUE((Checker::template check<4, 3, NanStyle::FNUZ>)());
-
-  EXPECT_TRUE((Checker::template check<4, 3, NanStyle::IEEE, 11>)());
-  EXPECT_TRUE((Checker::template check<4, 3, NanStyle::FN, 11>)());
-  EXPECT_TRUE((Checker::template check<4, 3, NanStyle::FNUZ, 11>)());
-
-  EXPECT_TRUE((Checker::template check<5, 2, NanStyle::FN>)());
-  EXPECT_TRUE((Checker::template check<5, 2, NanStyle::FNUZ>)());
-  EXPECT_TRUE((Checker::template check<5, 7, NanStyle::FN>)());
-  EXPECT_TRUE((Checker::template check<5, 7, NanStyle::FNUZ>)());
-
-  EXPECT_TRUE((Checker::template check<6, 1, NanStyle::FN>)());
-  EXPECT_TRUE((Checker::template check<6, 1, NanStyle::FNUZ>)());
-
-  EXPECT_TRUE((Checker::template check<7, 0, NanStyle::FN>)());
-  EXPECT_TRUE((Checker::template check<7, 0, NanStyle::FNUZ>)());
-
-  EXPECT_TRUE((Checker::template check<5, 7, NanStyle::FN>)());
+//! Types for the quadratic checkers, which visit every ordered pair of values
+template <typename Checker> void test_paired_types() {
+  check_each<
+      Checker, //
+      Finite<2, 1>, Finite<2, 3>, Finite<3, 2>, Finite<3, 4>, Finite<5, 2>, IEEE<2, 5>, IEEE<3, 4>,
+      IEEE<4, 3>, IEEE<4, 3, 11>, IEEE<5, 2>, IEEE<5, 5>, FN<2, 5>, FN<3, 4>, FN<4, 3>,
+      FN<4, 3, 11>, FN<5, 2>, FN<5, 5>, FN<6, 1>, FN<7, 0>, FNUZ<2, 5>, FNUZ<3, 4>, FNUZ<4, 3>,
+      FNUZ<4, 3, 11>, FNUZ<5, 2>, FNUZ<5, 5>, FNUZ<6, 1>, FNUZ<7, 0>>();
 }
 
 struct CheckCopying {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    Minifloat<E, M, N, B> a{2.0F};
-    Minifloat<E, M, N, B> b = a;
-    Minifloat<E, M, N, B> c;
+  template <typename T> static bool check() {
+    T a{2.0F};
+    T b = a;
+    T c;
     c = b;
     return c == a;
   }
 };
 
 struct CheckEquality {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
-    constexpr float FIXED_POINT = M == 0 ? -2.0F : -3.0F;
+  template <typename T> static bool check() {
+    constexpr float FIXED_POINT = T::MANTISSA_BITS == 0 ? -2.0F : -3.0F;
 
     EXPECT_EQ(T{FIXED_POINT}.to_float(), FIXED_POINT);
     EXPECT_EQ(T{FIXED_POINT}.to_double(), FIXED_POINT);
 
     EXPECT_EQ(T{0.0F}, T{-0.0F});
-    EXPECT_EQ(T{0.0F}.to_bits() == T{-0.0F}.to_bits(), N == NanStyle::FNUZ);
+    EXPECT_EQ(T{0.0F}.to_bits() == T{-0.0F}.to_bits(), !T::HAS_NEG_ZERO);
 
-    EXPECT_TRUE(T{NAN}.is_nan());
-    EXPECT_TRUE((std::isnan)(T{NAN}.to_float()));
-    EXPECT_TRUE((std::isnan)(T{NAN}.to_double()));
+    if constexpr (T::HAS_NAN) {
+      EXPECT_TRUE(T{NAN}.is_nan());
+      EXPECT_TRUE((std::isnan)(T{NAN}.to_float()));
+      EXPECT_TRUE((std::isnan)(T{NAN}.to_double()));
+    }
 
     return for_all<T>([](T x) { return (x != x) == x.is_nan(); });
   }
 };
 
 struct CheckUnarySign {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
-
+  template <typename T> static bool check() {
     return T{0.0F} == -T{0.0F} &&
            for_all<T>([](T x) { return same_mini(x, +x) && same_mini(x, - -x); });
   }
 };
 
 struct CheckComparison {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
-
+  template <typename T> static bool check() {
     return for_all<T>([](T x) {
       return for_all<T>([x](T y) {
         return compare(x, y) == compare(x.to_float(), y.to_float()) &&
@@ -168,9 +174,7 @@ struct CheckClassification {
     }
   }
 
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
-
+  template <typename T> static bool check() {
     return for_all<T>([](T x) {
       const int category = x.is_nan() << to_shift(FP_NAN) |             //
                            x.is_infinite() << to_shift(FP_INFINITE) |   //
@@ -183,14 +187,13 @@ struct CheckClassification {
 };
 
 struct CheckIdentityConversion {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
-    constexpr bool HAS_NEG_ZERO = N != NanStyle::FNUZ;
-
+  template <typename T> static bool check() {
     EXPECT_EQ(bit_cast<std::uint32_t>(T{0.0F}.to_float()), 0U);
     EXPECT_EQ(bit_cast<std::uint64_t>(T{0.0F}.to_double()), 0U);
-    EXPECT_EQ(bit_cast<std::uint32_t>(T{-0.0F}.to_float()), HAS_NEG_ZERO * 0x8000'0000);
-    EXPECT_EQ(bit_cast<std::uint64_t>(T{-0.0F}.to_double()), HAS_NEG_ZERO * 0x8000'0000'0000'0000);
+    EXPECT_EQ(bit_cast<std::uint32_t>(T{-0.0F}.to_float()), T::HAS_NEG_ZERO * 0x8000'0000);
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(T{-0.0F}.to_double()), T::HAS_NEG_ZERO * 0x8000'0000'0000'0000
+    );
 
     return for_all<T>([](T x) {
       return same_mini(x, T::from_bits(x.to_bits())) && same_mini(x, T{x.to_float()}) &&
@@ -199,56 +202,14 @@ struct CheckIdentityConversion {
   }
 };
 
-template <SubnormalStyle D, int E, int M, NanStyle N, int B>
-bool check_subnormal_conversion(Minifloat<E, M, N, B, SubnormalStyle::Precise> prec) {
-  static_assert(M > 0);
-  static_assert(D != SubnormalStyle::Precise);
-
-  using T = Minifloat<E, M, N, B, D>;
-  using Bits = typename T::Storage;
-
-  const T conv(prec.to_float());
-
-  if (prec.signbit() != conv.signbit() && (N != NanStyle::FNUZ || conv.to_bits() != 0))
-    return false;
-
-  constexpr Bits THRESHOLD = 1U << M;
-  const Bits magnitude = prec.abs().to_bits();
-
-  if (magnitude == 0 || magnitude >= THRESHOLD)
-    return prec.to_bits() == conv.to_bits() || (prec.is_nan() && conv.is_nan());
-
-  if constexpr (D == SubnormalStyle::Reserved) {
-    const Bits magnitude = conv.abs().to_bits();
-    return magnitude == 0 || magnitude == 1U << M;
-  }
-
-  return T::from_bits(0) <= conv.abs() && conv.abs() <= T::from_bits(1U << M);
-}
-
-struct CheckSubnormalConversion {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
-
-    if constexpr (M > 0) {
-      return for_all<T>([](T x) {
-        return check_subnormal_conversion<SubnormalStyle::Reserved>(x) &&
-               check_subnormal_conversion<SubnormalStyle::Fast>(x);
-      });
-    }
-    return true;
-  }
-};
-
 struct CheckIntegerDecodeReconstruction {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
+  template <typename T> static bool check() {
     return for_all<T>([](T x) {
-      if (x.is_nan()) {
-        const auto parts = integer_decode(x);
-        return parts.sign == 0 && parts.mantissa == 0u && parts.exponent == 0;
-      }
       const auto parts = integer_decode(x);
+
+      if (x.is_nan())
+        return parts.sign == 0 && parts.mantissa == 0u && parts.exponent == 0;
+
       const double integer = parts.sign * static_cast<std::int64_t>(parts.mantissa);
       const double y = std::ldexp(integer, +parts.exponent);
 
@@ -257,29 +218,68 @@ struct CheckIntegerDecodeReconstruction {
         return reconstructed.is_infinite() && reconstructed.signbit() == x.signbit();
       }
 
-      const double z = x.to_float();
-
-      return y == z;
+      return y == static_cast<double>(x.to_float());
     });
   }
 };
 
 template <typename Operation> struct CheckExactArithmetics {
-  template <int E, int M, NanStyle N, int B = default_bias(E)> static bool check() {
-    using T = Minifloat<E, M, N, B>;
-
+  template <typename T> static bool check() {
     return for_all<T>([op = Operation{}](T x) {
       return for_all<T>([op, x](T y) {
-        const T z = op(x, y);
-        const T answer{op(x.to_double(), y.to_double())};
-        return same_mini(z, answer);
+        const double reference = op(x.to_double(), y.to_double());
+
+        // Feeding a NaN to a format without one violates its precondition.
+        if (!T::HAS_NAN && (std::isnan)(reference))
+          return true;
+
+        return same_mini(op(x, y), T{reference});
       });
     });
   }
 };
 
-template <int E, int M, NanStyle N = NanStyle::FN> bool test_snowball_sum() {
-  using T = Minifloat<E, M, N>;
+//! How a bit pattern reads by the book, independently of the library
+enum struct Style { Finite, IEEE, FN, FNUZ };
+
+template <Style S, typename T> double oracle(unsigned bits) {
+  constexpr int E = T::EXPONENT_BITS;
+  constexpr int M = T::MANTISSA_BITS;
+  constexpr int B = T::BIAS;
+
+  const unsigned magnitude = bits & ((1U << (E + M)) - 1U);
+  const double sign = bits >> (E + M) ? -1.0 : 1.0;
+  const unsigned exponent = magnitude >> M;
+  const unsigned mantissa = magnitude & ((1U << M) - 1U);
+
+  if (S == Style::FNUZ && bits == 1U << (E + M))
+    return NAN;
+
+  if (S == Style::FN && magnitude == (1U << (E + M)) - 1U)
+    return NAN;
+
+  if (S == Style::IEEE && exponent == (1U << E) - 1U)
+    return mantissa ? NAN : sign * HUGE_VAL;
+
+  if (exponent == 0)
+    return sign * std::ldexp(mantissa, 1 - B - M);
+
+  return sign * std::ldexp(mantissa + (1U << M), static_cast<int>(exponent) - B - M);
+}
+
+template <Style S, typename T> void check_oracle() {
+  constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
+
+  for (unsigned bits = 0; bits < END; ++bits) {
+    const T x = T::from_bits(static_cast<typename T::Storage>(bits));
+    ASSERT_TRUE(same_double(x.to_double(), oracle<S, T>(bits)))
+        << describe<T>() << " bits=" << bits << " got=" << x.to_double()
+        << " want=" << oracle<S, T>(bits);
+  }
+}
+
+template <int E, int M> bool test_snowball_sum() {
+  using T = FN<E, M>;
   using Bits = typename T::Storage;
 
   constexpr Bits STEP = 1U << M;
@@ -298,10 +298,12 @@ template <int E, int M, NanStyle N = NanStyle::FN> bool test_snowball_sum() {
   return true;
 }
 
+//! All four layers agree on a finite value they can all represent
 template <int E, int M> void test_finite_bits(float x, unsigned bits) {
-  EXPECT_EQ((Minifloat<E, M>{x}.to_bits()), bits);
-  EXPECT_EQ((Minifloat<E, M, NanStyle::FN>{x}.to_bits()), bits);
-  EXPECT_EQ((Minifloat<E, M, NanStyle::FNUZ>{x}.to_bits()), bits);
+  EXPECT_EQ((Finite<E, M>{x}.to_bits()), bits);
+  EXPECT_EQ((IEEE<E, M>{x}.to_bits()), bits);
+  EXPECT_EQ((FN<E, M>{x}.to_bits()), bits);
+  EXPECT_EQ((FNUZ<E, M, default_bias(E)>{x}.to_bits()), bits);
 }
 } // namespace
 
@@ -322,16 +324,70 @@ TEST(SkymizerMinifloat, TestFiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
+TEST(SkymizerMinifloat, TestOracle) {
+  check_oracle<Style::Finite, E2M1FN>();
+  check_oracle<Style::Finite, E2M3FN>();
+  check_oracle<Style::Finite, E3M2FN>();
+  check_oracle<Style::Finite, Finite<5, 2>>();
+  check_oracle<Style::Finite, Finite<7, 0>>();
+  check_oracle<Style::IEEE, E3M4>();
+  check_oracle<Style::IEEE, E4M3>();
+  check_oracle<Style::IEEE, E5M2>();
+  check_oracle<Style::IEEE, E5M10>();
+  check_oracle<Style::IEEE, E8M7>();
+  check_oracle<Style::IEEE, IEEE<4, 3, 11>>();
+  check_oracle<Style::IEEE, IEEE<9, 3>>();
+  check_oracle<Style::FN, E4M3FN>();
+  check_oracle<Style::FN, FN<2, 1>>();
+  check_oracle<Style::FN, FN<7, 0>>();
+  check_oracle<Style::FN, FN<5, 7>>();
+  check_oracle<Style::FNUZ, E4M3FNUZ>();
+  check_oracle<Style::FNUZ, E4M3B11FNUZ>();
+  check_oracle<Style::FNUZ, E5M2FNUZ>();
+  check_oracle<Style::FNUZ, FNUZ<7, 0>>();
+  check_oracle<Style::FNUZ, FNUZ<5, 7>>();
+}
+
+TEST(SkymizerMinifloat, TestAliasRanges) {
+  // OCP MX types: no NaN, no infinity, every pattern is a number.
+  EXPECT_EQ(E2M1FN::max().to_double(), 6.0);
+  EXPECT_EQ(E2M3FN::max().to_double(), 7.5);
+  EXPECT_EQ(E3M2FN::max().to_double(), 28.0);
+  static_assert(!std::numeric_limits<E2M1FN>::has_quiet_NaN);
+  static_assert(!std::numeric_limits<E2M1FN>::has_infinity);
+  static_assert(!std::numeric_limits<E2M3FN>::has_quiet_NaN);
+  static_assert(!std::numeric_limits<E3M2FN>::has_infinity);
+
+  // The FN suffix is LLVM's name for a format, not a property of the `FN`
+  // template: `FN<2, 1>` reserves the all-ones magnitude, `E2M1FN` does not.
+  EXPECT_EQ((FN<2, 1>::max().to_double()), 4.0);
+  EXPECT_TRUE((std::numeric_limits<FN<2, 1>>::has_quiet_NaN));
+
+  // FNUZ defaults to a bias one greater than IEEE's, as in LLVM.
+  static_assert(E4M3FNUZ::BIAS == 8);
+  static_assert(E5M2FNUZ::BIAS == 16);
+  EXPECT_EQ(E4M3FNUZ::max().to_double(), 240.0);
+  EXPECT_EQ(E5M2FNUZ::max().to_double(), 57344.0);
+  EXPECT_EQ(E4M3B11FNUZ::max().to_double(), 30.0);
+
+  EXPECT_EQ(E3M4::max().to_double(), 15.5);
+  EXPECT_EQ(E4M3::max().to_double(), 240.0);
+  EXPECT_EQ(E4M3FN::max().to_double(), 448.0);
+  EXPECT_EQ(E5M2::max().to_double(), 57344.0);
+  EXPECT_EQ(E5M10::max().to_double(), 65504.0);               // binary16
+  EXPECT_EQ(E8M7::max().to_double(), std::ldexp(255.0, 120)); // bfloat16
+}
+
 TEST(SkymizerMinifloat, TestNumericLimits) {
-  using T = Minifloat<5, 10>;  // half-precision shape (binary16)
+  using T = E5M10; // half-precision shape (binary16)
   using L = std::numeric_limits<T>;
 
   static_assert(L::is_specialized);
   static_assert(L::is_signed);
   static_assert(!L::is_integer);
-  static_assert(L::has_infinity);  // IEEE NaN style by default
+  static_assert(L::has_infinity);
   static_assert(L::has_quiet_NaN);
-  static_assert(L::is_iec559);     // IEEE + Precise default
+  static_assert(L::is_iec559);
   static_assert(L::radix == 2);
   static_assert(L::digits == T::MANTISSA_DIGITS);
 
@@ -349,13 +405,17 @@ TEST(SkymizerMinifloat, TestNumericLimits) {
   EXPECT_TRUE(L::quiet_NaN().is_nan());
 
   // FN style has no infinity but still has NaN.
-  using FN = Minifloat<5, 2, NanStyle::FN>;
-  static_assert(!std::numeric_limits<FN>::has_infinity);
-  EXPECT_TRUE(std::numeric_limits<FN>::quiet_NaN().is_nan());
+  static_assert(!std::numeric_limits<E4M3FN>::has_infinity);
+  static_assert(!std::numeric_limits<E4M3FN>::is_iec559);
+  EXPECT_TRUE(std::numeric_limits<E4M3FN>::quiet_NaN().is_nan());
+
+  // A format with no mantissa bit has no subnormals to speak of.
+  static_assert(std::numeric_limits<FN<7, 0>>::has_denorm == std::denorm_absent);
+  static_assert(std::numeric_limits<E5M2>::has_denorm == std::denorm_present);
 }
 
 TEST(SkymizerMinifloat, TestIntegerInterop) {
-  using T = Minifloat<5, 2>;
+  using T = E5M2;
   EXPECT_EQ(T{3}.to_float(), 3.0F);
   EXPECT_EQ(T{-7}.to_float(), -7.0F);
   EXPECT_EQ(T{0u}.to_float(), 0.0F);
@@ -372,7 +432,7 @@ TEST(SkymizerMinifloat, TestIntegerInterop) {
 }
 
 TEST(SkymizerMinifloat, TestCompoundAssignment) {
-  using T = Minifloat<5, 2>;  // covers a wider range than 3,4
+  using T = E5M2; // covers a wider range than E3M4
   T x{2.0F};
   x += T{1.0F};
   EXPECT_EQ(x, T{3.0F});
@@ -385,7 +445,7 @@ TEST(SkymizerMinifloat, TestCompoundAssignment) {
 }
 
 TEST(SkymizerMinifloat, TestStdHash) {
-  using T = Minifloat<3, 4>;
+  using T = E3M4;
   std::hash<T> h;
   // +0 and -0 compare equal, so their hashes must agree.
   EXPECT_EQ(h(T{0.0F}), h(T{-0.0F}));
@@ -397,57 +457,87 @@ TEST(SkymizerMinifloat, TestStdHash) {
 TEST(SkymizerMinifloat, TestDefaultConstructionIsZero) {
   // bits_ is value-initialized; a default-constructed Minifloat must read as
   // a positive zero rather than being indeterminate UB.
-  using T = Minifloat<3, 4>;
+  using T = E3M4;
   T x;
   EXPECT_EQ(x.to_bits(), 0u);
   EXPECT_FALSE(static_cast<bool>(x));
   EXPECT_FALSE(x.signbit());
 }
 
-TEST(SkymizerMinifloat, TestLargeExponentInstantiation) {
-  // Regression for the previously latent SFINAE bug: when
-  // HAS_EXACT_F64_CONVERSION is false, the lossless to_double overload used a
-  // non-template enable_if, which caused class instantiation itself to fail.
-  using T = Minifloat<12, 3>;
+TEST(SkymizerMinifloat, TestWideExponentRange) {
+  // A format whose exponent range reaches past double's on both ends: neither
+  // conversion is exact, so both go through the ldexp path. Regression for a
+  // 0.1.0 bug where the zero exponent field of a host zero or subnormal was
+  // read as an ordinary exponent, and to_double() rebuilt garbage bits.
+  using T = IEEE<12, 3>;
+  static_assert(!T::HAS_EXACT_F32_CONVERSION);
   static_assert(!T::HAS_EXACT_F64_CONVERSION);
+
   EXPECT_EQ(T::from_bits(0).to_double(), 0.0);
+  EXPECT_EQ(T{0.0F}.to_bits(), 0u);
+  EXPECT_EQ(T{-0.0F}.to_bits(), 1u << 15);
+  EXPECT_EQ(T{0.0}.to_bits(), 0u);
+  EXPECT_EQ(T{1.0F}.to_bits(), unsigned{T::BIAS} << 3);
+  EXPECT_EQ(T{1.0}.to_bits(), unsigned{T::BIAS} << 3);
+  EXPECT_EQ(T::from_bits(unsigned{T::BIAS} << 3).to_double(), 1.0);
+  EXPECT_EQ(T::from_bits((unsigned{T::BIAS} + 1) << 3).to_double(), 2.0);
+  EXPECT_EQ(T::max().to_double(), HUGE_VAL);   // exponent beyond double
+  EXPECT_EQ(T::from_bits(1).to_double(), 0.0); // magnitude beneath double
+  EXPECT_TRUE(T::from_bits(0xFFFF).is_nan());
+
+  // Subnormal host sources are normal here, and must not be read as if their
+  // zero exponent field were an ordinary exponent.
+  EXPECT_EQ(T{FLT_TRUE_MIN}.to_bits(), (unsigned{T::BIAS} - 149) << 3);
+  EXPECT_EQ(T{FLT_TRUE_MIN}.to_double(), static_cast<double>(FLT_TRUE_MIN));
+  EXPECT_EQ(T{0x1p-1070}.to_bits(), (unsigned{T::BIAS} - 1070) << 3);
+  EXPECT_EQ(T{0x1p-1070}.to_double(), 0x1p-1070);
+
+  // Reaches under float's normal range but not double's, so the float encoder
+  // scales its source and the double encoder does not.
+  using U = IEEE<9, 3>;
+  static_assert(!U::HAS_EXACT_F32_CONVERSION);
+  static_assert(U::HAS_EXACT_F64_CONVERSION);
+  EXPECT_EQ(U{0.0F}.to_bits(), 0u);
+  EXPECT_EQ(U{-0.0F}.to_bits(), 1u << 12);
+  EXPECT_EQ(U{1.0F}.to_float(), 1.0F);
+  EXPECT_EQ(U{FLT_MIN}.to_bits(), (unsigned{U::BIAS} - 126) << 3);
+  EXPECT_EQ(U{FLT_TRUE_MIN}.to_bits(), (unsigned{U::BIAS} - 149) << 3);
+  EXPECT_EQ(U{FLT_TRUE_MIN}.to_double(), static_cast<double>(FLT_TRUE_MIN));
+  EXPECT_EQ(U{static_cast<double>(FLT_TRUE_MIN)}.to_bits(), (unsigned{U::BIAS} - 149) << 3);
 }
 
 TEST(SkymizerMinifloat, TestSnowballSum) {
-  test_snowball_sum<2, 11>();
-  test_snowball_sum<3, 11>();
-  test_snowball_sum<4, 11>();
-  test_snowball_sum<2, 12>();
-  test_snowball_sum<3, 12>();
+  EXPECT_TRUE((test_snowball_sum<2, 11>()));
+  EXPECT_TRUE((test_snowball_sum<3, 11>()));
+  EXPECT_TRUE((test_snowball_sum<4, 11>()));
+  EXPECT_TRUE((test_snowball_sum<2, 12>()));
+  EXPECT_TRUE((test_snowball_sum<3, 12>()));
 }
 
 TEST(SkymizerMinifloat, TestCopying) { test_selected_types<CheckCopying>(); }
 TEST(SkymizerMinifloat, TestEquality) { test_selected_types<CheckEquality>(); }
 TEST(SkymizerMinifloat, TestUnarySign) { test_selected_types<CheckUnarySign>(); }
-TEST(SkymizerMinifloat, TestComparison) { test_selected_types<CheckComparison>(); }
 TEST(SkymizerMinifloat, TestClassification) { test_selected_types<CheckClassification>(); }
 TEST(SkymizerMinifloat, TestIdentityConversion) { test_selected_types<CheckIdentityConversion>(); }
-
-TEST(SkymizerMinifloat, TestSubnormalConversion) {
-  test_selected_types<CheckSubnormalConversion>();
-}
 
 TEST(SkymizerMinifloat, TestIntegerDecodeReconstruction) {
   test_selected_types<CheckIntegerDecodeReconstruction>();
 }
 
+TEST(SkymizerMinifloat, TestComparison) { test_paired_types<CheckComparison>(); }
+
 TEST(SkymizerMinifloat, TestExactAddition) {
-  test_selected_types<CheckExactArithmetics<std::plus<>>>();
+  test_paired_types<CheckExactArithmetics<std::plus<>>>();
 }
 
 TEST(SkymizerMinifloat, TestExactSubtraction) {
-  test_selected_types<CheckExactArithmetics<std::minus<>>>();
+  test_paired_types<CheckExactArithmetics<std::minus<>>>();
 }
 
 TEST(SkymizerMinifloat, TestExactMultiplication) {
-  test_selected_types<CheckExactArithmetics<std::multiplies<>>>();
+  test_paired_types<CheckExactArithmetics<std::multiplies<>>>();
 }
 
 TEST(SkymizerMinifloat, TestExactDivision) {
-  test_selected_types<CheckExactArithmetics<std::divides<>>>();
+  test_paired_types<CheckExactArithmetics<std::divides<>>>();
 }
