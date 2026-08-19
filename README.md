@@ -5,9 +5,8 @@ C++ template library for minifloats dedicated to [@skymizer][skymizer]
 [skymizer]: https://github.com/skymizer
 
 This header-only C++ library provides emulation of minifloats up to 16 bits.
-In this library, implicit conversions are proven lossless at compile time.
-This design prevents accidental loss of precision and allows the user to
-perform potentially lossy conversions explicitly.
+All numeric conversions are explicit so that rounding, overflow, and other
+representation changes stay visible at call sites.
 
 ## Quick start
 
@@ -18,7 +17,7 @@ using skymizer::Minifloat;
 using skymizer::minifloat::NanStyle;
 using skymizer::minifloat::SubnormalStyle;
 
-// Standard FP8 E4M3 (IEEE NaN style) and E5M2 shapes are predefined.
+// IEEE-style E4M3 and E5M2 shapes are predefined.
 using skymizer::minifloat::E4M3;
 using skymizer::minifloat::E5M2;
 
@@ -27,7 +26,8 @@ E4M3 b{0.25F};
 E4M3 c = a + b;          // 1.75 in E4M3
 float f = c.to_float();  // explicit, lossy if inexact
 
-// Custom shapes, e.g. an LLVM/MLIR-style FP8 with FN NaN encoding:
+// Finite-only E4M3 and custom shapes are also available.
+using skymizer::minifloat::E4M3FN;
 using FP8 = Minifloat<4, 3, NanStyle::FN>;
 ```
 
@@ -44,11 +44,11 @@ Helpful entry points:
 
 ## Design
 
-The library treats *implicit* conversions as *proven lossless*: a conversion
-template only kicks in when the compiler can statically prove (via the
-`HAS_EXACT_F32_CONVERSION` / `HAS_EXACT_F64_CONVERSION` traits) that no
-precision is lost. If a conversion would be lossy, the user must call
-`to_float()` / `to_double()` (or use `static_cast`) to opt in.
+The library requires explicit construction from numeric types and explicit
+conversion back through `to_float()`, `to_double()`, or `static_cast`. The
+`HAS_EXACT_F32_CONVERSION` and `HAS_EXACT_F64_CONVERSION` traits report whether
+the corresponding host type can represent every value of a Minifloat type,
+but do not make the conversion implicit.
 
 The NaN encoding (`NanStyle`) and subnormal handling (`SubnormalStyle`) are
 template parameters so the same Minifloat template covers IEEE-style 754
@@ -58,12 +58,17 @@ precise / fast / reserved subnormal handling.
 ## Dependencies
 
 - C++17 standard library
-- Native floating-point arithmetics (`float` and `double`)
+- IEEE 754 binary32 `float` and binary64 `double`
+
+Version 0.1.0 is tested with GCC on Linux, Apple Clang on macOS, and MSVC on
+Windows. C++20 is tested in addition to the C++17 minimum. `-ffast-math` and
+equivalent finite-math modes are unsupported because they may discard the NaN,
+infinity, signed-zero, and subnormal semantics that this library preserves.
 
 ### Additional dependencies for testing
 
-- GCC-compatible compiler (including Clang/LLVM)
-- Un*x `make` or CMake (≥ 3.14)
+- A supported C++ compiler
+- `make` or CMake (≥ 3.14)
 - Google Test
 
 ### Building with CMake
@@ -75,4 +80,19 @@ ctest --test-dir build --output-on-failure
 ```
 
 Downstream projects can either `add_subdirectory(minifloat)` or install the
-package and `find_package(skymizer-minifloat)`, then link `skymizer::minifloat`.
+package:
+
+```sh
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/path/to/prefix
+cmake --build build
+cmake --install build
+```
+
+An installed package supports Cargo-style pre-1.0 compatibility: `0.1.x`
+releases are compatible, while breaking changes advance to `0.2.0`. Consume it
+from CMake with:
+
+```cmake
+find_package(skymizer-minifloat 0.1 CONFIG REQUIRED)
+target_link_libraries(your-target PRIVATE skymizer::minifloat)
+```

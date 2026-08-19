@@ -1,6 +1,6 @@
 // This file is part of the minifloat project of Skymizer.
 //
-// Copyright (C) 2024-2025 Chen-Pang He <jdh8@skymizer.com>
+// Copyright (C) 2024-2026 Chen-Pang He <jdh8@skymizer.com>
 //
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
@@ -248,13 +248,15 @@ struct CheckIntegerDecodeReconstruction {
         const auto parts = integer_decode(x);
         return parts.sign == 0 && parts.mantissa == 0u && parts.exponent == 0;
       }
-      if (x.is_infinite())
-        return true;
-
       const auto parts = integer_decode(x);
       const double integer = parts.sign * static_cast<std::int64_t>(parts.mantissa);
-
       const double y = std::ldexp(integer, +parts.exponent);
+
+      if (x.is_infinite()) {
+        const T reconstructed{y};
+        return reconstructed.is_infinite() && reconstructed.signbit() == x.signbit();
+      }
+
       const double z = x.to_float();
 
       return y == z;

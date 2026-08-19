@@ -2,16 +2,80 @@ name: C/C++ CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
+  test:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC / Linux / C++17
+            os: ubuntu-latest
+            standard: 17
+          - name: Apple Clang / macOS / C++17
+            os: macos-latest
+            standard: 17
+          - name: MSVC / Windows / C++17
+            os: windows-latest
+            standard: 17
+          - name: GCC / Linux / C++20
+            os: ubuntu-latest
+            standard: 20
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - run: sudo apt-get install libgtest-dev
-    - run: make -j8
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_STANDARD=${{ matrix.standard }}
+          -DSKYMIZER_MINIFLOAT_BUILD_TESTS=ON
+          -DSKYMIZER_MINIFLOAT_FETCH_GTEST=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        env:
+          CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
+          LDFLAGS: -fsanitize=address,undefined
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DSKYMIZER_MINIFLOAT_BUILD_TESTS=ON
+          -DSKYMIZER_MINIFLOAT_FETCH_GTEST=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  install-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install package
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          cmake --install build --prefix "${{ runner.temp }}/minifloat-install"
+      - name: Configure consumer
+        run: >-
+          cmake -S cmake/consumer-test -B consumer-build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="${{ runner.temp }}/minifloat-install"
+      - name: Build consumer
+        run: cmake --build consumer-build --parallel
+      - name: Test consumer
+        run: ctest --test-dir consumer-build --output-on-failure

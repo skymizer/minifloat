@@ -1,6 +1,6 @@
 // This file is part of the minifloat project of Skymizer.
 //
-// Copyright (C) 2024-2025 Chen-Pang He <jdh8@skymizer.com>
+// Copyright (C) 2024-2026 Chen-Pang He <jdh8@skymizer.com>
 //
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
@@ -676,8 +676,8 @@ Minifloat<E, M, N, B, D> operator/(Minifloat<E, M, N, B, D> x, Minifloat<E, M, N
 
 //! Mantissa, base 2 exponent, and sign as integer
 //!
-//! The original floating point number can be reconstructed as
-//! `sign * mantissa * 2**exponent` unless it is NaN.
+//! A finite original value can be reconstructed as
+//! `sign * mantissa * 2**exponent`.
 //!
 //! See also `integer_decode`.
 struct IntegerDecode {
@@ -688,10 +688,12 @@ struct IntegerDecode {
 
 //! Decode the argument into mantissa, exponent, and sign
 //!
-//! NaN inputs produce the sentinel `{0, 0, 0}` (sign zero) — finite values
+//! NaN inputs produce the sentinel `{0, 0, 0}` (sign zero) — non-NaN values
 //! always have sign `+1` or `-1`, so `sign == 0` unambiguously signals NaN.
-//! Infinities are decoded as ordinary integer triples whose reconstruction
-//! overflows the host floating-point range.
+//! As in Rust's `FloatCore::integer_decode`, an infinity produces the integer
+//! triple immediately beyond the largest finite value. Reconstructing that
+//! finite value and converting it back to the same Minifloat type yields
+//! infinity.
 //!
 //! **Additional promise**: LSB of `mantissa` aligns with ULP of a normal `x`.
 //!
@@ -864,5 +866,8 @@ public:
   static constexpr T signaling_NaN() noexcept { return T::quiet_NaN(); }
 };
 } // namespace std
+
+#undef SKYMIZER_MINIFLOAT_CONST
+#undef SKYMIZER_MINIFLOAT_PURE
 
 #endif
