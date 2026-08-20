@@ -24,8 +24,8 @@ If it is running, ask before touching it.  Proceed only once the box is idle.
 `benches/arith.cpp` is one file over a header-only library, so the binary is
 whatever the compiler decided to make of it — and the two do not decide alike.
 On 2026-08-21 the same source and the same box gave Clang 22 the integer route
-in 52 of 56 comparisons at a geomean of 1.195x, and GCC 16 an even 28 of 56 at
-1.001x.  A single-compiler number would have supported either "clear win" or
+in 37 of 56 comparisons at a geomean of 1.044x, and GCC 16 an even 23 of 56 at
+0.966x.  A single-compiler number would have supported either "clear win" or
 "no difference" depending on which compiler ran.
 
 So every claim gets both.  Delete the binary between them: the `bench` target
@@ -85,19 +85,40 @@ next.  Take the minimum per line across the 15 files on each side, then divide.
 
 Every sweep carries at least one row the change cannot possibly have touched.
 If the control moves, the run is noise and the headline number is noise with it.
-Multiplication is the standing control for changes to `align`, `add_parts`, or
-the sign flip in `add_impl` — those are the only steps addition and subtraction
-do not share with it.  It is *not* a control for a change to `to_parts`,
-`from_parts`, or `invalid`, all three of which it calls itself, and `from_parts`
-is on the inbound conversion path too.  Quote it where it qualifies: a `sub` row
-at 0.80x is reportable only beside a `mul` row that stayed inside the noise
-floor.  Where it does not qualify, pick a row that does or say there was none.
+Picking one means reading the two arms of `bench_op` as separate measurements,
+because they share almost nothing: the `soft` column is `op(x, y)`, the bare
+operator, and the `host` column is `T{op(x.to_float(), y.to_float())}`, which is
+the only arm with a conversion in it.
 
-## The noise floor is 0.98x
+- **A conversion change** — `bits_from`, `to_float`, `to_double`, `to_exact`,
+  `decompose`, `exp2i`.  Every one of the 56 `soft` rows is a control, since
+  none of them calls any of that.  Its effect shows up in the `host` column and
+  therefore in the ratio, which is why the ratio falling does not mean the
+  library got slower.
+- **An addition or subtraction kernel change** — `align`, `add_parts`, the sign
+  flip in `add_impl`.  The `mul` and `div` `soft` rows are controls, since those
+  three are the only steps the other operators do not share.
+- **A change to `to_parts`, `from_parts`, or `invalid`.**  There is no operator
+  control: all four operators call all three, and `from_parts` is on the inbound
+  conversion path as well.  Say there was none rather than quoting `mul` and
+  implying otherwise.
+
+Quote the control you used, by column.  A `sub` row at 0.80x is reportable only
+beside a `mul` row that stayed inside the noise floor — and it has to be
+`mul`'s `soft` figure, not its ratio.
+
+## The noise floor is 0.98x, except where it is much worse
 
 A ratio inside `[0.98, 1.02]` is not a result.  Say so plainly rather than
 reporting it as a small win — a null recorded is worth more than a null dressed
-up, and `docs/arithmetic.md` keeps a section for exactly those.
+up, and [arithmetic.md](arithmetic.md) keeps a section for exactly those.
+
+That floor is for rows that take a nanosecond or more.  The unary table's `neg`
+and `abs` rows run 0.2 to 0.4 ns, and there one cycle of loop alignment is tens
+of percent: across changes that provably do not touch them they have come back
+between 0.51x and 1.98x.  Nothing about those two rows is reportable from the
+stopwatch alone.  Reach for `objdump` instead — at that size, counting the
+instructions is both cheaper and exact.
 
 ## The two tables, and what each is for
 
@@ -152,8 +173,11 @@ Ratio table geomeans over 56 comparisons; unary rows in nanoseconds per element.
 
 | | GCC 16.1.1 | Clang 22.1.8 |
 | --- | --- | --- |
-| integer route wins | 28 of 56 | 52 of 56 |
-| geomean | 1.001x | 1.195x |
+| integer route wins | 23 of 56 | 37 of 56 |
+| geomean | 0.966x | 1.044x |
 
-Fuller numbers, and what they do and do not license, are in
-[arithmetic.md](arithmetic.md).
+Both fell from 28 of 56 / 1.001x and 52 of 56 / 1.195x when the conversion paths
+got faster — and every conversion in this comparison is in the host arm, so what
+fell was the numerator.  [arithmetic.md](arithmetic.md) has the accounting and
+the rest of the numbers; the short version is that a falling ratio here is not by
+itself evidence of a slower library, and the `soft` column is where to check.

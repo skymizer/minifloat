@@ -35,8 +35,8 @@ thesis says *exact enough to round*.
 of `detail::round_to_scale`.  One rounding, so no intermediate can lose what the
 format is able to hold, and a shape whose exponent range overruns `double`'s is
 served as exactly as any other.  The library's one other rounding is
-genuinely elsewhere: `to_double` reaching for `std::ldexp` once a shape's
-exponent leaves `double`'s range.  `bits_from` rounds a host float *in*, but not
+genuinely elsewhere: `to_double` splitting its scale into two in-range factors
+once a shape's exponent leaves `double`'s, where the second multiply rounds.  `bits_from` rounds a host float *in*, but not
 separately — it decomposes exactly and hands the triple to that same
 `from_parts`.
 
@@ -75,37 +75,77 @@ The speed is a bonus.  The reason is correctness: a host float cannot referee a
 shape it cannot hold, so keeping it would have meant keeping a route that is
 wrong for exactly the shapes this library exists to support.
 
-But it is worth knowing the bonus is not negative, and here the answer depends
-on the compiler.  `benches/arith.cpp` times each operator twice over the same
+But it is worth knowing what the bonus is, and here the answer depends on the
+compiler and on the operator — it is not one number.  `benches/arith.cpp` times each operator twice over the same
 operands — once as the library computes it, once the way a caller would fake it.
 On an idle Ryzen 7 8700F, 2026-08-21, under the protocol in
 [benchmarking.md](benchmarking.md):
 
 | | wins | geomean | add | sub | mul | div |
 | --- | --- | --- | --- | --- | --- | --- |
-| Clang 22.1.8 | 52 of 56 | 1.195x | 1.078x | 1.038x | 1.433x | 1.271x |
-| GCC 16.1.1 | 28 of 56 | 1.001x | 0.874x | 0.914x | 1.158x | 1.087x |
+| Clang 22.1.8 | 37 of 56 | 1.044x | 0.948x | 0.914x | 1.254x | 1.093x |
+| GCC 16.1.1 | 23 of 56 | 0.966x | 0.852x | 0.862x | 1.143x | 1.035x |
 
-Two different things are folded into that GCC column, and separating them is
-what makes the table usable.
+Multiplication and division win every row under Clang.  Under GCC they win on
+the geomean but not everywhere, and on two different splits: `mul` takes 9 of
+14, losing only narrow shapes, while `div` takes 6 of 14 and loses `E5M10` at
+0.87x as readily as `E4M3FN` at 0.84x.
 
-The first is not GCC's.  `E8M7` and `E11M4` — the two widest exponent ranges
-benched — give addition and subtraction to the host route under *both*
-compilers, 0.65x to 0.69x each.  That is the library's own shape rather than a
-back end's: a wide exponent range is the distance `align` has to shift across,
-and an FPU does that in its exponent field for free.  Those four rows are also
-the whole of Clang's four losses.
+Addition and subtraction split two ways, and separating them is what makes the
+table usable.  `E8M7` and `E11M4` — the two widest exponent ranges benched —
+give both to the host route under *both* compilers, 0.56x to 0.86x.  That is the
+library's own shape rather than a back end's: a wide exponent range is the
+distance `align` has to shift across, and an FPU does that in its exponent field
+for free.  `E2M13` is the opposite corner and both compilers agree on it too, the other
+way: it wins every one of its four operators, 1.11x to 1.87x under GCC and 1.35x
+to 1.61x under Clang.  It is the one shape whose host route pays for a `double`
+round trip — `route` sends it there because 2*p* + 2 is 30 digits — without the
+integer route paying a wide exponent range for it.
 
-The second is GCC's.  Everywhere narrower — `E5M10`, and every shape at 8 bits
-that is not `FNUZ` — GCC gives addition and subtraction to the host route at
-0.70x to 0.98x where Clang takes them at 1.02x to 1.23x.  It reaches the other
-two operators a little as well: GCC drops three `mul` rows and five `div` rows
-below the noise floor, where Clang wins all 28.  Same source, same box; the
-difference is in the back end and it has not been diagnosed.
+Between those two corners the compilers part.  Clang stays near even, 0.89x to
+1.11x, while GCC gives the host route every narrow shape except `FNUZ`, which it
+wins at 1.09x to 1.10x.  Same source, same box; that difference is in the back
+end and it has not been diagnosed.
 
-GCC's overall 1.001x is inside the noise floor, and that is the honest headline:
-in aggregate the two routes cost the same under GCC, and the integer one is 20%
-ahead under Clang.
+## Why the headline fell without the arithmetic changing
+
+Those figures used to read 52 of 56 at 1.195x for Clang and 28 of 56 at 1.001x
+for GCC.  Nothing in this section's arithmetic changed between the two
+measurements.  What changed is the other side of the ratio.
+
+The two arms of `bench_op` are not symmetric.  The integer arm is
+`op(x, y).to_bits()` — the bare operator, which goes `to_parts` → integer kernel
+→ `from_parts` and touches no host float at all.  The host arm is
+`T{op(x.to_float(), y.to_float())}.to_bits()`, which reads both operands through
+`to_float` and builds its result through `bits_from`.  Every conversion in the
+comparison is in the host arm.
+
+So when the conversions got faster — a bit-built `exp2i` in place of `std::exp2`
+and `std::ldexp`, and one `bit_cast` in place of `std::signbit` plus
+`std::isnan` plus `std::isinf` — only the numerator could move.  The comparator
+got faster while the thing being compared stayed exactly where it was.
+
+Measured, interleaved, against the state before those two changes:
+
+| | operator rows | host rows | construction from `float` |
+| --- | --- | --- | --- |
+| Clang 22.1.8 | 1.000x | 0.873x | 0.711x |
+| GCC 16.1.1 | 0.987x | 0.950x | 0.831x |
+
+The operator column is the check, and here it is load-bearing rather than
+conventional: those rows *cannot* be reached by a conversion change, so a run
+where they moved outside `[0.98, 1.02]` would be a bad run rather than a smaller
+version of this finding.  They held.  And 1.195x × 0.873x = 1.043x against the
+1.044x measured directly, which is the two accounts agreeing.
+
+The lesson a headline hides: half of this ratio is not the library's arithmetic,
+and it is the half a conversion change moves.  A falling ratio here is not
+evidence of a slower library.  Check the operator rows before concluding
+otherwise — and note that this is a different claim from the one in
+[benchmarking.md](benchmarking.md) about `mul` not being a control for a
+conversion change.  `mul`'s *integer* row is untouchable like every other
+operator row; it is `mul`'s *host* row, and so its ratio, that such a change
+moves.
 
 Rust's 1.709x does not transfer, and the reason is not that this library is
 slower.  It is that the *other* side of the ratio is faster here: `to_exact`
@@ -209,8 +249,38 @@ cannot be used to argue for the thing that fails that way.
 
 ## Nulls from this round, recorded on purpose
 
-*Filled in by the optimization pass; see the commit bodies for the measurements
-behind each line.*
+**The branchless sign flip: measured, reverted.**  minifloat-rs found that the
+zero guard in its `Neg` — a format without a negative zero must not flip a zero,
+because the code it would flip into is the NaN — compiled to a `setcc`, whose
+partial write of a byte register carried a false dependency, and that rewriting
+the guard as the top bit of `m | -m` was worth 0.773x on `FNUZ` subtraction.
+The port of that trick to `operator-` and `abs` was reverted.
+
+The premise does not hold here.  `if constexpr (!Format::HAS_NEG_ZERO) if
+(!(bits_ & ABS_MASK)) return x;` compiles to a `cmove`, not a `setcc`: three
+instructions under GCC (`mov`, `and`, `cmove`) and four under Clang.  The mask
+version is five under both, so it is the longer sequence, and in a loop of
+independent operations that is what decides.
+
+| `FNUZ` unary, ns | before | after | |
+| --- | --- | --- | --- |
+| `abs`, GCC 16.1.1 | 0.206 | 0.412 | 2.000x |
+| `neg`, GCC 16.1.1 | 0.388 | 0.412 | 1.062x |
+| `abs`, Clang 22.1.8 | 0.394 | 0.366 | 0.929x |
+| `neg`, Clang 22.1.8 | 0.414 | 0.399 | 0.964x |
+
+Min of 15 interleaved passes each, operator rows held as control.  The
+compilers disagree in sign, and a 2x regression under one of them is not bought
+by 7% under the other.  The finding was about what one back end emitted for that
+guard, not about the guard, and the disassembly said so before the stopwatch
+did — which is the cheaper order to ask in.
+
+**The unary table cannot resolve a fifth of a nanosecond.**  Its `neg` and `abs`
+rows run 0.2 to 0.4 ns, where one cycle of loop-alignment drift is tens of
+percent.  Across changes that provably do not touch them, those rows have come
+back anywhere from 0.51x to 1.98x.  Treat a `neg` or `abs` row as a result only
+beside a disassembly that explains it; the `from` and conversion rows, at 1 to 3
+ns, behave.
 
 ## Open questions
 
@@ -220,11 +290,16 @@ a 32-bit numerator and let `div_parts` avoid 64-bit division on a 32-bit host.
 Nobody has measured whether that is worth a format-dependent constant, and the
 64-bit hosts this is developed on would not show it.
 
-**The GCC addition and subtraction gap.**  At every shape narrower than `E8M7`,
-GCC's `operator+` and `operator-` lose to the host route where Clang's win —
-0.70x against 1.02x at the same shape, from the same source.  Whether that is
-`add_parts`'s two `align` calls failing to be if-converted, the `std::int64_t`
-sum, or something in `from_parts` has not been diagnosed.  The diagnosis is a
-disassembly comparison of one *narrow* shape's `operator+` under both compilers
-— `E4M3`, not `E8M7`, since the wide shapes lose under both and have nothing to
-compare.
+**The GCC addition and subtraction gap.**  At every narrow shape that is not
+`FNUZ` or `E2M13`, GCC's `operator+` and `operator-` lose to the host route
+where Clang's come out even — `E5M2` is 0.67x against 1.01x, from the same
+source.  Whether
+that is `add_parts`'s two `align` calls failing to be if-converted, the
+`std::int64_t` sum, or something in `from_parts` has not been diagnosed.
+
+The diagnosis is a disassembly comparison of one shape's `operator+` under both
+compilers, and picking the shape matters: `E5M2` or `E4M3`, not `E8M7` or
+`E11M4`, since those two lose under both compilers and so have no difference to
+show.  `FNUZ` is the other end of the same question — GCC wins those at 1.09x to 1.10x
+while losing their non-`FNUZ` neighbours, which is a large enough split within
+one compiler to be a clue on its own.

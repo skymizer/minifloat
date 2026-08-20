@@ -47,7 +47,7 @@ ask — never kill it unasked.  The protocol is
 [docs/benchmarking.md](docs/benchmarking.md), and it is not optional:
 interleaved builds, min-of-N across at least 15 alternating passes each, a
 control row the change cannot touch, a 0.98x noise floor, and GCC *and* Clang,
-because on the same source they disagree by 52 of 56 against 28 of 56.  `rm -f bench` between compilers; the `make` target does not depend on
+because on the same source they disagree by 37 of 56 against 23 of 56.  `rm -f bench` between compilers; the `make` target does not depend on
 `CXX`.
 
 ## The correctness gate
