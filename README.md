@@ -115,17 +115,21 @@ squares 2⁻¹⁰⁰⁰ to 2⁻²⁰⁰⁰ rather than to zero — and an invali
 the format's own NaN, or its maximum finite value where it has none, instead of
 whatever sign the host's default NaN happened to carry.
 
-That route is also not the slower one, though the margin is narrower here than
-in the Rust sibling, whose host conversions cost two floating-point multiplies
-where this library's cost a shift and a bit-cast. `benches/arith.cpp` times each
-operator twice over the same operands — once as the library computes it, once
-the way a caller would fake it through a host float — and reports the minimum
-across passes. On an idle AMD Ryzen 7 8700F, Clang 22 puts the integer route
-ahead in 50 of 56 comparisons at a geomean of 1.20x, while GCC 16 comes out even
-at 28 of 56 and 1.03x, which is inside the noise. Multiplication and division
-win under both compilers; addition and subtraction depend on the compiler and
-lose for the widest exponent ranges. Correctness, not speed, is why the host
-route is gone.
+Correctness, not speed, is why the host route is gone; it is not the slower one
+either, though by how much depends on the compiler. `benches/arith.cpp` times
+both routes over the same operands, and [docs/arithmetic.md](docs/arithmetic.md)
+has the numbers and what they do and do not license.
+
+## Design notes
+
+Standing decisions, with the measurements and the rejected alternatives behind
+them, for anyone working on the library rather than using it:
+
+- [docs/arithmetic.md](docs/arithmetic.md) — the integer route, the two
+  deliberately inexact tails and why neither can change a rounding, the
+  independent oracle, and the open questions.
+- [docs/benchmarking.md](docs/benchmarking.md) — what a number from this
+  repository has to survive before it is quoted.
 
 ## Dependencies
 
