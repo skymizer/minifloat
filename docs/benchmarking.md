@@ -85,10 +85,21 @@ next.  Take the minimum per line across the 15 files on each side, then divide.
 
 Every sweep carries at least one row the change cannot possibly have touched.
 If the control moves, the run is noise and the headline number is noise with it.
-Picking one means reading the two arms of `bench_op` as separate measurements,
-because they share almost nothing: the `soft` column is `op(x, y)`, the bare
-operator, and the `host` column is `T{op(x.to_float(), y.to_float())}`, which is
-the only arm with a conversion in it.
+
+The rule that actually does the work is upstream of picking one.  **Before
+choosing a control, write down what the change reaches, and check that against
+everything you were going to compare it to.**  The failure mode is not choosing
+a poor control; it is not noticing that the change reaches the control too, and
+then reading a row that moved for a real reason as proof the run was clean.
+Sometimes the answer is that there is no control available, and saying so is a
+result.  A sweep reported with "no control: `from_parts` is on every path" is
+worth more than one reported beside a row that was never insulated.
+
+Answering it here means reading the two arms of `bench_op` as separate
+measurements, because they share almost nothing: the `soft` column is
+`op(x, y)`, the bare operator, and the `host` column is
+`T{op(x.to_float(), y.to_float())}`, which is the only arm with a conversion in
+it.  Three worked examples:
 
 - **A conversion change** — `bits_from`, `to_float`, `to_double`, `to_exact`,
   `decompose`, `exp2i`.  Every one of the 56 `soft` rows is a control, since
