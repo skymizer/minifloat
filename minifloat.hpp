@@ -114,6 +114,28 @@ struct Parts {
   };
 }
 
+//! Two to the power of an integer, exactly where `double` can hold it
+//!
+//! Spelling a power of two as a libm call leaves the compiler free not to fold
+//! it, and `std::ldexp` costs a call even where its exponent is a literal.
+//! Building the field directly needs neither, and reaches the subnormal results
+//! a naive `1 << (52 + field)` would not.  Out of range it saturates to
+//! infinity or to zero, which is what both callers want at either end.
+//!
+//! Not `constexpr`: `bit_cast` is only constexpr from C++20, and C++17 is the
+//! floor.  `SKYMIZER_MINIFLOAT_CONST` is what makes a literal argument fold.
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST inline double exp2i(int x) noexcept {
+  const int field = x + (DBL_MAX_EXP - 1);
+
+  if (field >= 2 * DBL_MAX_EXP - 1)
+    return HUGE_VAL;
+  if (field > 0)
+    return bit_cast<double>(static_cast<std::uint64_t>(field) << (DBL_MANT_DIG - 1));
+  if (field >= 2 - DBL_MANT_DIG)
+    return bit_cast<double>(UINT64_C(1) << (DBL_MANT_DIG - 2 + field));
+  return 0.0;
+}
+
 //! Round `significand * 2**exponent` to a multiple of `2**target`
 //!
 //! Ties go to even, which is what IEEE 754 rounds to by default.  Working on
@@ -510,7 +532,7 @@ private:
 
     if (magnitude < Bits{1} << M)
       return magnitude *
-             std::copysign(std::exp2(static_cast<Float>(MIN_EXP - MANTISSA_DIGITS)), sign);
+             std::copysign(static_cast<Float>(detail::exp2i(MIN_EXP - MANTISSA_DIGITS)), sign);
 
     const auto shifted = static_cast<Bits>(magnitude << (MANT_DIG - MANTISSA_DIGITS));
     const auto bias = static_cast<Bits>(Bits{MIN_EXP - DST_MIN_EXP} << (MANT_DIG - 1));
@@ -687,12 +709,21 @@ public:
       if (magnitude == Format::INF_MAG)
         return std::copysign(HUGE_VAL, sign);
 
-    if (magnitude < 1U << M)
-      return std::copysign(std::ldexp(magnitude, MIN_EXP - MANTISSA_DIGITS), sign);
+    const bool subnormal = magnitude < 1U << M;
+    const auto significand =
+        subnormal ? magnitude
+                  : static_cast<std::uint32_t>((magnitude & ((1U << M) - 1U)) | 1U << M);
+    const int exponent =
+        subnormal ? MIN_EXP - MANTISSA_DIGITS : static_cast<int>(magnitude >> M) - B - M;
 
-    const auto significand = static_cast<std::uint32_t>((magnitude & ((1U << M) - 1U)) | 1U << M);
-    const int exponent = static_cast<int>(magnitude >> M) - B;
-    return std::copysign(std::ldexp(significand, exponent - M), sign);
+    // Splitting the scale keeps either factor inside `double`'s exponent range,
+    // so the first product is exact and the second rounds at most once.  A
+    // single factor would flush to zero or to infinity long before the product
+    // does, which is the whole reason this branch exists.
+    const int head = exponent < DBL_MIN_EXP - 1   ? DBL_MIN_EXP - 1
+                     : exponent > DBL_MAX_EXP - 1 ? DBL_MAX_EXP - 1
+                                                  : exponent;
+    return sign * significand * detail::exp2i(head) * detail::exp2i(exponent - head);
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE explicit operator double() const noexcept {

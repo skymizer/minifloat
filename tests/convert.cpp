@@ -115,6 +115,21 @@ TEST(Convert, ExplicitCastsMatchNamedConversions) { test_all_types<CheckExplicit
 
 TEST(Convert, IntegerDecodeReconstruction) { test_all_types<CheckIntegerDecodeReconstruction>(); }
 
+//! `detail::exp2i` stands in for `std::exp2` on the inexact conversion paths
+//!
+//! Its two boundaries are the ones an off-by-one in the field arithmetic moves:
+//! the least subnormal `double` and the largest finite power of two.
+TEST(Convert, Exp2i) {
+  for (int x = -1200; x <= 1200; ++x)
+    EXPECT_TRUE(same_double(detail::exp2i(x), std::exp2(static_cast<double>(x))))
+        << "exp2i(" << x << ')';
+
+  EXPECT_EQ(detail::exp2i(-1074), std::numeric_limits<double>::denorm_min());
+  EXPECT_EQ(detail::exp2i(-1075), 0.0);
+  EXPECT_EQ(detail::exp2i(1023), std::ldexp(1.0, 1023));
+  EXPECT_EQ(detail::exp2i(1024), HUGE_VAL);
+}
+
 TEST(Convert, IntegerInterop) {
   using T = E5M2;
   EXPECT_EQ(T{3}.to_float(), 3.0F);
