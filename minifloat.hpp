@@ -74,8 +74,13 @@ using BitsOf =
 //! to encode it.  Subnormal and zero inputs must be scaled into the normal
 //! range first — their exponent field does not mean what this bit trick
 //! assumes.
+//!
+//! `parity_offset` maps the retained host bit's parity to the destination
+//! code's parity. It matters only when `M == 0` and the exponent biases differ
+//! by an odd number.
 template <int M, typename Float>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST Float round_normal_to_mantissa(Float x) noexcept {
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST Float
+round_normal_to_mantissa(Float x, bool parity_offset) noexcept {
   using Bits = BitsOf<Float>;
   constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
 
@@ -85,7 +90,8 @@ template <int M, typename Float>
 
   const auto bits = bit_cast<Bits>(x);
   const auto ulp = Bits{1} << (MANT_DIG - 1 - M);
-  const auto bias = static_cast<Bits>(ulp / 2 - !(bits & ulp));
+  const bool odd = static_cast<bool>(bits & ulp) != parity_offset;
+  const auto bias = static_cast<Bits>(ulp / 2 - !odd);
   return bit_cast<Float>(static_cast<Bits>((bits + bias) & ~(ulp - 1)));
 }
 
@@ -308,6 +314,9 @@ private:
         return static_cast<Storage>(sign | Format::MAX_FINITE_MAG);
     }
 
+    if ((std::isinf)(x))
+      return static_cast<Storage>(sign | Format::OVERFLOW_MAG);
+
     Float normalized = x;
     Int offset = 0;
 
@@ -324,14 +333,17 @@ private:
       }
     }
 
-    const auto bits = bit_cast<Bits>(detail::round_normal_to_mantissa<M>(normalized));
     const Int diff = Int{MIN_EXP - SRC_MIN_EXP} * (Int{1} << M) + offset;
+    const auto bits =
+        bit_cast<Bits>(detail::round_normal_to_mantissa<M>(normalized, diff % 2 != 0));
     const Int magnitude = static_cast<Int>(bits << 1 >> (MANT_DIG - M)) - diff;
 
     if (magnitude < Int{1} << M) {
-      // The scale stays double: it overflows `float` for the wider formats.
-      const auto ticks =
-          static_cast<Storage>(std::nearbyint(std::abs(x) * std::exp2(MANTISSA_DIGITS - MIN_EXP)));
+      // Scaling the value directly avoids an overflowing power-of-two
+      // intermediate at the edge of double's exponent range.
+      const auto ticks = static_cast<Storage>(
+          std::nearbyint(std::ldexp(static_cast<double>(std::abs(x)), MANTISSA_DIGITS - MIN_EXP))
+      );
       return static_cast<Storage>((Format::HAS_NEG_ZERO || ticks) * sign | ticks);
     }
     return static_cast<Storage>(sign | std::min<Int>(magnitude, Format::OVERFLOW_MAG));

@@ -42,7 +42,12 @@ if(SKYMIZER_MINIFLOAT_BUILD_TESTS)
     find_package(GTest REQUIRED)
   endif()
 
-  add_executable(skymizer-minifloat-test test.cpp)
+  add_executable(skymizer-minifloat-test
+    tests/arith.cpp
+    tests/convert.cpp
+    tests/encode.cpp
+    tests/ops.cpp
+    tests/spec.cpp)
   target_link_libraries(skymizer-minifloat-test
     PRIVATE skymizer::minifloat GTest::gtest_main)
   add_test(NAME skymizer-minifloat-test COMMAND skymizer-minifloat-test)
