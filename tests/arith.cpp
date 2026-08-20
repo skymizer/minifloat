@@ -88,7 +88,11 @@ int compare_exact(const Exact &exact, Scaled candidate) {
 
 //! Exact sum with one sticky bit for an addend beyond the aligned range
 Exact exact_sum(bool xn, Scaled x, bool yn, Scaled y) {
-  constexpr int ALIGN_CAP = 54;
+  // A 14-bit significand shifted by more overflows `int64_t` once the 16-bit
+  // shapes run through here; 48 keeps both aligned addends under 2**62.  The
+  // sticky substitute below is deliberately unlike the engine's drop to zero,
+  // and both round alike.
+  constexpr int ALIGN_CAP = 48;
   const int top = std::max(x.exponent, y.exponent);
   const int bottom = std::min(x.exponent, y.exponent);
   const int base = std::max(bottom, top - ALIGN_CAP);
@@ -152,6 +156,124 @@ struct CheckExactSmallArithmetic {
     return for_all<T>([](T x) { return for_all<T>([x](T y) { return check_exact_pair(x, y); }); });
   }
 };
+
+//! The same exact oracle, sampled where every ordered pair is out of reach
+//!
+//! 2**16 pairs, not 2**13: the Rust crate found that 2**13 misses an `E2M13`
+//! double rounding.  The seed differs from the host sweep's so the two draw
+//! different pairs.
+struct CheckExactWideArithmetic {
+  template <typename T> static bool check() {
+    Lcg random{UINT64_C(0x0123456789ABCDEF)};
+    constexpr auto MASK = bit_mask(T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
+
+    for (unsigned i = 0; i < 1U << 16; ++i) {
+      const auto draw = [&random] {
+        return T::from_bits(static_cast<typename T::Storage>(random.next() & MASK));
+      };
+      const T x = draw();
+      const T y = draw();
+      if (!check_exact_pair(x, y))
+        return false;
+    }
+    return true;
+  }
+};
+
+//! Every arm of the special-value ladder, pinned to an exact bit pattern
+//!
+//! `same_mini` would let a signed NaN pass; arithmetic never manufactures one,
+//! so these compare codes.  The invalid result is the format's NaN, or its
+//! positive maximum where it has none, derived here from the test's own
+//! encoder rather than from the library.
+struct CheckSpecialLadder {
+  template <typename T> static bool check() {
+    constexpr auto SIGN = std::uint64_t{1} << (T::EXPONENT_BITS + T::MANTISSA_BITS);
+    const T invalid = reference_encode<T>(std::numeric_limits<double>::quiet_NaN());
+    const T zero = T::from_bits(0);
+    const T one{1.0};
+
+    const auto signed_zero = [](bool negative) {
+      const bool keep = T::HAS_NEG_ZERO && negative;
+      return T::from_bits(static_cast<typename T::Storage>(keep ? SIGN : 0));
+    };
+
+    bool ok = true;
+    const auto same = [&ok](const char *what, T actual, T expected) {
+      if (actual.to_bits() == expected.to_bits())
+        return;
+      ADD_FAILURE() << describe<T>() << ' ' << what << ": got " << +actual.to_bits()
+                    << ", expected " << +expected.to_bits();
+      ok = false;
+    };
+
+    same("1 * 1", one * one, one);
+    same("(-1) * 1", -one * one, -one);
+    same("(-1) * (-1)", -one * -one, one);
+    same("1 / (-1)", one / -one, -one);
+    same("(-1) / (-1)", -one / -one, one);
+
+    same("0 - 0", zero - zero, signed_zero(false));
+    same("1 - 1", one - one, signed_zero(false));
+    same("1 - 0", one - zero, one);
+    same("0 - 1", zero - one, -one);
+    same("0 * (-1)", zero * -one, signed_zero(true));
+
+    same("0 / 0", zero / zero, invalid);
+    same("1 / 0", one / zero, signed_huge<T>(false));
+    same("(-1) / 0", -one / zero, signed_huge<T>(true));
+
+    if constexpr (T::HAS_NEG_ZERO) {
+      const T neg_zero = T::from_bits(static_cast<typename T::Storage>(SIGN));
+      same("(-0) - (-0)", neg_zero - neg_zero, signed_zero(false));
+      same("(-0) - 0", neg_zero - zero, signed_zero(true));
+      same("(-0) + (-0)", neg_zero + neg_zero, signed_zero(true));
+      same("0 + (-0)", zero + neg_zero, signed_zero(false));
+      same("(-0) / 0", neg_zero / zero, invalid);
+      same("1 / (-0)", one / neg_zero, signed_huge<T>(true));
+    }
+
+    if constexpr (T::HAS_NAN) {
+      const T nan = T::quiet_NaN();
+      const T signed_nan = T::from_bits(static_cast<typename T::Storage>(nan.to_bits() | SIGN));
+      same("nan + 1", nan + one, invalid);
+      same("1 + nan", one + nan, invalid);
+      same("nan - 1", nan - one, invalid);
+      same("1 - nan", one - nan, invalid);
+      same("nan * 1", nan * one, invalid);
+      same("1 * nan", one * nan, invalid);
+      same("nan / 1", nan / one, invalid);
+      same("1 / nan", one / nan, invalid);
+      same("(-nan) + 1", signed_nan + one, invalid);
+      same("1 * (-nan)", one * signed_nan, invalid);
+    }
+
+    if constexpr (T::HAS_INF) {
+      const T inf = T::infinity();
+      same("inf + inf", inf + inf, inf);
+      same("(-inf) + (-inf)", -inf + -inf, -inf);
+      same("inf + (-inf)", inf + -inf, invalid);
+      same("(-inf) + inf", -inf + inf, invalid);
+      same("inf - inf", inf - inf, invalid);
+      same("inf - (-inf)", inf - -inf, inf);
+      same("inf + 1", inf + one, inf);
+      same("1 + inf", one + inf, inf);
+      same("inf - 1", inf - one, inf);
+      same("1 - inf", one - inf, -inf);
+      same("inf * inf", inf * inf, inf);
+      same("inf * (-1)", inf * -one, -inf);
+      same("inf * 0", inf * zero, invalid);
+      same("0 * inf", zero * inf, invalid);
+      same("inf / inf", inf / inf, invalid);
+      same("inf / (-1)", inf / -one, -inf);
+      same("inf / 0", inf / zero, inf);
+      same("1 / inf", one / inf, signed_zero(false));
+      same("(-1) / inf", -one / inf, signed_zero(true));
+      same("1 / (-inf)", one / -inf, signed_zero(true));
+    }
+    return ok;
+  }
+};
 } // namespace
 
 TEST(Arith, MatchesHostRoundTrip) { test_paired_types<CheckHostArithmetic>(); }
@@ -159,6 +281,39 @@ TEST(Arith, MatchesHostRoundTrip) { test_paired_types<CheckHostArithmetic>(); }
 TEST(Arith, WideFormatsMatchHostRoundTrip) { test_wide_types<CheckWideHostArithmetic>(); }
 
 TEST(Arith, CorrectlyRoundedSmallFormats) { test_small_types<CheckExactSmallArithmetic>(); }
+
+TEST(Arith, CorrectlyRoundedWideFormats) { test_wide_types<CheckExactWideArithmetic>(); }
+
+TEST(Arith, SpecialValueLadder) {
+  check_each<CheckSpecialLadder, Finite<4, 3>, IEEE<4, 3>, FN<4, 3>, FNUZ<4, 3>>();
+  test_wide_types<CheckSpecialLadder>();
+}
+
+//! Results beyond `double` that the destination shape still holds exactly
+TEST(Arith, PastDoubleRange) {
+  using T = IEEE<12, 3>;
+  // Every code here is 1 * 2**k, whose exponent field is `k` + `BIAS`.
+  const auto power = [](int k) {
+    return T::from_bits(static_cast<T::Storage>((k + T::BIAS) << T::MANTISSA_BITS));
+  };
+
+  EXPECT_TRUE(same_mini(power(-1000) * power(-1000), power(-2000))); // double flushes to zero
+  EXPECT_TRUE(same_mini(power(1000) * power(1000), power(2000)));    // and this to infinity
+  EXPECT_TRUE(same_mini(power(-2000) / power(-1000), power(-1000)));
+  EXPECT_TRUE(same_mini(power(2000) - power(1999), power(1999)));
+}
+
+//! The integer engine leaves every operator usable at compile time
+TEST(Arith, ConstantEvaluation) {
+  using T = E4M3; // bias 7, so an exponent field of 7 is 1.0
+  constexpr T ONE = T::from_bits(0x38);
+  constexpr T TWO = T::from_bits(0x40);
+  static_assert((ONE + ONE).to_bits() == TWO.to_bits());
+  static_assert((TWO - ONE).to_bits() == ONE.to_bits());
+  static_assert((TWO * ONE).to_bits() == TWO.to_bits());
+  static_assert((TWO / TWO).to_bits() == ONE.to_bits());
+  SUCCEED();
+}
 
 TEST(Arith, CompoundAssignment) {
   using T = E5M2;

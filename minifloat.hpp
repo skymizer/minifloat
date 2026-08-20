@@ -68,31 +68,147 @@ template <typename Float>
 using BitsOf =
     std::conditional_t<sizeof(Float) == sizeof(std::uint32_t), std::uint32_t, std::uint64_t>;
 
-//! Round a *normal* (or infinite, or NaN) host float to `M` mantissa bits
+//! A number as sign times significand times two to the exponent
 //!
-//! Ties go to even.  The result keeps the host format, so the caller still has
-//! to encode it.  Subnormal and zero inputs must be scaled into the normal
-//! range first — their exponent field does not mean what this bit trick
-//! assumes.
+//! The significand is an integer, so a triple stays exact where no host float
+//! can.  Arithmetic hands one to `from_parts`, which is where every rounding
+//! happens; its lowest bit may be sticky.
+struct Parts {
+  bool negative;
+  std::uint64_t significand;
+  int exponent;
+};
+
+//! Index of the highest set bit; the argument must be nonzero
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr int log2_floor(std::uint64_t x) noexcept {
+#if __cplusplus >= 202002L
+  return 63 - std::countl_zero(x);
+#elif defined(__GNUC__) || defined(__clang__)
+  return 63 - __builtin_clzll(x);
+#else
+  int result = 0;
+  for (; x > 1; x >>= 1)
+    ++result;
+  return result;
+#endif
+}
+
+//! Decompose a `double` into an exact `(significand, exponent)` pair
 //!
-//! `parity_offset` maps the retained host bit's parity to the destination
-//! code's parity. It matters only when `M == 0` and the exponent biases differ
-//! by an odd number.
-template <int M, typename Float>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST Float
-round_normal_to_mantissa(Float x, bool parity_offset) noexcept {
-  using Bits = BitsOf<Float>;
-  constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
+//! The value is `significand * 2**exponent` with no hidden bits, subnormal
+//! inputs included.  The sign is dropped: the caller owns it.
+[[nodiscard]] SKYMIZER_MINIFLOAT_PURE inline Parts decompose(double x) noexcept {
+  static_assert(std::numeric_limits<double>::radix == 2);
+  static_assert(std::numeric_limits<double>::is_iec559);
 
-  static_assert(M < MANT_DIG);
-  static_assert(std::numeric_limits<Float>::radix == 2);
-  static_assert(std::numeric_limits<Float>::is_iec559);
+  const std::uint64_t bits = bit_cast<std::uint64_t>(x) & INT64_MAX;
+  const auto field = static_cast<int>(bits >> (DBL_MANT_DIG - 1));
+  const std::uint64_t fraction = bits & ((UINT64_C(1) << (DBL_MANT_DIG - 1)) - 1);
 
-  const auto bits = bit_cast<Bits>(x);
-  const auto ulp = Bits{1} << (MANT_DIG - 1 - M);
-  const bool odd = static_cast<bool>(bits & ulp) != parity_offset;
-  const auto bias = static_cast<Bits>(ulp / 2 - !odd);
-  return bit_cast<Float>(static_cast<Bits>((bits + bias) & ~(ulp - 1)));
+  if (field == 0)
+    return {false, fraction, DBL_MIN_EXP - DBL_MANT_DIG};
+  return {
+      false,
+      fraction | UINT64_C(1) << (DBL_MANT_DIG - 1),
+      field + DBL_MIN_EXP - 1 - DBL_MANT_DIG,
+  };
+}
+
+//! Round `significand * 2**exponent` to a multiple of `2**target`
+//!
+//! Ties go to even, which is what IEEE 754 rounds to by default.  Working on
+//! an integer significand keeps this exact for exponents far outside the range
+//! of any host float.
+//!
+//! The `shift >= 64` guard covers right shifts only.  A left shift is a caller
+//! contract: every call site here bounds it structurally, and a minifloat code
+//! is at most 16 bits wide, so the quotient always has room in an `int64_t`.
+//!
+//! `parity_offset` maps the retained bit's parity to the destination code's.
+//! It matters only when the format has no mantissa bit, where the code's low
+//! bit is the exponent field's and the significand is always 1.
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr std::int64_t round_to_scale(
+    std::uint64_t significand, int exponent, int target, bool parity_offset = false
+) noexcept {
+  const int shift = target - exponent;
+
+  if (shift <= 0)
+    return static_cast<std::int64_t>(significand << -shift);
+  if (shift >= 64)
+    return 0;
+
+  const std::uint64_t dropped = significand & ((UINT64_C(1) << shift) - 1U);
+  const std::uint64_t kept = significand >> shift;
+  const std::uint64_t half = UINT64_C(1) << (shift - 1);
+  const bool odd = ((kept & 1) != 0) != parity_offset;
+  const bool round_up = dropped > half || (dropped == half && odd);
+  return static_cast<std::int64_t>(kept + static_cast<std::uint64_t>(round_up));
+}
+
+//! Widest exponent gap an aligned sum spans
+//!
+//! An addend further below the other than this cannot move it at all: the
+//! other is a representable value, and anything under half its ULP rounds
+//! straight back to it.  Dropping such an addend is also what keeps the
+//! aligned sum inside an `int64_t`, two 15-bit significands and this shift
+//! being 62 bits at worst.
+constexpr int ALIGN_CAP = 46;
+
+//! One addend at the common exponent, signed
+//!
+//! An addend below that exponent is one `ALIGN_CAP` has already ruled out.
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr std::int64_t
+align(bool negative, std::uint64_t significand, int exponent, int base) noexcept {
+  const auto magnitude =
+      exponent >= base ? static_cast<std::int64_t>(significand << (exponent - base)) : 0;
+  return negative ? -magnitude : magnitude;
+}
+
+//! Sum of two signed magnitudes, exact enough to round
+//!
+//! The caller is responsible for the significands fitting in 15 bits, which
+//! every minifloat does.
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts add_parts(Parts x, Parts y) noexcept {
+  const int top = x.exponent > y.exponent ? x.exponent : y.exponent;
+  const int bottom = x.exponent < y.exponent ? x.exponent : y.exponent;
+  const int base = top - bottom > ALIGN_CAP ? top - ALIGN_CAP : bottom;
+
+  const std::int64_t sum = align(x.negative, x.significand, x.exponent, base) +
+                           align(y.negative, y.significand, y.exponent, base);
+
+  return {
+      // Cancellation yields +0 unless both addends were negative.
+      sum != 0 ? sum < 0 : (x.negative && y.negative),
+      static_cast<std::uint64_t>(sum < 0 ? -sum : sum),
+      base,
+  };
+}
+
+//! Quotient bits computed below the dividend's own
+//!
+//! A minifloat keeps at most 15 of them; the rest are the guard and sticky
+//! room every rounding needs.  Unrelated to `ALIGN_CAP` despite the shared
+//! value: one is an alignment window, the other a quotient width.
+constexpr int QUOTIENT_BITS = 46;
+
+//! Quotient of two magnitudes, exact enough to round
+//!
+//! The remainder collapses into the lowest bit of the quotient, the sticky bit
+//! every divider keeps.  The caller is responsible for a nonzero divisor and
+//! for both significands fitting in 15 bits.
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts div_parts(
+    bool negative, std::uint64_t significand, int exponent, std::uint64_t rhs_significand,
+    int rhs_exponent
+) noexcept {
+  const std::uint64_t numerator = significand << QUOTIENT_BITS;
+  const std::uint64_t quotient = numerator / rhs_significand;
+  const std::uint64_t remainder = numerator % rhs_significand;
+
+  return {
+      negative,
+      quotient | static_cast<std::uint64_t>(remainder != 0),
+      exponent - rhs_exponent - QUOTIENT_BITS,
+  };
 }
 
 //! What a bit pattern denotes
@@ -245,6 +361,67 @@ template <int E, int M, int B> struct FnuzFormat {
   }
 };
 
+//! Split a finite code into exact `(sign, significand, exponent)`
+//!
+//! The inverse of `from_parts` where the value is representable: `significand`
+//! carries the implicit bit where the code has one, and `exponent` is the ULP
+//! scale of the code.  There is no special-value check — an IEEE infinity
+//! decodes to significand `1 << M`, and multiplication and division use
+//! `significand == 0` as their zero test after decoding unconditionally.
+template <class Format>
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts
+to_parts(typename Format::Storage bits) noexcept {
+  constexpr int M = Format::MANTISSA_BITS;
+  const auto magnitude = static_cast<std::uint64_t>(bits & Format::MAG_MASK);
+  const auto field = static_cast<int>(magnitude >> M);
+  const std::uint64_t fraction = magnitude & ((UINT64_C(1) << M) - 1U);
+  const bool negative = (bits & Format::SIGN_MASK) != 0;
+
+  if (field == 0)
+    return {negative, fraction, 1 - Format::BIAS - M};
+  return {negative, fraction | UINT64_C(1) << M, field - Format::BIAS - M};
+}
+
+//! Correctly rounded code for `sign * significand * 2**exponent`
+//!
+//! This is where every rounding in the library happens.  The triple is an
+//! exact number, or one whose lowest bit is sticky, so it can come from a
+//! `double` or from arithmetic of its own.
+template <class Format>
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage
+from_parts(Parts parts) noexcept {
+  using Storage = typename Format::Storage;
+  constexpr int M = Format::MANTISSA_BITS;
+  const auto sign_bit = static_cast<Storage>(parts.negative ? Format::SIGN_MASK : Storage{0});
+
+  // Without a negative zero, signing a zero spells NaN.
+  if (parts.significand == 0)
+    return Format::HAS_NEG_ZERO ? sign_bit : Storage{0};
+
+  // The exponent of the value, which is in [2**e, 2**(e+1)).
+  const int e = parts.exponent + log2_floor(parts.significand);
+
+  std::int64_t magnitude = 0;
+  if (e < Format::MIN_EXP - 1) {
+    // Subnormal numbers all share the ULP of the smallest one, so their code
+    // *is* the rounded multiple of that ULP.
+    magnitude = round_to_scale(parts.significand, parts.exponent, Format::MIN_EXP - 1 - M);
+  } else {
+    // Rounding to `M + 1` digits may carry into the implicit bit.  That lands
+    // on the next exponent field with a zero mantissa, which is exactly where
+    // the extra ULP belongs.  The code trails the rounded significand by
+    // `(e + B - 1) << M`, whose parity is the tie-break's only correction.
+    const bool parity_offset = M == 0 && (e + Format::BIAS) % 2 == 0;
+    const std::int64_t rounded =
+        round_to_scale(parts.significand, parts.exponent, e - M, parity_offset);
+    magnitude = (static_cast<std::int64_t>(e + Format::BIAS) << M) + rounded - (INT64_C(1) << M);
+  }
+
+  const auto code = static_cast<Storage>(std::min<std::int64_t>(magnitude, Format::OVERFLOW_MAG));
+  // A value that rounds to zero drops its sign for the same reason a zero does.
+  return static_cast<Storage>(code | ((Format::HAS_NEG_ZERO || code != 0) ? sign_bit : Storage{0}));
+}
+
 } // namespace detail
 
 //! Configurable signed floating-point type up to 16 bits
@@ -284,28 +461,19 @@ public:
       DBL_MANT_DIG >= MANTISSA_DIGITS && DBL_MAX_EXP >= MAX_EXP && DBL_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<double>::radix == 2 && std::numeric_limits<double>::is_iec559;
 
-  static constexpr bool USE_FLT_ADD = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS && //
-                                      (FLT_MAX_EXP > MAX_EXP) &&             //
-                                      (FLT_MIN_EXP < MIN_EXP);
-
-  static constexpr bool USE_FLT_MUL = FLT_MANT_DIG >= 2 * MANTISSA_DIGITS &&
-                                      FLT_MAX_EXP >= 2 * MAX_EXP &&
-                                      FLT_MIN_EXP - 1 <= 2 * (MIN_EXP - 1);
-
 private:
   Storage bits_{};
 
   //! Encode a host float, rounding to nearest with ties to even
   //!
-  //! A NaN input needs `Format::HAS_NAN`; see the constructors.
+  //! A NaN input needs `Format::HAS_NAN`; see the constructors.  Every finite
+  //! value is decomposed exactly and rounded once by `detail::from_parts`, so
+  //! a shape whose exponent range outruns `double`'s is served as exactly as
+  //! any other.  A `float` promotes to `double` exactly, so it rounds once too.
   template <typename Float>
   [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
-    using Bits = detail::BitsOf<Float>;
-    using Int = std::make_signed_t<Bits>;
-    constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
-    constexpr int SRC_MIN_EXP = std::numeric_limits<Float>::min_exponent;
-
-    const auto sign = static_cast<unsigned>(std::signbit(x)) << (E + M);
+    const bool negative = std::signbit(x);
+    const auto sign = static_cast<Storage>(negative ? Format::SIGN_MASK : Storage{0});
 
     if ((std::isnan)(x)) {
       if constexpr (Format::HAS_NAN)
@@ -317,36 +485,8 @@ private:
     if ((std::isinf)(x))
       return static_cast<Storage>(sign | Format::OVERFLOW_MAG);
 
-    Float normalized = x;
-    Int offset = 0;
-
-    // A zero or subnormal source has a zero exponent field, which the linear
-    // magnitude below misreads. Only formats reaching under the source's own
-    // normal range ever get here, and for them the scaling is exact.
-    if constexpr (MIN_EXP < SRC_MIN_EXP) {
-      if (!(std::abs(x) >= (std::numeric_limits<Float>::min)())) {
-        if (x == Float{0})
-          return static_cast<Storage>(Format::HAS_NEG_ZERO * sign);
-
-        normalized = x * static_cast<Float>(Bits{1} << MANT_DIG);
-        offset = Int{MANT_DIG} << M;
-      }
-    }
-
-    const Int diff = Int{MIN_EXP - SRC_MIN_EXP} * (Int{1} << M) + offset;
-    const auto bits =
-        bit_cast<Bits>(detail::round_normal_to_mantissa<M>(normalized, diff % 2 != 0));
-    const Int magnitude = static_cast<Int>(bits << 1 >> (MANT_DIG - M)) - diff;
-
-    if (magnitude < Int{1} << M) {
-      // Scaling the value directly avoids an overflowing power-of-two
-      // intermediate at the edge of double's exponent range.
-      const auto ticks = static_cast<Storage>(
-          std::nearbyint(std::ldexp(static_cast<double>(std::abs(x)), MANTISSA_DIGITS - MIN_EXP))
-      );
-      return static_cast<Storage>((Format::HAS_NEG_ZERO || ticks) * sign | ticks);
-    }
-    return static_cast<Storage>(sign | std::min<Int>(magnitude, Format::OVERFLOW_MAG));
+    const detail::Parts magnitude = detail::decompose(static_cast<double>(x));
+    return detail::from_parts<Format>({negative, magnitude.significand, magnitude.exponent});
   }
 
   //! Exact reconstruction into `Float`
@@ -659,37 +799,126 @@ SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format> operator-(Minifloat<Format>
   );
 }
 
+namespace detail {
+//! The result of an invalid operation
+//!
+//! A format without a NaN saturates one to `max()`, as encoding a NaN does.
+//! The sign of a default NaN means nothing, so this one is positive — nominally
+//! so for FNUZ, whose NaN *is* the sign-bit pattern.
+template <class Format> SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format> invalid() noexcept {
+  if constexpr (Format::HAS_NAN)
+    return Minifloat<Format>::from_bits(Format::NAN_BITS);
+  else
+    return Minifloat<Format>::from_bits(Format::MAX_FINITE_MAG);
+}
+
+//! The overflow result with the sign an operation worked out
+//!
+//! An infinity where the format has one, its maximum finite value otherwise.
 template <class Format>
-SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format> huge(bool negative) noexcept {
+  using Storage = typename Format::Storage;
+  const auto sign = static_cast<Storage>(negative ? Format::SIGN_MASK : Storage{0});
+  return Minifloat<Format>::from_bits(static_cast<Storage>(Format::OVERFLOW_MAG | sign));
+}
+
+//! `x + y`, or `x - y` when `flip` is set
+//!
+//! Subtraction is addition with the subtrahend's sign flipped.  Flipping it
+//! here, in the one place that reads a sign, is what spares a format without a
+//! negative zero the guard its unary minus needs: there is no intermediate
+//! value to keep representable, only a bool to invert.  Both callers pass a
+//! literal, so the flag folds away before anything is emitted.
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
+add_impl(Minifloat<Format> x, Minifloat<Format> y, bool flip) noexcept {
+  if (x.is_nan() || y.is_nan())
+    return invalid<Format>();
+
+  if (x.is_infinite() && y.is_infinite()) {
+    // Two infinities agree only when their signs do; what the other case ought
+    // to be is exactly the question.
+    return x.signbit() == (y.signbit() != flip) ? x : invalid<Format>();
+  }
+  // An infinity outweighs anything finite added to it.
+  if (x.is_infinite())
+    return x;
+  if (y.is_infinite()) {
+    // Reachable only where the format has infinities, and there a negation is
+    // the bare XOR it looks like.
+    return flip ? -y : y;
+  }
+
+  Parts rhs = to_parts<Format>(y.to_bits());
+  rhs.negative = rhs.negative != flip;
+  const Parts sum = add_parts(to_parts<Format>(x.to_bits()), rhs);
+  return Minifloat<Format>::from_bits(from_parts<Format>(sum));
+}
+} // namespace detail
+
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator+(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  if constexpr (Minifloat<Format>::USE_FLT_ADD)
-    return Minifloat<Format>{x.to_float() + y.to_float()};
-
-  return Minifloat<Format>{x.to_double() + y.to_double()};
+  return detail::add_impl(x, y, false);
 }
 
 template <class Format>
-SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator-(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  if constexpr (Minifloat<Format>::USE_FLT_ADD)
-    return Minifloat<Format>{x.to_float() - y.to_float()};
-
-  return Minifloat<Format>{x.to_double() - y.to_double()};
+  return detail::add_impl(x, y, true);
 }
 
 template <class Format>
-SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  if constexpr (Minifloat<Format>::USE_FLT_MUL)
-    return Minifloat<Format>{x.to_float() * y.to_float()};
+  if (x.is_nan() || y.is_nan())
+    return detail::invalid<Format>();
 
-  return Minifloat<Format>{x.to_double() * y.to_double()};
+  const bool negative = x.signbit() != y.signbit();
+  const detail::Parts lhs = detail::to_parts<Format>(x.to_bits());
+  const detail::Parts rhs = detail::to_parts<Format>(y.to_bits());
+
+  if (x.is_infinite() || y.is_infinite()) {
+    // An infinity scaled by zero is the invalid one; the significands say
+    // which operand is the zero.
+    if (lhs.significand == 0 || rhs.significand == 0)
+      return detail::invalid<Format>();
+    return detail::huge<Format>(negative);
+  }
+  // Two significands of at most 15 bits multiply exactly.
+  const detail::Parts product{
+      negative, lhs.significand * rhs.significand, lhs.exponent + rhs.exponent
+  };
+  return Minifloat<Format>::from_bits(detail::from_parts<Format>(product));
 }
 
 template <class Format>
-SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  return Minifloat<Format>{x.to_double() / y.to_double()};
+  if (x.is_nan() || y.is_nan())
+    return detail::invalid<Format>();
+
+  const bool negative = x.signbit() != y.signbit();
+  const detail::Parts lhs = detail::to_parts<Format>(x.to_bits());
+  const detail::Parts rhs = detail::to_parts<Format>(y.to_bits());
+
+  if (x.is_infinite()) {
+    // Infinity over infinity is the invalid one.
+    return y.is_infinite() ? detail::invalid<Format>() : detail::huge<Format>(negative);
+  }
+  if (y.is_infinite())
+    return Minifloat<Format>::from_bits(detail::from_parts<Format>({negative, 0, 0}));
+
+  if (rhs.significand == 0) {
+    // Zero over zero is the invalid one; anything else over zero overflows
+    // every exponent there is.
+    if (lhs.significand == 0)
+      return detail::invalid<Format>();
+    return detail::huge<Format>(negative);
+  }
+  const detail::Parts quotient =
+      detail::div_parts(negative, lhs.significand, lhs.exponent, rhs.significand, rhs.exponent);
+  return Minifloat<Format>::from_bits(detail::from_parts<Format>(quotient));
 }
 
 //! Mantissa, base 2 exponent, and sign as integer

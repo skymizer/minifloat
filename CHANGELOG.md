@@ -38,6 +38,15 @@ generated typedef grid are gone.
   `E4M3FNUZ` has bias 8 and `E5M2FNUZ` bias 16. `FN` and `IEEE` are unchanged.
 - Converting a NaN to a format that has none (`Finite`) is a documented
   precondition violation. Debug builds assert; release builds saturate.
+- `+`, `-`, `*`, and `/` are computed on integer significands and rounded once,
+  instead of being evaluated in a host `float` or `double` and rounded back.
+  Every operator is now correctly rounded for every declared shape, and the four
+  of them are `constexpr`. Encoding a host float shares that one rounding path.
+- An invalid operation now returns the format's own NaN, or its maximum finite
+  value where the format has none, rather than inheriting a host NaN's sign:
+  `0 / 0` in a `Finite` format used to be &minus;`max()` on x86 and +`max()` on
+  ARM. Invalid means a NaN operand, opposite infinities added, infinity minus
+  itself, infinity times zero, zero over zero, and infinity over infinity.
 
 ### Removed
 
@@ -47,7 +56,9 @@ generated typedef grid are gone.
 - The 301 macro-generated `E<x>M<y>[FN|FNUZ]` typedefs, replaced by the alias
   list above plus the format templates.
 - `round_normal_float_to_mantissa` and `round_normal_double_to_mantissa`, which
-  were implementation details; they are now one function in `detail`.
+  were implementation details. The integer rounding path replaced them.
+- `USE_FLT_ADD` and `USE_FLT_MUL`, public constants that selected the host type
+  an operator evaluated in. There is no host route left to select.
 
 ### Fixed
 
@@ -59,6 +70,8 @@ generated typedef grid are gone.
   exponent field as an ordinary exponent, so `IEEE<12, 3>{0.0F}` returned the
   maximum finite value instead of zero. The same expression also shifted a
   negative value left, which is undefined behaviour.
+- Arithmetic on a shape whose exponent range exceeds `double`'s lost results the
+  shape represents: `IEEE<12, 3>` squared 2⁻¹⁰⁰⁰ to zero and 2¹⁰⁰⁰ to infinity.
 
 ## [0.1.0] - 2026-08-20
 
