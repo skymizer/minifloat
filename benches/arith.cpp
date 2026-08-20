@@ -18,6 +18,11 @@
 //! one exists: a host float cannot referee a shape it cannot hold, and its NaN
 //! carries a sign that means nothing.  Speed is the bonus this file measures.
 //!
+//! A second table follows with the unary bodies — negation, `abs`, both
+//! conversions out, and construction back in — which have no second route and
+//! so report an absolute time, comparable only against another build of this
+//! same file.
+//!
 //! Both routes are timed in one binary, alternating within every pass, and the
 //! reported figure is the minimum across passes.  Noise on a benchmark is
 //! one-sided: nothing makes a loop run faster than it can.  Pin the run to one
@@ -164,6 +169,54 @@ void bench_op(const char *shape, const char *name, const std::vector<std::pair<T
   );
 }
 
+//! Time one body and report nanoseconds per element
+//!
+//! Unlike an operator, none of these has a second route to be timed against:
+//! `to_float` and the constructor *are* the host route, and negation has no
+//! host analogue worth faking.  The figure is therefore absolute, and it means
+//! something only against the same line from another build — which is what the
+//! interleaved protocol in `docs/benchmarking.md` does.
+template <typename Body> void bench_unary(const char *shape, const char *name, Body body) {
+  std::printf("%-14s %-4s %8.3f\n", shape, name, measure(body));
+}
+
+//! One line per unary body for a shape
+//!
+//! Every shape is timed here, including the ones `route` skips: a conversion
+//! path is exactly what a shape no host float can round for still has.
+template <typename T> void bench_unary_shape(const char *shape) {
+  const auto pairs = draw_pairs<T>();
+
+  // A shape's own `to_float` never leaves its contract: a format without a NaN
+  // has none to hand back, so `T{...}` below is always a value the format can
+  // represent.
+  std::vector<float> floats;
+  floats.reserve(pairs.size());
+  for (const auto &pair : pairs)
+    floats.push_back(pair.first.to_float());
+
+  bench_unary(shape, "neg", [&pairs] {
+    for (const auto &pair : pairs)
+      black_box((-pair.first).to_bits());
+  });
+  bench_unary(shape, "abs", [&pairs] {
+    for (const auto &pair : pairs)
+      black_box(pair.first.abs().to_bits());
+  });
+  bench_unary(shape, "f32", [&pairs] {
+    for (const auto &pair : pairs)
+      black_box(pair.first.to_float());
+  });
+  bench_unary(shape, "f64", [&pairs] {
+    for (const auto &pair : pairs)
+      black_box(pair.first.to_double());
+  });
+  bench_unary(shape, "from", [&floats] {
+    for (const float x : floats)
+      black_box(T{x}.to_bits());
+  });
+}
+
 //! One line per operator for a shape, or one line saying why it has none
 template <typename T> void bench_shape(const char *shape) {
   constexpr Route R = route<T>();
@@ -179,29 +232,42 @@ template <typename T> void bench_shape(const char *shape) {
   }
 }
 
+//! Every shape the tables run over, so one list serves both
+//!
+//! The visitor takes a value rather than an explicit template argument, which
+//! a C++17 lambda cannot: `tests/support.hpp` spells its type lists the same
+//! way.
+template <typename Visit> void for_each_shape(Visit visit) {
+  visit(E2M1FN{}, "E2M1FN");
+  visit(E2M3FN{}, "E2M3FN");
+  visit(E3M2FN{}, "E3M2FN");
+  visit(E3M4{}, "E3M4");
+  visit(E4M3{}, "E4M3");
+  visit(E4M3FN{}, "E4M3FN");
+  visit(E4M3FNUZ{}, "E4M3FNUZ");
+  visit(E4M3B11FNUZ{}, "E4M3B11FNUZ");
+  visit(E5M2{}, "E5M2");
+  visit(E5M2FNUZ{}, "E5M2FNUZ");
+  visit(E5M10{}, "E5M10");
+  visit(E8M7{}, "E8M7");
+  visit(IEEE<11, 4>{}, "E11M4");
+  visit(IEEE<2, 13>{}, "E2M13");
+  visit(IEEE<12, 3>{}, "E12M3");
+}
+
 } // namespace
 
 int main() {
   std::printf("%-14s %-3s %8s %8s  %7s %s\n", "shape", "op", "soft", "host", "ratio", "route");
-
-  bench_shape<E2M1FN>("E2M1FN");
-  bench_shape<E2M3FN>("E2M3FN");
-  bench_shape<E3M2FN>("E3M2FN");
-  bench_shape<E3M4>("E3M4");
-  bench_shape<E4M3>("E4M3");
-  bench_shape<E4M3FN>("E4M3FN");
-  bench_shape<E4M3FNUZ>("E4M3FNUZ");
-  bench_shape<E4M3B11FNUZ>("E4M3B11FNUZ");
-  bench_shape<E5M2>("E5M2");
-  bench_shape<E5M2FNUZ>("E5M2FNUZ");
-  bench_shape<E5M10>("E5M10");
-  bench_shape<E8M7>("E8M7");
-  bench_shape<IEEE<11, 4>>("E11M4");
-  bench_shape<IEEE<2, 13>>("E2M13");
-  bench_shape<IEEE<12, 3>>("E12M3");
+  for_each_shape([](auto sample, const char *shape) { bench_shape<decltype(sample)>(shape); });
 
   std::printf(
       "\ninteger route wins %d of %d, geomean %.3fx in its favour\n", wins, comparisons,
       std::exp(total_log_ratio / comparisons)
   );
+
+  std::printf("\n%-14s %-4s %8s\n", "shape", "op", "ns");
+  for_each_shape([](auto sample, const char *shape) {
+    bench_unary_shape<decltype(sample)>(shape);
+  });
 }
