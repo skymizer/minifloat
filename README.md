@@ -115,10 +115,14 @@ squares 2⁻¹⁰⁰⁰ to 2⁻²⁰⁰⁰ rather than to zero — and an invali
 the format's own NaN, or its maximum finite value where it has none, instead of
 whatever sign the host's default NaN happened to carry.
 
-Correctness, not speed, is why the host route is gone; it is not the slower one
-either, though by how much depends on the compiler. `benches/arith.cpp` times
-both routes over the same operands, and [docs/arithmetic.md](docs/arithmetic.md)
-has the numbers and what they do and do not license.
+Correctness, not speed, is why the host route is gone. On speed the two are
+close, and which one leads depends on the operator and the compiler:
+multiplication and division favour the integer route under both, while addition
+and subtraction favour the host one at the widest exponent ranges under both,
+and under GCC at every narrow shape but `FNUZ` as well.
+`benches/arith.cpp` times both routes over the same operands, and
+[docs/arithmetic.md](docs/arithmetic.md) has the numbers and what they do and do
+not license.
 
 ## Design notes
 

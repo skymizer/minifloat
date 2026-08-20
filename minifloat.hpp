@@ -149,7 +149,9 @@ template <typename Float>
 //! infinity or to zero, which is what both callers want at either end.
 //!
 //! Not `constexpr`: `bit_cast` is only constexpr from C++20, and C++17 is the
-//! floor.  `SKYMIZER_MINIFLOAT_CONST` is what makes a literal argument fold.
+//! floor.  A literal argument folds regardless, the body being `inline` and in
+//! view; the attribute below buys nothing here and is carried for consistency
+//! with the rest of `detail`.
 [[nodiscard]] SKYMIZER_MINIFLOAT_CONST inline double exp2i(int x) noexcept {
   const int field = x + (DBL_MAX_EXP - 1);
 

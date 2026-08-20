@@ -45,6 +45,15 @@ generated typedef grid are gone.
   instead of being evaluated in a host `float` or `double` and rounded back.
   Every operator is now correctly rounded for every declared shape, and the four
   of them are `constexpr`. Encoding a host float shares that one rounding path.
+- Conversion to and from a host float no longer calls libm. Powers of two are
+  built from the exponent field by `detail::exp2i` instead of `std::exp2` and
+  `std::ldexp`, neither of which the compilers reliably folded even where the
+  argument was a literal, and a host float is taken apart by one `bit_cast`
+  instead of `std::signbit` plus `std::isnan` plus `std::isinf` plus a widening
+  to `double`. Construction from a `float` costs 0.71x of what it did under
+  Clang and 0.83x under GCC, and `to_float`/`to_double` for a shape with no
+  exact host conversion costs about a quarter. `docs/arithmetic.md` has the
+  measurements and the null this round also produced.
 - An invalid operation now returns the format's own NaN, or its maximum finite
   value where the format has none, rather than inheriting a host NaN's sign:
   `0 / 0` in a `Finite` format used to be &minus;`max()` on x86 and +`max()` on
@@ -65,10 +74,11 @@ generated typedef grid are gone.
 
 ### Fixed
 
-- NaN is detected with `std::isnan` rather than `x != x`, which a compiler is
-  free to fold away (#3).
+- NaN is no longer detected with `x != x`, which a compiler is free to fold
+  away; the encoder reads the exponent field and the payload out of one
+  `bit_cast` instead (#3).
 - `to_double()` rebuilt garbage bits for formats whose exponent range exceeds
-  `double`'s, such as `IEEE<12, 3>`; it now goes through `std::ldexp`.
+  `double`'s, such as `IEEE<12, 3>`; it now scales in two in-range steps.
 - Constructing such a format from a host zero or subnormal read the zero
   exponent field as an ordinary exponent, so `IEEE<12, 3>{0.0F}` returned the
   maximum finite value instead of zero. The same expression also shifted a
