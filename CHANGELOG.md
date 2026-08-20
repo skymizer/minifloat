@@ -27,6 +27,9 @@ generated typedef grid are gone.
   `E4M3FNUZ`, `E4M3B11FNUZ`, `E5M2`, `E5M2FNUZ`, `E5M10` (binary16), and `E8M7`
   (bfloat16).
 - `HAS_INF`, `HAS_NAN`, and `HAS_NEG_ZERO` as public constants of every type.
+- `docs/arithmetic.md` and `docs/benchmarking.md`, recording the decisions
+  behind the integer route and the protocol every measured claim has to meet,
+  and `CLAUDE.md` as the routing table to them.
 
 ### Changed
 

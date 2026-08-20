@@ -1,0 +1,159 @@
+# The benchmarking protocol
+
+*A number from this repository means a min-of-N across interleaved builds on an
+idle box, under both compilers, or it means nothing.*
+
+The box these numbers come from: AMD Ryzen 7 8700F (8 cores, 16 threads),
+Fedora 44, GCC 16.1.1 and Clang 22.1.8.  A ratio from a different machine, or
+from one compiler where the claim is about the library, is a different claim.
+
+## Stop the poker solver first
+
+The development box runs a poker solver that will happily take every core.  A
+measurement taken beside it is worthless, and killing it unasked is worse.
+
+```sh
+pgrep -af poker
+uptime          # the one-minute average should be near zero
+```
+
+If it is running, ask before touching it.  Proceed only once the box is idle.
+
+## Two compilers, or it did not happen
+
+`benches/arith.cpp` is one file over a header-only library, so the binary is
+whatever the compiler decided to make of it — and the two do not decide alike.
+On 2026-08-21 the same source and the same box gave Clang 22 the integer route
+in 52 of 56 comparisons at a geomean of 1.195x, and GCC 16 an even 28 of 56 at
+1.001x.  A single-compiler number would have supported either "clear win" or
+"no difference" depending on which compiler ran.
+
+So every claim gets both.  Delete the binary between them: the `bench` target
+depends on the sources and not on `CXX`, so a bare `make bench CXX=clang++`
+after a GCC build reports the target as already up to date and hands you the
+GCC binary again.
+
+```sh
+rm -f bench && make bench CXX=g++     && taskset -c 2 ./bench
+rm -f bench && make bench CXX=clang++ && taskset -c 2 ./bench
+```
+
+Where they disagree in sign, say so and report both.  Where they agree, the
+claim is about the library rather than about one back end's heuristics, and
+that is the only kind of claim worth putting in a commit body.
+
+## Interleave the builds, never run A then B
+
+Build both sides first, stash the binaries, and only then measure — alternating
+A, B, A, B for at least 15 passes each, all on one pinned core:
+
+```sh
+STASH=$(mktemp -d)
+
+make bench && cp bench "$STASH/before"
+# ... apply the change ...
+make bench && cp bench "$STASH/after"
+
+for i in $(seq 1 15); do
+  taskset -c 2 "$STASH/before" > "$STASH/A-$i.txt"
+  taskset -c 2 "$STASH/after"  > "$STASH/B-$i.txt"
+done
+```
+
+A compile between two measurements heats the box, and a box that drifts over
+fifteen minutes will hand you whichever answer the drift had at the time.
+Interleaving cancels the drift instead of hoping it is not there.  `taskset`
+pins both sides to the same core so neither can win by landing on a better one;
+core 2 is an arbitrary choice, held constant, and it is the core the `run-bench`
+target in the `Makefile` already uses.
+
+## Take the minimum, not the mean
+
+Noise on a benchmark is one-sided: nothing makes a loop run faster than it can,
+and everything else on the machine makes it run slower.  The minimum across
+passes is the least contaminated sample there is.  A mean is a statement about
+the machine's other tenants.
+
+The harness already applies this rule once, inside a run: `measure` in
+`benches/arith.cpp` takes the minimum over `PASSES` passes, each of `REPEATS`
+sweeps of the operand array, and the file's header comment says why.  The protocol applies it a second time, across
+runs of the whole binary, because a single run cannot see the drift that
+scheduling, frequency, and the other passes introduce between one binary and the
+next.  Take the minimum per line across the 15 files on each side, then divide.
+
+## Keep a control route
+
+Every sweep carries at least one row the change cannot possibly have touched.
+If the control moves, the run is noise and the headline number is noise with it.
+Multiplication is the standing control for changes to `align`, `add_parts`, or
+the sign flip in `add_impl` — those are the only steps addition and subtraction
+do not share with it.  It is *not* a control for a change to `to_parts`,
+`from_parts`, or `invalid`, all three of which it calls itself, and `from_parts`
+is on the inbound conversion path too.  Quote it where it qualifies: a `sub` row
+at 0.80x is reportable only beside a `mul` row that stayed inside the noise
+floor.  Where it does not qualify, pick a row that does or say there was none.
+
+## The noise floor is 0.98x
+
+A ratio inside `[0.98, 1.02]` is not a result.  Say so plainly rather than
+reporting it as a small win — a null recorded is worth more than a null dressed
+up, and `docs/arithmetic.md` keeps a section for exactly those.
+
+## The two tables, and what each is for
+
+`benches/arith.cpp` prints two.
+
+The **ratio table** times each operator twice over the same operands, once as
+the library computes it and once the way a caller would fake it through a host
+float, and reports `host / soft`.  Both routes are timed in one binary over one
+operand array, so a ratio here is self-contained: it survives a slow box, and it
+is the only figure in this repository that can be quoted without a second run.
+
+The **unary table** times negation, `abs`, `to_float`, `to_double`, and
+construction from a `float`.  None of them has a second route — `to_float` *is*
+the host route — so each row is an absolute nanoseconds-per-element figure, and
+absolute figures mean nothing on their own.  A row from this table is quoted
+only as a ratio between two builds measured under the interleaving above.
+
+The unary table also runs shapes the ratio table skips.  `route` in
+`benches/arith.cpp` refuses a shape no host float rounds like, which is right
+for an operator comparison and wrong for a conversion: `IEEE<12, 3>` has no
+opinion about which float should referee it, but it certainly has a `to_double`.
+
+## An operator is timed only against a float that rounds like it
+
+This is the rule behind `route` in `benches/arith.cpp`, and it is a correctness
+rule, not a benchmarking nicety: below 2*p* + 2 digits in the intermediate,
+rounding twice can differ from rounding once.  [arithmetic.md](arithmetic.md)
+states it in full.  Do not restate it here.
+
+## When the benchmark cannot see it
+
+Some changes are invisible to the stopwatch by construction.  A shape the ratio
+table skips still appears in the unary table, but a change that only removes a
+call the compiler had already folded away leaves no time behind to measure.
+
+For that kind, count symbols instead:
+
+```sh
+objdump -d bench | grep -cE 'call.*(exp2|ldexp|pow)'
+nm -uC bench | grep -E 'exp2|ldexp'
+```
+
+A count is exact, needs no idle box, and has no noise floor.  It is the right
+evidence for "this no longer calls libm" and the wrong evidence for "this is
+faster".  Use the stopwatch for a change in what the code *does*, and the symbol
+table for a change in *what the code links against*.
+
+## Reference figures
+
+Ryzen 7 8700F, `taskset -c 2`, idle box, 2026-08-21, at the head of this branch.
+Ratio table geomeans over 56 comparisons; unary rows in nanoseconds per element.
+
+| | GCC 16.1.1 | Clang 22.1.8 |
+| --- | --- | --- |
+| integer route wins | 28 of 56 | 52 of 56 |
+| geomean | 1.001x | 1.195x |
+
+Fuller numbers, and what they do and do not license, are in
+[arithmetic.md](arithmetic.md).
