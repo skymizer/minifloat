@@ -105,8 +105,27 @@ Construction from numeric types and conversion back through `to_float()`,
 represent every value of a Minifloat type, but do not make the conversion
 implicit.
 
-Rounding is to nearest, ties to even. Arithmetic converts to a host type,
-operates there, and rounds back.
+Rounding is to nearest, ties to even. Arithmetic is correctly rounded: every
+operator works out a result exact enough to round, on integer significands, and
+rounds it once. Multiplication of two significands is exact; addition aligns
+both addends and sums them in an `int64_t`; division keeps 46 quotient bits and
+folds the remainder into a sticky bit. No host float takes part, so a shape
+whose exponent range outruns `double`'s is served like any other — `IEEE<12, 3>`
+squares 2⁻¹⁰⁰⁰ to 2⁻²⁰⁰⁰ rather than to zero — and an invalid operation yields
+the format's own NaN, or its maximum finite value where it has none, instead of
+whatever sign the host's default NaN happened to carry.
+
+That route is also not the slower one, though the margin is narrower here than
+in the Rust sibling, whose host conversions cost two floating-point multiplies
+where this library's cost a shift and a bit-cast. `benches/arith.cpp` times each
+operator twice over the same operands — once as the library computes it, once
+the way a caller would fake it through a host float — and reports the minimum
+across passes. On an idle AMD Ryzen 7 8700F, Clang 22 puts the integer route
+ahead in 50 of 56 comparisons at a geomean of 1.20x, while GCC 16 comes out even
+at 28 of 56 and 1.03x, which is inside the noise. Multiplication and division
+win under both compilers; addition and subtraction depend on the compiler and
+lose for the widest exponent ranges. Correctness, not speed, is why the host
+route is gone.
 
 ## Dependencies
 
@@ -131,6 +150,9 @@ cmake -B build -DSKYMIZER_MINIFLOAT_BUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+`make check` builds and runs the same suite through the plain Makefile, and
+`make run-bench` builds `benches/arith.cpp` and runs it pinned to one core.
 
 Downstream projects can either `add_subdirectory(minifloat)` or install the
 package:
