@@ -93,24 +93,50 @@ struct Parts {
 #endif
 }
 
-//! Decompose a `double` into an exact `(significand, exponent)` pair
+//! A host float taken apart into integer fields
 //!
-//! The value is `significand * 2**exponent` with no hidden bits, subnormal
-//! inputs included.  The sign is dropped: the caller owns it.
-[[nodiscard]] SKYMIZER_MINIFLOAT_PURE inline Parts decompose(double x) noexcept {
-  static_assert(std::numeric_limits<double>::radix == 2);
-  static_assert(std::numeric_limits<double>::is_iec559);
+//! `finite` says whether `significand` and `exponent` describe a magnitude.
+//! Where it does not, the input was an infinity if `significand` is zero and a
+//! NaN otherwise -- the payload, which is what tells the two apart.
+struct Decomposed {
+  bool negative;
+  bool finite;
+  std::uint64_t significand;
+  int exponent;
+};
 
-  const std::uint64_t bits = bit_cast<std::uint64_t>(x) & INT64_MAX;
-  const auto field = static_cast<int>(bits >> (DBL_MANT_DIG - 1));
-  const std::uint64_t fraction = bits & ((UINT64_C(1) << (DBL_MANT_DIG - 1)) - 1);
+//! Take a host float apart without leaving the integer domain
+//!
+//! The magnitude is `significand * 2**exponent` with no hidden bits, subnormal
+//! inputs included.  One `bit_cast` answers everything `std::signbit`,
+//! `std::isnan` and `std::isinf` answer one at a time, and a `float` stops
+//! widening to `double` just to have its fields read.
+template <typename Float>
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST Decomposed decompose(Float x) noexcept {
+  static_assert(std::numeric_limits<Float>::radix == 2);
+  static_assert(std::numeric_limits<Float>::is_iec559);
 
+  using Bits = BitsOf<Float>;
+  constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
+  constexpr int MIN_EXP = std::numeric_limits<Float>::min_exponent;
+  constexpr int RESERVED_FIELD = 2 * std::numeric_limits<Float>::max_exponent - 1;
+  constexpr Bits SIGN = Bits{1} << (std::numeric_limits<Bits>::digits - 1);
+
+  const auto bits = bit_cast<Bits>(x);
+  const auto magnitude = static_cast<Bits>(bits & ~SIGN);
+  const auto field = static_cast<int>(magnitude >> (MANT_DIG - 1));
+  const auto fraction = static_cast<std::uint64_t>(magnitude & ((Bits{1} << (MANT_DIG - 1)) - 1));
+  const bool negative = bits != magnitude;
+
+  if (field == RESERVED_FIELD)
+    return {negative, false, fraction, 0};
   if (field == 0)
-    return {false, fraction, DBL_MIN_EXP - DBL_MANT_DIG};
+    return {negative, true, fraction, MIN_EXP - MANT_DIG};
   return {
-      false,
-      fraction | UINT64_C(1) << (DBL_MANT_DIG - 1),
-      field + DBL_MIN_EXP - 1 - DBL_MANT_DIG,
+      negative,
+      true,
+      fraction | UINT64_C(1) << (MANT_DIG - 1),
+      field + MIN_EXP - 1 - MANT_DIG,
   };
 }
 
@@ -491,24 +517,24 @@ private:
   //! A NaN input needs `Format::HAS_NAN`; see the constructors.  Every finite
   //! value is decomposed exactly and rounded once by `detail::from_parts`, so
   //! a shape whose exponent range outruns `double`'s is served as exactly as
-  //! any other.  A `float` promotes to `double` exactly, so it rounds once too.
+  //! any other.
   template <typename Float>
   [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
-    const bool negative = std::signbit(x);
-    const auto sign = static_cast<Storage>(negative ? Format::SIGN_MASK : Storage{0});
+    const detail::Decomposed parts = detail::decompose(x);
+    const auto sign = static_cast<Storage>(parts.negative ? Format::SIGN_MASK : Storage{0});
 
-    if ((std::isnan)(x)) {
+    if (!parts.finite) {
+      // A zero payload under a reserved exponent is an infinity, and nothing
+      // else is.
+      if (parts.significand == 0)
+        return static_cast<Storage>(sign | Format::OVERFLOW_MAG);
       if constexpr (Format::HAS_NAN)
         return static_cast<Storage>(sign | Format::NAN_BITS);
       else // Precondition violation; saturate rather than emit a wild pattern.
         return static_cast<Storage>(sign | Format::MAX_FINITE_MAG);
     }
 
-    if ((std::isinf)(x))
-      return static_cast<Storage>(sign | Format::OVERFLOW_MAG);
-
-    const detail::Parts magnitude = detail::decompose(static_cast<double>(x));
-    return detail::from_parts<Format>({negative, magnitude.significand, magnitude.exponent});
+    return detail::from_parts<Format>({parts.negative, parts.significand, parts.exponent});
   }
 
   //! Exact reconstruction into `Float`
