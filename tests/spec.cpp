@@ -209,6 +209,16 @@ TEST(Spec, NumericLimits) {
   static_assert(std::numeric_limits<Finite<7, 0>>::max_exponent10 == 19);
   static_assert(std::numeric_limits<FN<4, 0, 8>>::max_exponent10 == 1);
   EXPECT_EQ((FN<4, 0, 8>::max().to_double()), 64.0);
+
+  // `min_exponent10` is a ceiling. Truncating toward zero is one only while
+  // the dividend stays negative, and a bias at or below zero puts `min()`
+  // above 1: `Finite<4, 3, 0>::min()` is 2, so 10**1 is its least normal
+  // power of ten and 10**0 is below the normal range from the other side.
+  static_assert(std::numeric_limits<E5M10>::min_exponent10 == -4);
+  static_assert(std::numeric_limits<E8M7>::min_exponent10 == -37);
+  static_assert(std::numeric_limits<E4M3FN>::min_exponent10 == -1);
+  static_assert(std::numeric_limits<Finite<4, 3, 0>>::min_exponent10 == 1);
+  static_assert(std::numeric_limits<Finite<4, 3, -10>>::min_exponent10 == 4);
 }
 
 TEST(Spec, DefaultConstructionIsZero) {

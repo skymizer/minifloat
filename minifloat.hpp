@@ -1102,6 +1102,18 @@ private:
     return T::from_bits(0);
   }
 
+  // Decimal digits per bit, to more places than 30103 / 100000 gives. The two
+  // exponent10 members below are the only ones that need it.
+  static constexpr double LOG10_2 = 0.30102999566398119521373889472449;
+
+  // constexpr floor, which `std::floor` is not in C++17 and which truncation
+  // is not: both signs occur here, since a large bias puts `max()` under 1 and
+  // a bias at or below zero puts `min()` above it.
+  static constexpr int floored(double x) noexcept {
+    const auto truncated = static_cast<int>(x);
+    return truncated - (truncated > x);
+  }
+
   // floor(log10(max())), read off the maximal finite code rather than off
   // `MAX_EXP`. The two part company wherever a format spends the top of its
   // exponent range on something that is not a number: `FN<5, 2>` tops out at
@@ -1132,7 +1144,6 @@ private:
         -8.80578045800263834e-5,
         -4.40282304417772115e-5,
     };
-    constexpr double LOG10_2 = 0.30102999566398119521373889472449;
 
     constexpr unsigned MAG = Format::MAX_FINITE_MAG;
     constexpr unsigned MAN_MASK = (1U << T::MANTISSA_BITS) - 1U;
@@ -1143,11 +1154,16 @@ private:
     // is always the binade of a normal value.
     constexpr int BINADE = static_cast<int>(MAG >> T::MANTISSA_BITS) - T::BIAS + 1;
 
-    const double log10_max = (BINADE + LOG2_SIGNIFICAND[PRECISION]) * LOG10_2;
-    // `std::floor` is not constexpr in C++17, and truncating is not floor
-    // below zero — a large enough bias puts `max()` under 1.
-    const auto truncated = static_cast<int>(log10_max);
-    return truncated - (truncated > log10_max);
+    return floored((BINADE + LOG2_SIGNIFICAND[PRECISION]) * LOG10_2);
+  }
+
+  // ceil(log10(min())) in the `FLT_MIN_10_EXP` sense: the least power of ten
+  // that is still a normal value. `(MIN_EXP - 1) * 30103 / 100000` was a
+  // ceiling only for as long as it truncated toward zero from below, and
+  // `MIN_EXP` is `2 - BIAS`, so a bias at or below zero lifts the dividend
+  // above zero and turns that same truncation into a floor.
+  static constexpr int exact_min_exponent10() noexcept {
+    return -floored(-(T::MIN_EXP - 1) * LOG10_2);
   }
 
 public:
@@ -1172,7 +1188,7 @@ public:
   static constexpr int max_digits10 = digits * 30103 / 100000 + 2;
   static constexpr int min_exponent = T::MIN_EXP;
   static constexpr int max_exponent = T::MAX_EXP;
-  static constexpr int min_exponent10 = (T::MIN_EXP - 1) * 30103 / 100000;
+  static constexpr int min_exponent10 = exact_min_exponent10();
   static constexpr int max_exponent10 = exact_max_exponent10();
   static constexpr bool traps = false;
   static constexpr bool tinyness_before = false;
