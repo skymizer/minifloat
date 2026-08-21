@@ -228,12 +228,14 @@ template <typename T> Scaled code_value(std::uint64_t code) {
 }
 
 //! Magnitudes of the overflow result and maximum finite value
+//!
+//! Spelt `HUGE_MAG` and not `HUGE`, which is a macro in Apple's `<math.h>`.
 template <typename T> constexpr std::pair<std::uint64_t, std::uint64_t> huge_and_max() {
   constexpr auto ABS_MASK = bit_mask(T::EXPONENT_BITS + T::MANTISSA_BITS);
-  constexpr auto HUGE = T::HAS_INF ? bit_mask(T::EXPONENT_BITS) << T::MANTISSA_BITS
-                        : T::HAS_NAN && T::HAS_NEG_ZERO ? ABS_MASK - 1
-                                                        : ABS_MASK;
-  return {HUGE, HUGE - T::HAS_INF};
+  constexpr auto HUGE_MAG = T::HAS_INF ? bit_mask(T::EXPONENT_BITS) << T::MANTISSA_BITS
+                            : T::HAS_NAN && T::HAS_NEG_ZERO ? ABS_MASK - 1
+                                                            : ABS_MASK;
+  return {HUGE_MAG, HUGE_MAG - T::HAS_INF};
 }
 
 //! Correctly round an exact value supplied through comparisons
