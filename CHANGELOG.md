@@ -30,6 +30,15 @@ generated typedef grid are gone.
 - `docs/arithmetic.md` and `docs/benchmarking.md`, recording the decisions
   behind the integer route and the protocol every measured claim has to meet,
   and `CLAUDE.md` as the routing table to them.
+- Exhaustive sweeps over all 2³² ordered pairs of `E5M10` and `E8M7`: the four
+  operators against a `float` round trip, and the comparisons against both host
+  types. The other quadratic checks stop at 11 bits, and these two shapes are
+  the ones `benches/arith.cpp` publishes.
+- A benchmark page at <https://skymizer.github.io/minifloat/dev/bench/>,
+  refreshed by `.github/workflows/bench.yml` on every push to `main` from
+  `./bench --json`. One shared-runner GCC sample per commit is a tripwire for a
+  2× cliff, not a measurement: `docs/benchmarking.md` says what it is not, and
+  nothing read off it enters a commit body or this file.
 
 ### Changed
 
@@ -74,6 +83,17 @@ generated typedef grid are gone.
 
 ### Fixed
 
+- `std::numeric_limits<T>::max_exponent10` read the top of the exponent range
+  and ignored the significand of `max()`, so it came out one too high for every
+  format that spends the all-ones magnitude on something that is not a number.
+  `FN<5, 2>` said 5 for a maximum of 98304, and `FN<7, 0>` and `FNUZ<7, 0>` said
+  19 for maxima below 10¹⁹. It is now derived from the maximal finite code.
+- `std::numeric_limits<T>::min_exponent10` truncated toward zero, which is the
+  ceiling the standard asks for only while the value is negative. A bias at or
+  below zero — legal, since the format templates constrain `E` and `M` and not
+  `B` — puts `min()` above 1 and turns that truncation into a floor:
+  `Finite<4, 3, 0>::min()` is 2, and the member said 0 where 1 is the least
+  power of ten inside the normal range.
 - NaN is no longer detected with `x != x`, which a compiler is free to fold
   away; the encoder reads the exponent field and the payload out of one
   `bit_cast` instead (#3).
