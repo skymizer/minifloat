@@ -153,20 +153,53 @@ change a byte.  The minifloat-rs sibling measured the same effect independently
 and reached the same conclusion from the other end: a 1929-instruction,
 byte-identical benchmark body moved 1.090x purely on relocation.
 
-Two consequences, and they are not small:
+**Interleaving cannot help.**  Placement is a property of the binary, not of the
+run, so more passes converge on the wrong number rather than away from it.
+Reproducible across passes and reproducible across *builds* are different
+claims, and only the second one means anything here.
 
-- **Interleaving cannot help.**  Placement is a property of the binary, not of
-  the run, so more passes converge on the wrong number rather than away from it.
-- **A single-row ratio inside roughly `[0.80, 1.25]` is not a result** for rows
-  of a nanosecond or two, no matter how reproducible.  Reproducible across
-  passes and reproducible across *builds* are different claims, and only the
-  second one means anything here.
+## Calibrate the band; do not assume it
 
-What does survive is the aggregate — layout is close to unbiased, which is what
-those 0.996x and 0.984x geomeans say — and the disassembly.  So: quote a geomean over
-many rows, or quote a single row only when it is far outside that band, or count
-instructions.  For anything in between, `objdump` is cheaper, exact, and needs
-no idle box.
+The 0.98x floor is a constant standing in for something that is not constant.
+Measured on this box, on rows whose code did not change:
+
+| calibration rows | duration | band |
+| --- | --- | --- |
+| operator rows, sign-flip build pair, GCC | 2.3 – 5.2 ns | 0.971x – 1.025x |
+| operator rows, sign-flip build pair, Clang | 2.0 – 7.0 ns | 0.987x – 1.012x |
+| operator rows, `bits_from` build pair, GCC | 2.2 – 5.2 ns | 0.886x – 1.093x |
+| conversion rows, `bits_from` build pair, GCC | 0.7 – 1.6 ns | 0.801x – 1.245x |
+| conversion rows, `bits_from` build pair, Clang | 0.7 – 1.7 ns | 0.701x – 1.164x |
+
+Two things vary, and both matter.  Shorter rows widen the band, because a fixed
+number of cycles of misalignment is a larger fraction of them.  And the *same*
+rows widen from 0.971x–1.025x to 0.886x–1.093x between two build pairs, because
+the second change moved far more of `.text` than the first.  A band inherited
+from another change is not this change's band.
+
+So the control rows are not a sanity check, they are a **calibration**, and the
+rule that replaces the constant is:
+
+> Read the band off the rows whose code is byte-identical, at a duration
+> comparable to the effect's.  A per-row effect is reportable exactly when it
+> clears that band with no overlap.  Otherwise report the aggregate, which
+> layout does not bias, or count instructions.
+
+Worked both ways.  This round's construction rows ran 0.665x–0.786x under Clang
+against a 0.701x–1.164x band: overlapping, so the geomean over 15 shapes is the
+claim and no single shape is.  The sibling crate's hardware rows ran
+0.455x–0.806x against a 0.962x–1.090x band measured the same way: disjoint by
+0.156, so there every individual row is reportable and the headline does not
+rest on the aggregate at all.  Same protocol; a band three times wider on one
+side than the other, and ten times wider than the 0.98x constant would have
+implied; and the control says which of those you have before you write anything
+down.
+
+One limitation to state rather than paper over: a band is only calibrated where
+byte-identical rows exist at that duration.  When a change touches the very rows
+you would calibrate on — as the sign-flip change did, `neg` and `abs` being both
+the effect and the only 0.2 ns rows — there is no same-duration control, and the
+only safe reading is one that clears the widest band ever measured here.
 
 ## The two tables, and what each is for
 
