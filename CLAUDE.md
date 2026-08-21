@@ -45,10 +45,24 @@ list is edited.
 solver that will take every core: `pgrep -af poker` first, and if it is
 running, ask — never kill it unasked.  The protocol is
 [docs/benchmarking.md](docs/benchmarking.md), and it is not optional:
-interleaved builds, min-of-N across at least 15 alternating passes each, a
-control row the change cannot touch, a 0.98x noise floor, and GCC *and* Clang,
-because on the same source they disagree by 37 of 56 against 23 of 56.  `rm -f
-bench` between compilers; the `make` target does not depend on `CXX`.
+interleaved builds, min-of-N across at least 15 alternating passes each, and
+GCC *and* Clang, because on the same source they disagree by 37 of 56 against
+23 of 56.  `rm -f bench` between compilers; the `make` target does not depend
+on `CXX`.
+
+**There is no fixed noise floor.**  0.98x bounds timing noise and says nothing
+about code placement, which on this box has moved byte-identical rows by 25%.
+Read the band off the rows whose code did not change, at a duration comparable
+to the effect's, and report a per-row number only when it clears that band.
+The band belongs to one build pair — do not reuse one.  Where no such row
+exists, report the aggregate or count instructions, and say which you did.
+
+**Commit an experiment on a scratch ref before reverting it.**  A reverted
+change leaves no rebuildable before-and-after, and its numbers are exactly the
+ones worth citing later, a null being worth citing.  Two rows of the
+calibration table in [docs/benchmarking.md](docs/benchmarking.md) are weaker
+than the rest for precisely this reason.  `git commit` on a throwaway ref costs
+nothing.
 
 ## The correctness gate
 
