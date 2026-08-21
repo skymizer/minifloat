@@ -62,7 +62,8 @@ struct CheckWideHostArithmetic {
     Lcg random{UINT64_C(0x0FEDCBA987654321)};
     constexpr auto MASK = bit_mask(T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
     for (unsigned i = 0; i < 1U << 13; ++i) {
-      const auto draw = [&random] {
+      // `MASK` is captured for MSVC's sake; see the `SIGN` capture below.
+      const auto draw = [&random, MASK] {
         return T::from_bits(static_cast<typename T::Storage>(random.next() & MASK));
       };
       const T x = draw();
@@ -189,7 +190,8 @@ struct CheckExactWideArithmetic {
     constexpr auto MASK = bit_mask(T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
 
     for (unsigned i = 0; i < 1U << 16; ++i) {
-      const auto draw = [&random] {
+      // `MASK` is captured for MSVC's sake; see the `SIGN` capture below.
+      const auto draw = [&random, MASK] {
         return T::from_bits(static_cast<typename T::Storage>(random.next() & MASK));
       };
       const T x = draw();
