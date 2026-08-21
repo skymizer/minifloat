@@ -283,16 +283,24 @@ nanosecond-scale rows too.  Across a change that left the `to_float` and
 1.245x under GCC and 0.701x to 1.164x under Clang, min of 20 interleaved passes.
 [benchmarking.md](benchmarking.md) has the measurement and what it costs.
 
-What this section's own numbers are entitled to, then: the geomeans over 15
-shapes, which layout does not bias; `IEEE<12, 3>` at 0.24x, far outside any
-placement band and corroborated by the symbol table; and the `FNUZ` `abs` row at
-2.000x, likewise outside it and explained by a five-instruction body replacing a
-three-instruction one.  Not entitled: the `FNUZ` `neg` row at 1.06x, and the
-per-shape exceptions the `bits_from` commit recorded — `E8M7` construction at
-1.083x under GCC and `E11M4` at 1.013x.  Those three sit inside the band, and
-`3c783e3`'s commit body reports the first as a cross-compiler disagreement on
-the strength of reproducing across passes.  It reproduced across passes of the
-same two binaries, which is the thing that does not distinguish it.
+Applying [benchmarking.md](benchmarking.md)'s calibration test to this section's
+own numbers: the construction rows ran 0.665x–0.786x under Clang against a
+0.701x–1.164x band read off the byte-identical conversion closures, and
+0.735x–1.083x under GCC against 0.801x–1.245x.  Both overlap, so what stands is
+the geomean over 15 shapes — 0.711x and 0.831x — and no individual shape does.
+`IEEE<12, 3>` at 0.24x clears every band measured here by a factor of three, and
+has the symbol table behind it besides.  So does the `FNUZ` `abs` row at 2.000x,
+which is also the one with a five-instruction body replacing a three-instruction
+one — though that change touched the only rows short enough to calibrate
+against, so it is read against the widest band on record rather than its own.
+
+Not entitled: the `FNUZ` `neg` row at 1.06x, and the per-shape exceptions the
+`bits_from` commit recorded — `E8M7` construction at 1.083x under GCC against
+0.740x under Clang, and `E11M4` at 1.013x.  `3c783e3`'s commit body reports the
+first as a cross-compiler disagreement on the strength of its reproducing at
+1.081x and 1.083x across two runs.  Those were two runs of the same two
+binaries, and layout is a property of the binary, so re-running measured it
+again rather than testing it.
 
 ## Open questions
 
