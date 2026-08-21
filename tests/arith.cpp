@@ -214,7 +214,9 @@ struct CheckSpecialLadder {
     const T zero = T::from_bits(0);
     const T one{1.0};
 
-    const auto signed_zero = [](bool negative) {
+    // `SIGN` is captured although it is a constant expression: MSVC rejects
+    // the implicit use outright (C3493) where GCC and Clang allow it.
+    const auto signed_zero = [SIGN](bool negative) {
       const bool keep = T::HAS_NEG_ZERO && negative;
       return T::from_bits(static_cast<typename T::Storage>(keep ? SIGN : 0));
     };
