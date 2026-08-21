@@ -27,6 +27,11 @@ static_assert(std::is_nothrow_destructible_v<NoexceptCheck>);
 static_assert(NoexceptCheck::from_bits(0) == NoexceptCheck::from_bits(0));
 static_assert(NoexceptCheck::from_bits(1) != NoexceptCheck::from_bits(2));
 static_assert(NoexceptCheck::from_bits(1) < NoexceptCheck::from_bits(2));
+static_assert(NoexceptCheck::from_bits(1) <= NoexceptCheck::from_bits(2));
+static_assert(NoexceptCheck::from_bits(2) > NoexceptCheck::from_bits(1));
+static_assert(NoexceptCheck::from_bits(2) >= NoexceptCheck::from_bits(1));
+// A NaN loses every comparison, at compile time as much as at run time
+static_assert(!(NoexceptCheck::quiet_NaN() == NoexceptCheck::quiet_NaN()));
 
 enum class Style { Finite, IEEE, FN, FNUZ };
 
