@@ -86,10 +86,34 @@ struct Parts {
 #elif defined(__GNUC__) || defined(__clang__)
   return 63 - __builtin_clzll(x);
 #else
+  // MSVC lands here in every standard: its `__cplusplus` stays at 199711L
+  // without `/Zc:__cplusplus`, which CMake does not pass, so `std::countl_zero`
+  // above is out of reach, and `_BitScanReverse64` is not a constant expression
+  // where `from_parts` needs one.  Six halvings, not a shift per bit: a sum or
+  // quotient arrives here with a 57-bit significand, and this is on the path of
+  // every operator.
   int result = 0;
-  for (; x > 1; x >>= 1)
-    ++result;
-  return result;
+  if ((x >> 32) != 0) {
+    x >>= 32;
+    result += 32;
+  }
+  if ((x >> 16) != 0) {
+    x >>= 16;
+    result += 16;
+  }
+  if ((x >> 8) != 0) {
+    x >>= 8;
+    result += 8;
+  }
+  if ((x >> 4) != 0) {
+    x >>= 4;
+    result += 4;
+  }
+  if ((x >> 2) != 0) {
+    x >>= 2;
+    result += 2;
+  }
+  return result + static_cast<int>(x >> 1);
 #endif
 }
 
