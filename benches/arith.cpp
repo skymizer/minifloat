@@ -36,6 +36,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -134,6 +135,29 @@ template <typename Body> double measure(Body body) {
   return best;
 }
 
+//! Emit `github-action-benchmark` rows instead of the two tables
+//!
+//! `--json` is what `.github/workflows/bench.yml` runs; the tables are what a
+//! person reads, and no header, footer or skip notice belongs in a dataset.
+bool emit_json = false;
+bool json_started = false;
+
+//! One `customSmallerIsBetter` row
+//!
+//! Names mirror the minifloat-rs sibling's criterion ids, so a chart keeps its
+//! history if a shape is ever measured in both repositories:
+//! `{shape}/{op}/{soft|f32|f64}` from the ratio table, which has two routes to
+//! tell apart, and `{shape}/{op}` from the unary one, which has none.
+void emit_row(const char *shape, const char *op, const char *route, double ns) {
+  if (!emit_json)
+    return;
+  std::printf(
+      "%s\n  {\"name\": \"%s/%s%s%s\", \"unit\": \"ns/element\", \"value\": %.6f}",
+      json_started ? "," : "[", shape, op, route ? "/" : "", route ? route : "", ns
+  );
+  json_started = true;
+}
+
 double total_log_ratio = 0.0;
 int comparisons = 0;
 int wins = 0;
@@ -163,10 +187,14 @@ void bench_op(const char *shape, const char *name, const std::vector<std::pair<T
   ++comparisons;
   wins += ratio > 1.0;
 
-  std::printf(
-      "%-14s %-3s %8.3f %8.3f  %6.3fx %s\n", shape, name, soft, hard, ratio,
-      R == Route::Float ? "float" : "double"
-  );
+  emit_row(shape, name, "soft", soft);
+  emit_row(shape, name, R == Route::Float ? "f32" : "f64", hard);
+
+  if (!emit_json)
+    std::printf(
+        "%-14s %-3s %8.3f %8.3f  %6.3fx %s\n", shape, name, soft, hard, ratio,
+        R == Route::Float ? "float" : "double"
+    );
 }
 
 //! Time one body and report nanoseconds per element
@@ -177,7 +205,12 @@ void bench_op(const char *shape, const char *name, const std::vector<std::pair<T
 //! something only against the same line from another build — which is what the
 //! interleaved protocol in `docs/benchmarking.md` does.
 template <typename Body> void bench_unary(const char *shape, const char *name, Body body) {
-  std::printf("%-14s %-4s %8.3f\n", shape, name, measure(body));
+  const double ns = measure(body);
+
+  emit_row(shape, name, nullptr, ns);
+
+  if (!emit_json)
+    std::printf("%-14s %-4s %8.3f\n", shape, name, ns);
 }
 
 //! One line per unary body for a shape
@@ -222,7 +255,8 @@ template <typename T> void bench_shape(const char *shape) {
   constexpr Route R = route<T>();
 
   if constexpr (R == Route::None) {
-    std::printf("%-14s skipped: no host float rounds like it\n", shape);
+    if (!emit_json)
+      std::printf("%-14s skipped: no host float rounds like it\n", shape);
   } else {
     const auto pairs = draw_pairs<T>();
     bench_op<std::plus<>, R>(shape, "add", pairs);
@@ -257,17 +291,26 @@ template <typename Visit> void for_each_shape(Visit visit) {
 
 } // namespace
 
-int main() {
-  std::printf("%-14s %-3s %8s %8s  %7s %s\n", "shape", "op", "soft", "host", "ratio", "route");
+int main(int argc, char **argv) {
+  for (int i = 1; i < argc; ++i)
+    emit_json |= std::strcmp(argv[i], "--json") == 0;
+
+  if (!emit_json)
+    std::printf("%-14s %-3s %8s %8s  %7s %s\n", "shape", "op", "soft", "host", "ratio", "route");
   for_each_shape([](auto sample, const char *shape) { bench_shape<decltype(sample)>(shape); });
 
-  std::printf(
-      "\ninteger route wins %d of %d, geomean %.3fx in its favour\n", wins, comparisons,
-      std::exp(total_log_ratio / comparisons)
-  );
+  if (!emit_json)
+    std::printf(
+        "\ninteger route wins %d of %d, geomean %.3fx in its favour\n", wins, comparisons,
+        std::exp(total_log_ratio / comparisons)
+    );
 
-  std::printf("\n%-14s %-4s %8s\n", "shape", "op", "ns");
+  if (!emit_json)
+    std::printf("\n%-14s %-4s %8s\n", "shape", "op", "ns");
   for_each_shape([](auto sample, const char *shape) {
     bench_unary_shape<decltype(sample)>(shape);
   });
+
+  if (emit_json)
+    std::puts(json_started ? "\n]" : "[]");
 }
