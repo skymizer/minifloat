@@ -30,8 +30,17 @@ jobs:
         run: ./bench --json > output.json
       - name: Validate
         # A crashed bench or an emitter bug fails here rather than publishing a
-        # truncated series the charts would then carry forever.
-        run: python3 -m json.tool output.json > /dev/null
+        # truncated series the charts would then carry forever. Parsing alone
+        # would not do it: `[]` parses, and an empty array is exactly what both
+        # of those leave behind, so the rows are counted and shaped as well.
+        run: |
+          python3 - <<'PY'
+          import json
+          rows = json.load(open("output.json"))
+          assert len(rows) > 100, f"only {len(rows)} rows"
+          assert all(r.keys() == {"name", "unit", "value"} for r in rows)
+          print(len(rows), "rows")
+          PY
       - name: Publish
         # The dataset is a series over `main`; a pull request has nothing to
         # add to it, and on a fork the token is read-only anyway.
