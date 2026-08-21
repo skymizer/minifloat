@@ -67,7 +67,7 @@ template <typename T> T from_code(std::uint32_t bits) {
   return T::from_bits(static_cast<typename T::Storage>(bits));
 }
 
-//! First ordered pair of codes failing `pred`, or nothing
+//! An ordered pair of codes failing `pred`, or nothing
 //!
 //! Exhaustive over all 2**32 ordered pairs of a 16-bit shape, which one thread
 //! walks in minutes rather than the milliseconds an 8-bit shape takes.  The
@@ -79,6 +79,11 @@ template <typename T> T from_code(std::uint32_t bits) {
 //! assertions as thread-safe on pthreads platforms only, and CI runs MSVC.  An
 //! `exchange` elects the one thread that records its pair, `join` orders that
 //! write before the caller's read, and the caller re-runs `pred` itself.
+//!
+//! Which failing pair comes back is therefore whichever worker reached one
+//! first, not the least in any order.  That is enough for a gate whose only
+//! question is whether a failure exists, and it is why the name says a pair
+//! and not the first.
 template <typename T, typename Predicate>
 std::optional<std::pair<std::uint32_t, std::uint32_t>> find_failing_pair(Predicate pred) {
   constexpr std::uint32_t END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
@@ -111,13 +116,18 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> find_failing_pair(Predica
   return std::nullopt;
 }
 
-//! Sweep every ordered pair of `T`, reporting the first failure single-threaded
+//! Sweep every ordered pair of `T`, reporting a failure from the main thread
+//!
+//! A worker found the pair, so the test fails whatever the re-run says.  The
+//! re-run only decides what the message reads: a pure predicate reproduces,
+//! and one that does not has said something worth printing.
 template <typename T, typename Predicate> void expect_all_pairs(Predicate pred) {
   const auto failing = find_failing_pair<T>(pred);
   if (!failing)
     return;
-  EXPECT_TRUE(pred(from_code<T>(failing->first), from_code<T>(failing->second)))
-      << describe<T>() << " bits " << failing->first << ", " << failing->second;
+  const bool reproduced = !pred(from_code<T>(failing->first), from_code<T>(failing->second));
+  ADD_FAILURE() << describe<T>() << " bits " << failing->first << ", " << failing->second
+                << (reproduced ? "" : " (did not reproduce on the main thread)");
 }
 
 //! Run `Checker::check<T>()` for every `T` in the pack

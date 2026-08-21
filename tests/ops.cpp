@@ -8,7 +8,9 @@
 
 #include "support.hpp"
 
+#include <atomic>
 #include <cassert>
+#include <gtest/gtest-spi.h>
 #include <unordered_set>
 
 using namespace minifloat_test;      // NOLINT(google-build-using-namespace)
@@ -70,6 +72,19 @@ struct CheckComparison {
   }
 };
 
+//! An 8-bit shape for exercising the sweep driver: 2**16 pairs, not 2**32
+using Tiny = Finite<3, 4>;
+
+//! Fails on one pair, and on the same pair every time it is asked
+bool fails_on_one_pair(Tiny x, Tiny y) {
+  return !(x.to_bits() == 0x12 && y.to_bits() == 0x34);
+}
+
+std::atomic<int> flaky_calls{0};
+
+//! Fails once and never again, whichever pair happens to be the thousandth
+bool fails_only_once(Tiny, Tiny) { return ++flaky_calls != 1000; }
+
 struct CheckClassification {
   constexpr static int to_shift(int category) {
     switch (category) {
@@ -120,10 +135,20 @@ TEST(Ops, UnarySignAndAbs) { test_all_types<CheckUnary>(); }
 
 TEST(Ops, Comparison) { test_paired_types<CheckComparison>(); }
 
-//! The same contract over all 2**32 ordered pairs of the 16-bit shapes
+//! The same contract over all 2**32 ordered pairs of `E5M10` and `E8M7`
 TEST(Ops, EveryPairComparesLikeHost) {
   expect_all_pairs<E5M10>(comparison_matches_host<E5M10>);
   expect_all_pairs<E8M7>(comparison_matches_host<E8M7>);
+}
+
+//! The sweep driver reports, including a failure that will not happen twice
+//!
+//! Nothing else exercises the reporting path: the sweeps above pass, so a
+//! driver that swallowed every failure would look exactly the same from here.
+//! The second case is the reason the report does not hinge on the re-run.
+TEST(Ops, SweepDriverReportsFailures) {
+  EXPECT_NONFATAL_FAILURE(expect_all_pairs<Tiny>(fails_on_one_pair), "bits 18, 52");
+  EXPECT_NONFATAL_FAILURE(expect_all_pairs<Tiny>(fails_only_once), "did not reproduce");
 }
 
 TEST(Ops, Classification) { test_all_types<CheckClassification>(); }

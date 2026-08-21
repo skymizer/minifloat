@@ -25,10 +25,10 @@ template <typename Operation, typename T> bool matches_host(T x, T y) {
 //! `matches_host`'s twin through `float`
 //!
 //! `float` deliberately, not `double`: this is the referee for the route
-//! `benches/arith.cpp` times the 16-bit shapes against, and nothing else in
-//! the suite covers it.  Below 2p + 2 digits in the intermediate, rounding
+//! `route` in `benches/arith.cpp` grants `E5M10` and `E8M7`, and nothing else
+//! in the suite covers it.  Below 2p + 2 digits in the intermediate, rounding
 //! twice can differ from rounding once, so a shape gets this treatment only
-//! where `route` in the bench would grant it a `float`.
+//! where the bench would grant it a `float`.
 template <typename Operation, typename T> bool matches_float(T x, T y) {
   const Operation op;
   const float reference = op(x.to_float(), y.to_float());
@@ -301,13 +301,18 @@ struct CheckSpecialLadder {
 
 TEST(Arith, MatchesHostRoundTrip) { test_paired_types<CheckHostArithmetic>(); }
 
-//! Every ordered pair of the 16-bit shapes, against the float route
+//! Every ordered pair of `E5M10` and `E8M7`, against the float route
 //!
 //! `CheckHostArithmetic` stops at 11 bits because the check is quadratic; this
-//! carries the same idea to the two shapes the bench actually publishes, all
-//! 2**32 pairs of each.  `IEEE<2, 13>` is exact in a `float` and still not
-//! entitled to one -- a product of two of its significands is 28 digits -- so
-//! it is left out here exactly as `route` leaves it out of the ratio table.
+//! carries the same idea to the two shapes `route` puts on the float route,
+//! all 2**32 pairs of each.
+//!
+//! No other 16-bit shape belongs here, because none of them is on that route.
+//! `IEEE<2, 13>` is exact in a `float` and still not entitled to one -- a
+//! product of two of its significands is 28 digits -- so `route` times it
+//! against a `double`, as it does `IEEE<11, 4>`; `IEEE<12, 3>` is the one
+//! shape `route` skips outright.  The double route is already covered by
+//! `CheckWideHostArithmetic` and refereed by the exact oracle.
 TEST(Arith, EveryPairMatchesFloatRoundTrip) {
   expect_all_pairs<E5M10>(float_arithmetic_matches<E5M10>);
   expect_all_pairs<E8M7>(float_arithmetic_matches<E8M7>);
