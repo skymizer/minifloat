@@ -95,7 +95,9 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> find_failing_pair(Predica
   pool.reserve(stripes);
 
   for (unsigned stripe = 0; stripe < stripes; ++stripe)
-    pool.emplace_back([&pred, &found, &failing, stripe, stripes] {
+    // `END` is captured for the same reason `SIGN` is in `tests/arith.cpp`:
+    // MSVC rejects the implicit use of an enclosing constant (C3493).
+    pool.emplace_back([&pred, &found, &failing, stripe, stripes, END] {
       for (std::uint32_t left = stripe; left < END; left += stripes) {
         if (found.load(std::memory_order_relaxed))
           return;
