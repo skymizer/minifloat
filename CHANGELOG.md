@@ -63,6 +63,13 @@ generated typedef grid are gone.
   Clang and 0.83x under GCC, and `to_float`/`to_double` for a shape with no
   exact host conversion costs about a quarter. `docs/arithmetic.md` has the
   measurements and the null this round also produced.
+- `detail::log2_floor` finds the top bit by halving where neither
+  `std::countl_zero` nor `__builtin_clzll` is reachable, instead of shifting one
+  bit at a time. That branch is MSVC's in every standard, since its `__cplusplus`
+  stays at 199711L without `/Zc:__cplusplus`, and it is on the path of every
+  operator and every host-float conversion through `from_parts`. The MSVC leg's
+  exhaustive 2³² sweeps went from 783 s to 594 s.
+
 - An invalid operation now returns the format's own NaN, or its maximum finite
   value where the format has none, rather than inheriting a host NaN's sign:
   `0 / 0` in a `Finite` format used to be &minus;`max()` on x86 and +`max()` on
