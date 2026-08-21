@@ -76,18 +76,20 @@ the machine's other tenants.
 
 The harness already applies this rule once, inside a run: `measure` in
 `benches/arith.cpp` takes the minimum over `PASSES` passes, each of `REPEATS`
-sweeps of the operand array, and the file's header comment says why.  The protocol applies it a second time, across
-runs of the whole binary, because a single run cannot see the drift that
-scheduling, frequency, and the other passes introduce between one binary and the
-next.  Take the minimum per line across the 15 files on each side, then divide.
+sweeps of the operand array, and the file's header comment says why.  The
+protocol applies it a second time, across runs of the whole binary, because a
+single run cannot see the drift that scheduling, frequency, and the other
+passes introduce between one binary and the next.  Take the minimum per line
+across the 15 files on each side, then divide.
 
 That the minimum really does shed a transient is measured rather than argued.
 An all-core build of this repository landed in the middle of the minifloat-rs
 sibling's 15-pass probe, contaminating three passes on each side.  Harvested
 both ways, the headline came out 0.626x over all 15 and 0.624x with the three
 dropped, and its control geomean was 1.006x either way — 0.3% on the number
-under test and no movement at all on the control.  One incident is not a
-guarantee, but it is better evidence than the argument above on its own.
+under test and no movement at all on the control (minifloat-rs `ca42bc6`).  One
+incident is not a guarantee, but it is better evidence than the argument above
+on its own.
 
 ## Keep a control route
 
@@ -150,8 +152,10 @@ under the full protocol, min of 20 interleaved passes:
 
 Eleven of the thirty GCC rows fall outside `[0.98, 1.02]`, on code that did not
 change a byte.  The minifloat-rs sibling measured the same effect independently
-and reached the same conclusion from the other end: a 1929-instruction,
-byte-identical benchmark body moved 1.090x purely on relocation.
+and from the other end — a 1929-instruction byte-identical benchmark body that
+moved 1.090x purely on relocation, over a 56-identical / 56-changed closure
+split.  Its write-up is minifloat-rs `ca42bc6`, and the round it came out of is
+`fa9b94c`.
 
 **Interleaving cannot help.**  Placement is a property of the binary, not of the
 run, so more passes converge on the wrong number rather than away from it.
@@ -190,10 +194,10 @@ against a 0.701x–1.164x band: overlapping, so the geomean over 15 shapes is th
 claim and no single shape is.  The sibling crate's hardware rows ran
 0.455x–0.806x against a 0.962x–1.090x band measured the same way: disjoint by
 0.156, so there every individual row is reportable and the headline does not
-rest on the aggregate at all.  Same protocol; a band three times wider on one
-side than the other, and ten times wider than the 0.98x constant would have
-implied; and the control says which of those you have before you write anything
-down.
+rest on the aggregate at all (minifloat-rs `ca42bc6`).  Same protocol; a band
+three times wider on one side than the other, and ten times wider than the 0.98x
+constant would have implied; and the control says which of those you have before
+you write anything down.
 
 One limitation to state rather than paper over: a band is only calibrated where
 byte-identical rows exist at that duration.  When a change touches the very rows
@@ -257,8 +261,9 @@ Ratio table geomeans over 56 comparisons; unary rows in nanoseconds per element.
 | integer route wins | 23 of 56 | 37 of 56 |
 | geomean | 0.966x | 1.044x |
 
-Both fell from 28 of 56 / 1.001x and 52 of 56 / 1.195x when the conversion paths
-got faster — and every conversion in this comparison is in the host arm, so what
-fell was the numerator.  [arithmetic.md](arithmetic.md) has the accounting and
-the rest of the numbers; the short version is that a falling ratio here is not by
-itself evidence of a slower library, and the `soft` column is where to check.
+Both fell from 28 of 56 / 1.001x and 52 of 56 / 1.195x when the conversion
+paths got faster — and every conversion in this comparison is in the host arm,
+so what fell was the numerator.  [arithmetic.md](arithmetic.md) has the
+accounting and the rest of the numbers; the short version is that a falling
+ratio here is not by itself evidence of a slower library, and the `soft` column
+is where to check.

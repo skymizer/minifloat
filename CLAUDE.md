@@ -42,23 +42,23 @@ CMake.  A new test file passes locally and is silently invisible to CI until the
 list is edited.
 
 **Benchmark only on an idle box, under both compilers.**  The box runs a poker
-solver that will take every core: `pgrep -af poker` first, and if it is running,
-ask — never kill it unasked.  The protocol is
+solver that will take every core: `pgrep -af poker` first, and if it is
+running, ask — never kill it unasked.  The protocol is
 [docs/benchmarking.md](docs/benchmarking.md), and it is not optional:
 interleaved builds, min-of-N across at least 15 alternating passes each, a
 control row the change cannot touch, a 0.98x noise floor, and GCC *and* Clang,
-because on the same source they disagree by 37 of 56 against 23 of 56.  `rm -f bench` between compilers; the `make` target does not depend on
-`CXX`.
+because on the same source they disagree by 37 of 56 against 23 of 56.  `rm -f
+bench` between compilers; the `make` target does not depend on `CXX`.
 
 ## The correctness gate
 
 `make check` before anything else, and before any benchmarking.
 
-It is exhaustive where exhaustive is affordable, which is most places: every bit
-pattern of 48 declared shapes for the encoding, conversion and classification
-checks, every *ordered pair* of the 42 shapes through 11 bits for comparison,
-and every *ordered pair* of the 39 shapes at 8 bits and under for arithmetic.  Two gates live in there and it is worth not conflating
-them:
+It is exhaustive where exhaustive is affordable, which is most places: every
+bit pattern of 48 declared shapes for the encoding, conversion and
+classification checks, every *ordered pair* of the 42 shapes through 11 bits
+for comparison, and every *ordered pair* of the 39 shapes at 8 bits and under
+for arithmetic.  Two gates live in there and it is worth not conflating them:
 
 - **the exact integer oracle** (`Arith.CorrectlyRoundedSmallFormats`) — refereed
   by cross-multiplication and a binary search over the format's own codes, with

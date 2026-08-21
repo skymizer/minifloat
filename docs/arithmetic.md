@@ -31,14 +31,14 @@ So two of the four carry a deliberately inexact tail.  Neither tail can change a
 rounding — that is what the two constants are sized for — which is why the
 thesis says *exact enough to round*.
 
-`detail::from_parts` is the only place *arithmetic* rounds, ties to even, by way
-of `detail::round_to_scale`.  One rounding, so no intermediate can lose what the
-format is able to hold, and a shape whose exponent range overruns `double`'s is
-served as exactly as any other.  The library's one other rounding is
-genuinely elsewhere: `to_double` splitting its scale into two in-range factors
-once a shape's exponent leaves `double`'s, where the second multiply rounds.  `bits_from` rounds a host float *in*, but not
-separately — it decomposes exactly and hands the triple to that same
-`from_parts`.
+`detail::from_parts` is the only place *arithmetic* rounds, ties to even, by
+way of `detail::round_to_scale`.  One rounding, so no intermediate can lose
+what the format is able to hold, and a shape whose exponent range overruns
+`double`'s is served as exactly as any other.  The library's one other rounding
+is genuinely elsewhere: `to_double` splitting its scale into two in-range
+factors once a shape's exponent leaves `double`'s, where the second multiply
+rounds.  `bits_from` rounds a host float *in*, but not separately — it
+decomposes exactly and hands the triple to that same `from_parts`.
 
 Subtraction does not build a negated operand.  `detail::add_impl(x, y, flip)`
 inverts the right sign where `add_parts` already has it as a `bool`; `operator+`
@@ -76,10 +76,10 @@ shape it cannot hold, so keeping it would have meant keeping a route that is
 wrong for exactly the shapes this library exists to support.
 
 But it is worth knowing what the bonus is, and here the answer depends on the
-compiler and on the operator — it is not one number.  `benches/arith.cpp` times each operator twice over the same
-operands — once as the library computes it, once the way a caller would fake it.
-On an idle Ryzen 7 8700F, 2026-08-21, under the protocol in
-[benchmarking.md](benchmarking.md):
+compiler and on the operator — it is not one number.  `benches/arith.cpp` times
+each operator twice over the same operands — once as the library computes it,
+once the way a caller would fake it. On an idle Ryzen 7 8700F, 2026-08-21,
+under the protocol in [benchmarking.md](benchmarking.md):
 
 | | wins | geomean | add | sub | mul | div |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -93,14 +93,14 @@ the geomean but not everywhere, and on two different splits: `mul` takes 9 of
 
 Addition and subtraction split two ways, and separating them is what makes the
 table usable.  `E8M7` and `E11M4` — the two widest exponent ranges benched —
-give both to the host route under *both* compilers, 0.56x to 0.86x.  That is the
-library's own shape rather than a back end's: a wide exponent range is the
-distance `align` has to shift across, and an FPU does that in its exponent field
-for free.  `E2M13` is the opposite corner and both compilers agree on it too, the other
-way: it wins every one of its four operators, 1.11x to 1.87x under GCC and 1.35x
-to 1.61x under Clang.  It is the one shape whose host route pays for a `double`
-round trip — `route` sends it there because 2*p* + 2 is 30 digits — without the
-integer route paying a wide exponent range for it.
+give both to the host route under *both* compilers, 0.56x to 0.86x.  That is
+the library's own shape rather than a back end's: a wide exponent range is the
+distance `align` has to shift across, and an FPU does that in its exponent
+field for free.  `E2M13` is the opposite corner and both compilers agree on it
+too, the other way: it wins every one of its four operators, 1.11x to 1.87x
+under GCC and 1.35x to 1.61x under Clang.  It is the one shape whose host route
+pays for a `double` round trip — `route` sends it there because 2*p* + 2 is 30
+digits — without the integer route paying a wide exponent range for it.
 
 Between those two corners the compilers part.  Clang stays near even, 0.89x to
 1.11x, while GCC gives the host route every narrow shape except `FNUZ`, which it
@@ -220,16 +220,16 @@ declared width through 8 bits, all four format layers, exponent widths 2 through
 so it samples.
 
 Pairs involving an infinity or a NaN have no exact magnitude to compare against
-and return early; those are pinned by `Arith.SpecialValueLadder`, which compares
-exact codes rather than going through `same_mini`, and derives the invalid
-result from `reference_encode` rather than from the library.  The
+and return early; those are pinned by `Arith.SpecialValueLadder`, which
+compares exact codes rather than going through `same_mini`, and derives the
+invalid result from `reference_encode` rather than from the library.  The
 host-float comparisons — `Arith.MatchesHostRoundTrip` over the 42 shapes of
 `test_paired_types`, and `Arith.WideFormatsMatchHostRoundTrip` — stay in the
 file on purpose: they are narrower, since they cannot referee a shape their
 `double` cannot hold, but they cover the non-finite pairs the exact oracle
 skips, and they are the only check that the route `benches/arith.cpp` times
-computes the same answer.  `Arith.PastDoubleRange` pins the `IEEE<12, 3>` results neither
-can referee.
+computes the same answer.  `Arith.PastDoubleRange` pins the `IEEE<12, 3>`
+results neither can referee.
 
 ## No lookup tables
 
@@ -320,6 +320,6 @@ that is `add_parts`'s two `align` calls failing to be if-converted, the
 The diagnosis is a disassembly comparison of one shape's `operator+` under both
 compilers, and picking the shape matters: `E5M2` or `E4M3`, not `E8M7` or
 `E11M4`, since those two lose under both compilers and so have no difference to
-show.  `FNUZ` is the other end of the same question — GCC wins those at 1.09x to 1.10x
-while losing their non-`FNUZ` neighbours, which is a large enough split within
-one compiler to be a clue on its own.
+show.  `FNUZ` is the other end of the same question — GCC wins those at 1.09x
+to 1.10x while losing their non-`FNUZ` neighbours, which is a large enough
+split within one compiler to be a clue on its own.
