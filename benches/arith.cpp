@@ -144,10 +144,13 @@ bool json_started = false;
 
 //! One `customSmallerIsBetter` row
 //!
-//! Names mirror the minifloat-rs sibling's criterion ids, so a chart keeps its
-//! history if a shape is ever measured in both repositories:
 //! `{shape}/{op}/{soft|f32|f64}` from the ratio table, which has two routes to
-//! tell apart, and `{shape}/{op}` from the unary one, which has none.
+//! tell apart, and `{shape}/{op}` from the unary one, which has none.  The
+//! layout is the minifloat-rs sibling's -- a criterion group per shape, one
+//! benchmark per operator -- but the ids are not interchangeable with it: the
+//! two repositories spell most shapes differently, `E5M10` and `E8M7` here
+//! against `F16` and `BF16` there, and only `E11M4`, `E2M13` and `E12M3` are
+//! spelt alike.
 void emit_row(const char *shape, const char *op, const char *route, double ns) {
   if (!emit_json)
     return;
