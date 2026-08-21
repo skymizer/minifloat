@@ -287,10 +287,13 @@ reason and this repository matches it, which is also what makes the two pages
 readable side by side.
 
 Both arms of the ratio table are published, and the ratio itself is not.  A row
-is named `{shape}/{op}/{soft|f32|f64}` — the sibling's criterion ids — so a
-cliff in the library shows up in the `soft` series and a cliff in the host route
-shows up in the other, which a single ratio cannot tell apart.  The unary
-bodies, having no second route, are `{shape}/{op}`.
+is named `{shape}/{op}/{soft|f32|f64}`, so a cliff in the library shows up in
+the `soft` series and a cliff in the host route shows up in the other, which a
+single ratio cannot tell apart.  The unary bodies, having no second route, are
+`{shape}/{op}`.  That layout is the sibling's, a group per shape and a
+benchmark per operator; the ids themselves are not interchangeable, because the
+two repositories spell most shapes differently — `E5M10` and `E8M7` here
+against `F16` and `BF16` there — and only `E11M4`, `E2M13` and `E12M3` coincide.
 
 The ISA is pinned rather than `native` because GitHub rotates runners across CPU
 generations, and a series whose ISA changes under it is measuring the fleet.
