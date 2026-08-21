@@ -258,6 +258,47 @@ evidence for "this no longer calls libm" and the wrong evidence for "this is
 faster".  Use the stopwatch for a change in what the code *does*, and the symbol
 table for a change in *what the code links against*.
 
+## The published page is a tripwire, not a measurement
+
+Every push to `main` builds `benches/arith.cpp` with GCC at `-march=x86-64-v3`
+on one `ubuntu-latest` runner, runs it as `./bench --json`, and pushes the rows
+to <https://skymizer.github.io/minifloat/dev/bench/>, one chart each, via
+`benchmark-action/github-action-benchmark`.  Nothing on that page is
+hand-written; `.github/workflows/bench.yml` is the whole of it.
+
+It is not a number by the standard at the top of this file.  A shared VM is not
+an idle box, there is no interleaving, no control route, no pinned core, and
+there is one sample per commit.  So a figure read off that page does not go in
+a commit body or in the changelog, and it cannot settle a claim against the
+interleaved protocol above.  What it can do is notice a 2x cliff between two
+commits, which neither of the other two routes does at all: the interleaved
+probe is the first opinion, a run on the named box is the second, and this is a
+third thing that runs without being asked.  Hence `alert-threshold: 200%` with
+`fail-on-alert: false` — the page shouts across a cliff and stays quiet inside
+the runner's own spread.
+
+One compiler where this file demands two, and that is a loss taken on purpose.
+The two-compiler rule exists because GCC and Clang disagree on this source by
+23 of 56 against 37 of 56, so a lone GCC series can move for a reason that says
+nothing about the library.  Publishing both would double the charts without
+fixing that, because the page compares a series against its own past and never
+against another series.  The sibling crate publishes one series for the same
+reason and this repository matches it, which is also what makes the two pages
+readable side by side.
+
+Both arms of the ratio table are published, and the ratio itself is not.  A row
+is named `{shape}/{op}/{soft|f32|f64}` — the sibling's criterion ids — so a
+cliff in the library shows up in the `soft` series and a cliff in the host route
+shows up in the other, which a single ratio cannot tell apart.  The unary
+bodies, having no second route, are `{shape}/{op}`.
+
+The ISA is pinned rather than `native` because GitHub rotates runners across CPU
+generations, and a series whose ISA changes under it is measuring the fleet.
+That pins the code but not the silicon, and the runner's CPU is the one piece of
+provenance the published data does not carry: `data.js` records commit, author,
+message and timestamp, and no CPU model or compiler version.  Trends across it
+are readable; levels are not.
+
 ## Reference figures
 
 Ryzen 7 8700F, `taskset -c 2`, idle box, 2026-08-21, at the head of this branch.
