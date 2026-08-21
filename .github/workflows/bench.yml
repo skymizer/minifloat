@@ -12,6 +12,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A superseded pull request run is worth nothing; a superseded `main` run is
+# worth one point of the published series, so only the former is cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: write
 
