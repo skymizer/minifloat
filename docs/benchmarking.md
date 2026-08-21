@@ -81,6 +81,14 @@ runs of the whole binary, because a single run cannot see the drift that
 scheduling, frequency, and the other passes introduce between one binary and the
 next.  Take the minimum per line across the 15 files on each side, then divide.
 
+That the minimum really does shed a transient is measured rather than argued.
+An all-core build of this repository landed in the middle of the minifloat-rs
+sibling's 15-pass probe, contaminating three passes on each side.  Harvested
+both ways, the headline came out 0.626x over all 15 and 0.624x with the three
+dropped, and its control geomean was 1.006x either way — 0.3% on the number
+under test and no movement at all on the control.  One incident is not a
+guarantee, but it is better evidence than the argument above on its own.
+
 ## Keep a control route
 
 Every sweep carries at least one row the change cannot possibly have touched.
@@ -118,18 +126,47 @@ Quote the control you used, by column.  A `sub` row at 0.80x is reportable only
 beside a `mul` row that stayed inside the noise floor — and it has to be
 `mul`'s `soft` figure, not its ratio.
 
-## The noise floor is 0.98x, except where it is much worse
+## The noise floor is 0.98x, and it does not cover code placement
 
 A ratio inside `[0.98, 1.02]` is not a result.  Say so plainly rather than
 reporting it as a small win — a null recorded is worth more than a null dressed
 up, and [arithmetic.md](arithmetic.md) keeps a section for exactly those.
 
-That floor is for rows that take a nanosecond or more.  The unary table's `neg`
-and `abs` rows run 0.2 to 0.4 ns, and there one cycle of loop alignment is tens
-of percent: across changes that provably do not touch them they have come back
-between 0.51x and 1.98x.  Nothing about those two rows is reportable from the
-stopwatch alone.  Reach for `objdump` instead — at that size, counting the
-instructions is both cheaper and exact.
+That floor bounds *timing* noise, and timing noise is not the only thing between
+two builds.  A change that resizes `.text` relocates everything after it, and
+identical code at a different address does not run at the same speed.
+
+This was measured here rather than assumed.  Commit `3c783e3` touched
+`bits_from` and nothing else on the conversion paths, so the `to_float` and
+`to_double` bench closures came out of both builds byte-identical once branch
+targets and rip-relative displacements are normalised — 14 and 12 closures, no
+instruction changed — while `.text` shrank by 4002 bytes and moved them.  Timed
+under the full protocol, min of 20 interleaved passes:
+
+| identical code, both builds | rows | geomean | range |
+| --- | --- | --- | --- |
+| GCC 16.1.1 | 30 | 0.996x | 0.801x – 1.245x |
+| Clang 22.1.8 | 30 | 0.984x | 0.701x – 1.164x |
+
+Eleven of the thirty GCC rows fall outside `[0.98, 1.02]`, on code that did not
+change a byte.  The minifloat-rs sibling measured the same effect independently
+and reached the same conclusion from the other end: a 1929-instruction,
+byte-identical benchmark body moved 1.090x purely on relocation.
+
+Two consequences, and they are not small:
+
+- **Interleaving cannot help.**  Placement is a property of the binary, not of
+  the run, so more passes converge on the wrong number rather than away from it.
+- **A single-row ratio inside roughly `[0.80, 1.25]` is not a result** for rows
+  of a nanosecond or two, no matter how reproducible.  Reproducible across
+  passes and reproducible across *builds* are different claims, and only the
+  second one means anything here.
+
+What does survive is the aggregate — layout is close to unbiased, which is what
+those 0.996x and 0.984x geomeans say — and the disassembly.  So: quote a geomean over
+many rows, or quote a single row only when it is far outside that band, or count
+instructions.  For anything in between, `objdump` is cheaper, exact, and needs
+no idle box.
 
 ## The two tables, and what each is for
 

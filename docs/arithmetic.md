@@ -275,12 +275,24 @@ by 7% under the other.  The finding was about what one back end emitted for that
 guard, not about the guard, and the disassembly said so before the stopwatch
 did — which is the cheaper order to ask in.
 
-**The unary table cannot resolve a fifth of a nanosecond.**  Its `neg` and `abs`
-rows run 0.2 to 0.4 ns, where one cycle of loop-alignment drift is tens of
-percent.  Across changes that provably do not touch them, those rows have come
-back anywhere from 0.51x to 1.98x.  Treat a `neg` or `abs` row as a result only
-beside a disassembly that explains it; the `from` and conversion rows, at 1 to 3
-ns, behave.
+**A single row of the unary table is not a result.**  This was first written
+down as a resolution limit on the 0.2 ns `neg` and `abs` rows, which was the
+wrong diagnosis: the mechanism is code placement, and it reaches the
+nanosecond-scale rows too.  Across a change that left the `to_float` and
+`to_double` closures byte-identical, those 30 rows still measured 0.801x to
+1.245x under GCC and 0.701x to 1.164x under Clang, min of 20 interleaved passes.
+[benchmarking.md](benchmarking.md) has the measurement and what it costs.
+
+What this section's own numbers are entitled to, then: the geomeans over 15
+shapes, which layout does not bias; `IEEE<12, 3>` at 0.24x, far outside any
+placement band and corroborated by the symbol table; and the `FNUZ` `abs` row at
+2.000x, likewise outside it and explained by a five-instruction body replacing a
+three-instruction one.  Not entitled: the `FNUZ` `neg` row at 1.06x, and the
+per-shape exceptions the `bits_from` commit recorded — `E8M7` construction at
+1.083x under GCC and `E11M4` at 1.013x.  Those three sit inside the band, and
+`3c783e3`'s commit body reports the first as a cross-compiler disagreement on
+the strength of reproducing across passes.  It reproduced across passes of the
+same two binaries, which is the thing that does not distinguish it.
 
 ## Open questions
 
