@@ -3,6 +3,13 @@ name: Benchmark
 on:
   push:
     branches: [main]
+  # A pull request builds, runs and validates but does not publish. This job is
+  # the only CI that compiles `benches/arith.cpp` at all -- `CMakeLists.txt`
+  # enumerates the five test files and nothing under `benches/` -- so without
+  # the trigger a break there would first appear on `main`, with the badge
+  # already red and no rows published.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +33,9 @@ jobs:
         # truncated series the charts would then carry forever.
         run: python3 -m json.tool output.json > /dev/null
       - name: Publish
+        # The dataset is a series over `main`; a pull request has nothing to
+        # add to it, and on a fork the token is read-only anyway.
+        if: github.event_name != 'pull_request'
         uses: benchmark-action/github-action-benchmark@v1
         with:
           tool: customSmallerIsBetter
