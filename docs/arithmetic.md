@@ -231,6 +231,17 @@ skips, and they are the only check that the route `benches/arith.cpp` times
 computes the same answer.  `Arith.PastDoubleRange` pins the `IEEE<12, 3>`
 results neither can referee.
 
+Both of those go through a `double`, and `route` in `benches/arith.cpp` puts
+`E5M10` and `E8M7` on a **`float`**, which nothing above refereed.
+`Arith.EveryPairMatchesFloatRoundTrip` does, over every ordered pair of both —
+2<sup>32</sup> each, striped across `std::thread`s by `find_failing_pair` in
+`tests/support.hpp`.  The remaining 16-bit shapes are not in it because they
+are not on that route: `IEEE<2, 13>` and `IEEE<11, 4>` are timed against a
+`double`, and `IEEE<12, 3>` is skipped outright.  `Ops.EveryPairComparesLikeHost`
+carries the same 2<sup>32</sup> treatment to comparison, which
+`Ops.Comparison` stops at 11 bits.  Those two sweeps are most of what
+`make check` spends its time on.
+
 ## No lookup tables
 
 Tempting for the 8-bit shapes: 2<sup>16</sup> entries per operator, one load

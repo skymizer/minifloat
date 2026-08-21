@@ -72,14 +72,22 @@ It is exhaustive where exhaustive is affordable, which is most places: every
 bit pattern of 48 declared shapes for the encoding, conversion and
 classification checks, every *ordered pair* of the 42 shapes through 11 bits
 for comparison, and every *ordered pair* of the 39 shapes at 8 bits and under
-for arithmetic.  Two gates live in there and it is worth not conflating them:
+for arithmetic.  `E5M10` and `E8M7` get every ordered pair too, all
+2<sup>32</sup> of each, on threads — see the sweeps below.  Three gates live in
+there and it is worth not conflating them:
 
 - **the exact integer oracle** (`Arith.CorrectlyRoundedSmallFormats`) — refereed
   by cross-multiplication and a binary search over the format's own codes, with
   no float involved and no constant shared with the engine;
 - **the host round-trip sweep** (`Arith.MatchesHostRoundTrip`) — narrower, but
   it covers the non-finite pairs the exact oracle skips, and it is what licenses
-  `benches/arith.cpp` to time the two routes against each other.
+  `benches/arith.cpp` to time the two routes against each other;
+- **the 16-bit pair sweeps** (`Arith.EveryPairMatchesFloatRoundTrip`,
+  `Ops.EveryPairComparesLikeHost`) — `E5M10` and `E8M7` only, because those are
+  the two shapes `route` puts on the *float* route, and the float route is
+  otherwise unrefereed.  They run on `std::thread` through
+  `find_failing_pair`, and they are most of `make check`'s wall time; the rest
+  of the suite is under two seconds.
 
 The `Makefile`'s `test` target does not define `NDEBUG`, so the constructors'
 preconditions are live under `make check` and compiled out under `make bench`.
