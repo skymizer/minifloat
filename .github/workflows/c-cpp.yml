@@ -69,6 +69,19 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
       - name: Test
+        # The two exhaustive 2**32 pair sweeps are skipped here and nowhere
+        # else. ASan and UBSan put them past any sensible gate time: on run
+        # 32524389655 this job was still going at 34 minutes while the same
+        # tests took 301 s unsanitised on the GCC leg beside it.
+        #
+        # Little is given up. The sweeps are deterministic and exhaustive, so
+        # the other six legs see every pair they would have seen; and the
+        # threading they run on -- `find_failing_pair` in `tests/support.hpp`,
+        # which is the only part of them a sanitiser has an opinion about --
+        # stays under both sanitisers through `Ops.SweepDriverReportsFailures`,
+        # an 8-bit sweep of the same driver that finishes in milliseconds.
+        env:
+          GTEST_FILTER: -Arith.EveryPairMatchesFloatRoundTrip:Ops.EveryPairComparesLikeHost
         run: ctest --test-dir build --output-on-failure
 
   install-consumer:
