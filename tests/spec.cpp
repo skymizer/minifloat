@@ -194,6 +194,16 @@ TEST(Spec, NumericLimits) {
   static_assert(std::numeric_limits<E4M3FN>::max_exponent10 == 2);
   static_assert(std::numeric_limits<E2M1FN>::max_exponent10 == 0);
   static_assert(std::numeric_limits<E3M2FN>::max_exponent10 == 1);
+
+  // Wherever the format spends the all-ones magnitude, its maximum finite
+  // value is short of the top of the binade `MAX_EXP` names, and a decimal
+  // exponent read off `MAX_EXP` alone comes out one too high.
+  static_assert(std::numeric_limits<FN<5, 2>>::max_exponent10 == 4);
+  static_assert(std::numeric_limits<FN<7, 0>>::max_exponent10 == 18);
+  static_assert(std::numeric_limits<FNUZ<7, 0>>::max_exponent10 == 18);
+  static_assert(std::numeric_limits<Finite<7, 0>>::max_exponent10 == 19);
+  static_assert(std::numeric_limits<FN<4, 0, 8>>::max_exponent10 == 1);
+  EXPECT_EQ((FN<4, 0, 8>::max().to_double()), 64.0);
 }
 
 TEST(Spec, DefaultConstructionIsZero) {
