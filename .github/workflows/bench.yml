@@ -1,0 +1,45 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        # The Makefile recipe stays the source of truth for `-DNDEBUG` and
+        # `-I.`; this override exists only to displace `-march=native`. The ISA
+        # is pinned because GitHub rotates its runners across CPU generations,
+        # and the published series is a trend across commits, not across hosts.
+        run: make bench CXXFLAGS='-std=c++17 -O3 -march=x86-64-v3'
+      - name: Run
+        run: ./bench --json > output.json
+      - name: Validate
+        # A crashed bench or an emitter bug fails here rather than publishing a
+        # truncated series the charts would then carry forever.
+        run: python3 -m json.tool output.json > /dev/null
+      - name: Publish
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: customSmallerIsBetter
+          output-file-path: output.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          # The action fetches this branch, it does not create it: the sibling
+          # repository's run 32475306070 died on `couldn't find remote ref
+          # gh-pages`. It is an orphan branch, empty until the first publish
+          # lands `dev/bench/` in it.
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          # A shared runner's spread is far wider than the idle box's, and this
+          # page is a tripwire, not a gate. Alert loudly, never fail the build.
+          alert-threshold: 200%
+          comment-on-alert: false
+          fail-on-alert: false

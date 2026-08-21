@@ -1,5 +1,8 @@
 Minifloat
 =========
+[![C/C++ CI](https://github.com/skymizer/minifloat/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/skymizer/minifloat/actions/workflows/c-cpp.yml)
+[![Benchmark](https://github.com/skymizer/minifloat/actions/workflows/bench.yml/badge.svg)](https://skymizer.github.io/minifloat/dev/bench/)
+
 C++ template library for minifloats dedicated to [@skymizer][skymizer]
 
 [skymizer]: https://github.com/skymizer
