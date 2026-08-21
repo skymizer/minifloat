@@ -70,9 +70,10 @@ jobs:
         run: cmake --build build --parallel
       - name: Test
         # The two exhaustive 2**32 pair sweeps are skipped here and nowhere
-        # else. ASan and UBSan put them past any sensible gate time: on run
-        # 32524389655 this job was still going at 34 minutes while the same
-        # tests took 301 s unsanitised on the GCC leg beside it.
+        # else. ASan and UBSan put them past any sensible gate time: this job
+        # took 2583 s on run 32524201635 with them and 98 s on run 32527263942
+        # without, against 250 s for the same suite unsanitised on the GCC leg
+        # beside it. A gate nobody waits for is not a gate.
         #
         # Little is given up. The sweeps are deterministic and exhaustive, so
         # the other six legs see every pair they would have seen; and the
