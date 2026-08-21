@@ -52,13 +52,20 @@ struct CheckUnary {
   }
 };
 
+//! The comparison contract for one ordered pair
+//!
+//! Both host types: a shape that orders correctly through `float` still has to
+//! order the same way through `double`, and the two legs cost almost nothing.
+//! Shared by the quadratic 8-bit check and the exhaustive 16-bit sweep.
+template <typename T> bool comparison_matches_host(T x, T y) {
+  return compare(x, y) == compare(x.to_float(), y.to_float()) &&
+         compare(x, y) == compare(x.to_double(), y.to_double());
+}
+
 struct CheckComparison {
   template <typename T> static bool check() {
     return for_all<T>([](T x) {
-      return for_all<T>([x](T y) {
-        return compare(x, y) == compare(x.to_float(), y.to_float()) &&
-               compare(x, y) == compare(x.to_double(), y.to_double());
-      });
+      return for_all<T>([x](T y) { return comparison_matches_host(x, y); });
     });
   }
 };
@@ -112,6 +119,12 @@ TEST(Ops, Equality) { test_all_types<CheckEquality>(); }
 TEST(Ops, UnarySignAndAbs) { test_all_types<CheckUnary>(); }
 
 TEST(Ops, Comparison) { test_paired_types<CheckComparison>(); }
+
+//! The same contract over all 2**32 ordered pairs of the 16-bit shapes
+TEST(Ops, EveryPairComparesLikeHost) {
+  expect_all_pairs<E5M10>(comparison_matches_host<E5M10>);
+  expect_all_pairs<E8M7>(comparison_matches_host<E8M7>);
+}
 
 TEST(Ops, Classification) { test_all_types<CheckClassification>(); }
 

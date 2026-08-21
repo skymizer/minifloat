@@ -5,7 +5,7 @@ check: test
 	if command -v gtest-parallel; then gtest-parallel ./test; else ./test; fi
 
 test: $(TEST_SOURCES) tests/support.hpp minifloat.hpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -I. -o $@ $(TEST_SOURCES) -lgtest -lgtest_main
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -pthread -I. -o $@ $(TEST_SOURCES) -lgtest -lgtest_main
 
 bench: benches/arith.cpp minifloat.hpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -DNDEBUG -I. -o $@ $<
