@@ -1102,6 +1102,54 @@ private:
     return T::from_bits(0);
   }
 
+  // floor(log10(max())), read off the maximal finite code rather than off
+  // `MAX_EXP`. The two part company wherever a format spends the top of its
+  // exponent range on something that is not a number: `FN<5, 2>` tops out at
+  // 2^17 * (1 - 2^-2), which is under 10^5 although `MAX_EXP` is 17, and
+  // `FN<E, 0>` loses its whole top row to the one NaN. Reading the code also
+  // makes the bias fall out for free, wherever a caller supplies an odd one.
+  static constexpr int exact_max_exponent10() noexcept {
+    // log2(1 - 2^-p) indexed by precision p, so that a maximal finite
+    // magnitude is 2^BINADE * (1 - 2^-PRECISION). Index 0 is unreachable —
+    // a maximum's precision is at least 1 — and its entry is a leftover.
+    // `E + M < 16` bounds the precision at 15. Shared with the minifloat-rs
+    // sibling, which spells the same table `detail::LOG2_SIGNIFICAND`.
+    constexpr double LOG2_SIGNIFICAND[16] = {
+        -2.0,
+        -1.0,
+        -4.15037499278843813e-1,
+        -1.92645077942395881e-1,
+        -9.31094043914814651e-2,
+        -4.58036896131247886e-2,
+        -2.27200765000835289e-2,
+        -1.13153132278341461e-2,
+        -5.64656314114206272e-3,
+        -2.82051906237866263e-3,
+        -1.40957025467135363e-3,
+        -7.04612976589372706e-4,
+        -3.52263471629021385e-4,
+        -1.76120984274024062e-4,
+        -8.80578045800263834e-5,
+        -4.40282304417772115e-5,
+    };
+    constexpr double LOG10_2 = 0.30102999566398119521373889472449;
+
+    constexpr unsigned MAG = Format::MAX_FINITE_MAG;
+    constexpr unsigned MAN_MASK = (1U << T::MANTISSA_BITS) - 1U;
+    // The significand is one bit shorter wherever the all-ones magnitude is
+    // spent elsewhere; `M == 0` falls out of an empty mask matching itself.
+    constexpr int PRECISION = T::MANTISSA_BITS + ((MAG & MAN_MASK) == MAN_MASK);
+    // `E >= 2` leaves the maximal code's exponent field at 2 or more, so this
+    // is always the binade of a normal value.
+    constexpr int BINADE = static_cast<int>(MAG >> T::MANTISSA_BITS) - T::BIAS + 1;
+
+    const double log10_max = (BINADE + LOG2_SIGNIFICAND[PRECISION]) * LOG10_2;
+    // `std::floor` is not constexpr in C++17, and truncating is not floor
+    // below zero — a large enough bias puts `max()` under 1.
+    const auto truncated = static_cast<int>(log10_max);
+    return truncated - (truncated > log10_max);
+  }
+
 public:
   static constexpr bool is_specialized = true;
   static constexpr bool is_signed = true;
@@ -1125,7 +1173,7 @@ public:
   static constexpr int min_exponent = T::MIN_EXP;
   static constexpr int max_exponent = T::MAX_EXP;
   static constexpr int min_exponent10 = (T::MIN_EXP - 1) * 30103 / 100000;
-  static constexpr int max_exponent10 = T::MAX_EXP * 30103 / 100000;
+  static constexpr int max_exponent10 = exact_max_exponent10();
   static constexpr bool traps = false;
   static constexpr bool tinyness_before = false;
 
