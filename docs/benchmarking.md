@@ -169,11 +169,18 @@ Measured on this box, on rows whose code did not change:
 
 | calibration rows | duration | band |
 | --- | --- | --- |
-| operator rows, sign-flip build pair, GCC | 2.3 – 5.2 ns | 0.971x – 1.025x |
-| operator rows, sign-flip build pair, Clang | 2.0 – 7.0 ns | 0.987x – 1.012x |
-| operator rows, `bits_from` build pair, GCC | 2.2 – 5.2 ns | 0.886x – 1.093x |
-| conversion rows, `bits_from` build pair, GCC | 0.7 – 1.6 ns | 0.801x – 1.245x |
-| conversion rows, `bits_from` build pair, Clang | 0.7 – 1.7 ns | 0.701x – 1.164x |
+| operator rows, sign-flip pair, GCC | 2.3 – 5.2 ns | 0.971x – 1.025x |
+| operator rows, sign-flip pair, Clang | 2.0 – 7.0 ns | 0.987x – 1.012x |
+| operator rows, `bits_from` pair, GCC | 2.2 – 5.2 ns | 0.886x – 1.093x |
+| conversion rows, `bits_from` pair, GCC | 0.7 – 1.6 ns | 0.801x – 1.245x |
+| conversion rows, `bits_from` pair, Clang | 0.7 – 1.7 ns | 0.701x – 1.164x |
+
+The `bits_from` pair is `0805ff1` against `3c783e3`, and anyone can rebuild it.
+The sign-flip pair is `9eea74d` against a patch that was measured and reverted,
+so only one side of it survives in the history; what the patch did is described
+in [arithmetic.md](arithmetic.md)'s nulls section, down to the instruction
+sequences, which is enough to reconstruct it but is not the same as a commit.
+Treat those two rows accordingly.
 
 Two things vary, and both matter.  Shorter rows widen the band, because a fixed
 number of cycles of misalignment is a larger fraction of them.  And the *same*
