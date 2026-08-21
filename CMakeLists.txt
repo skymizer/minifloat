@@ -26,6 +26,9 @@ option(SKYMIZER_MINIFLOAT_FETCH_GTEST
 if(SKYMIZER_MINIFLOAT_BUILD_TESTS)
   enable_testing()
 
+  # The exhaustive 16-bit pair sweeps in tests/support.hpp run on std::thread.
+  find_package(Threads REQUIRED)
+
   if(SKYMIZER_MINIFLOAT_FETCH_GTEST)
     include(FetchContent)
     if(POLICY CMP0135)
@@ -49,7 +52,7 @@ if(SKYMIZER_MINIFLOAT_BUILD_TESTS)
     tests/ops.cpp
     tests/spec.cpp)
   target_link_libraries(skymizer-minifloat-test
-    PRIVATE skymizer::minifloat GTest::gtest_main)
+    PRIVATE skymizer::minifloat GTest::gtest_main Threads::Threads)
   add_test(NAME skymizer-minifloat-test COMMAND skymizer-minifloat-test)
 endif()
 

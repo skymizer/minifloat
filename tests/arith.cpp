@@ -22,6 +22,27 @@ template <typename Operation, typename T> bool matches_host(T x, T y) {
   return same_mini(op(x, y), T{reference});
 }
 
+//! `matches_host`'s twin through `float`
+//!
+//! `float` deliberately, not `double`: this is the referee for the route
+//! `benches/arith.cpp` times the 16-bit shapes against, and nothing else in
+//! the suite covers it.  Below 2p + 2 digits in the intermediate, rounding
+//! twice can differ from rounding once, so a shape gets this treatment only
+//! where `route` in the bench would grant it a `float`.
+template <typename Operation, typename T> bool matches_float(T x, T y) {
+  const Operation op;
+  const float reference = op(x.to_float(), y.to_float());
+  if (!T::HAS_NAN && (std::isnan)(reference))
+    return true;
+  return same_mini(op(x, y), T{reference});
+}
+
+//! All four operators of one ordered pair against the float route
+template <typename T> bool float_arithmetic_matches(T x, T y) {
+  return matches_float<std::plus<>>(x, y) && matches_float<std::minus<>>(x, y) &&
+         matches_float<std::multiplies<>>(x, y) && matches_float<std::divides<>>(x, y);
+}
+
 struct CheckHostArithmetic {
   template <typename T> static bool check() {
     return for_all<T>([](T x) {
@@ -277,6 +298,18 @@ struct CheckSpecialLadder {
 } // namespace
 
 TEST(Arith, MatchesHostRoundTrip) { test_paired_types<CheckHostArithmetic>(); }
+
+//! Every ordered pair of the 16-bit shapes, against the float route
+//!
+//! `CheckHostArithmetic` stops at 11 bits because the check is quadratic; this
+//! carries the same idea to the two shapes the bench actually publishes, all
+//! 2**32 pairs of each.  `IEEE<2, 13>` is exact in a `float` and still not
+//! entitled to one -- a product of two of its significands is 28 digits -- so
+//! it is left out here exactly as `route` leaves it out of the ratio table.
+TEST(Arith, EveryPairMatchesFloatRoundTrip) {
+  expect_all_pairs<E5M10>(float_arithmetic_matches<E5M10>);
+  expect_all_pairs<E8M7>(float_arithmetic_matches<E8M7>);
+}
 
 TEST(Arith, WideFormatsMatchHostRoundTrip) { test_wide_types<CheckWideHostArithmetic>(); }
 

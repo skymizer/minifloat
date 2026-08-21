@@ -11,11 +11,14 @@
 #include "minifloat.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <limits>
+#include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -57,6 +60,64 @@ template <typename T, typename Predicate> bool for_all(Predicate pred) {
     if (!pred(T::from_bits(static_cast<typename T::Storage>(bits))))
       return false;
   return true;
+}
+
+//! A `T` from a code widened for iteration
+template <typename T> T from_code(std::uint32_t bits) {
+  return T::from_bits(static_cast<typename T::Storage>(bits));
+}
+
+//! First ordered pair of codes failing `pred`, or nothing
+//!
+//! Exhaustive over all 2**32 ordered pairs of a 16-bit shape, which one thread
+//! walks in minutes rather than the milliseconds an 8-bit shape takes.  The
+//! left operand is striped across the hardware threads and every stripe walks
+//! the whole right operand, so the sweep covers the same pairs for any core
+//! count, one included.  `pred` runs on all of them at once and must be pure.
+//!
+//! No GoogleTest assertion fires inside a worker: gtest documents its
+//! assertions as thread-safe on pthreads platforms only, and CI runs MSVC.  An
+//! `exchange` elects the one thread that records its pair, `join` orders that
+//! write before the caller's read, and the caller re-runs `pred` itself.
+template <typename T, typename Predicate>
+std::optional<std::pair<std::uint32_t, std::uint32_t>> find_failing_pair(Predicate pred) {
+  constexpr std::uint32_t END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
+  const unsigned stripes = std::max(1U, std::thread::hardware_concurrency());
+
+  std::atomic<bool> found{false};
+  std::pair<std::uint32_t, std::uint32_t> failing{};
+  std::vector<std::thread> pool;
+  pool.reserve(stripes);
+
+  for (unsigned stripe = 0; stripe < stripes; ++stripe)
+    pool.emplace_back([&pred, &found, &failing, stripe, stripes] {
+      for (std::uint32_t left = stripe; left < END; left += stripes) {
+        if (found.load(std::memory_order_relaxed))
+          return;
+        for (std::uint32_t right = 0; right < END; ++right)
+          if (!pred(from_code<T>(left), from_code<T>(right))) {
+            if (!found.exchange(true))
+              failing = {left, right};
+            return;
+          }
+      }
+    });
+
+  for (auto &worker : pool)
+    worker.join();
+
+  if (found.load())
+    return failing;
+  return std::nullopt;
+}
+
+//! Sweep every ordered pair of `T`, reporting the first failure single-threaded
+template <typename T, typename Predicate> void expect_all_pairs(Predicate pred) {
+  const auto failing = find_failing_pair<T>(pred);
+  if (!failing)
+    return;
+  EXPECT_TRUE(pred(from_code<T>(failing->first), from_code<T>(failing->second)))
+      << describe<T>() << " bits " << failing->first << ", " << failing->second;
 }
 
 //! Run `Checker::check<T>()` for every `T` in the pack
