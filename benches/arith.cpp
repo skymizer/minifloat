@@ -102,6 +102,18 @@ template <typename T> std::vector<std::pair<T, T>> draw_pairs() {
 //! The host float a shape may be compared against
 enum struct Route { None, Float, Double };
 
+//! The shape *is* `float`, so its round trip through one is the identity
+//!
+//! Precision, exponent range and non-finite semantics all have to match.
+//! `FN<8, 23>` and `Finite<8, 23>` reach one binade further than `float` does,
+//! and `IEEE<7, 23>` would fall a binade short, which turns a `float` normal
+//! into a shape subnormal and rounds it a second time.  `IEEE<8, 23>` —
+//! `BF<32>` — is the only admitted shape that clears all three.
+template <typename T> constexpr bool is_host_float() {
+  return T::HAS_INF && T::HAS_NAN && T::MANTISSA_DIGITS == FLT_MANT_DIG &&
+         T::MIN_EXP == FLT_MIN_EXP && T::MAX_EXP == FLT_MAX_EXP;
+}
+
 //! The narrowest host float that rounds every operator like the shape does
 //!
 //! Two things have to hold.  The operands must be exact, or the round trip
@@ -110,10 +122,15 @@ enum struct Route { None, Float, Double };
 //! the intermediate and then to the shape can differ from rounding to the shape
 //! once (Figueroa 1995).  Exactness alone is not enough — `IEEE<2, 13>` is
 //! exact in `float`, yet a product of two of its significands is 28 digits.
+//!
+//! The 2p + 2 rule is about *narrowing*, and `is_host_float` is the case where
+//! nothing narrows.  Applying the rule there charged `BF<32>` a `double` and a
+//! software re-encode to emulate arithmetic the FPU already performs exactly,
+//! which flattered the integer route on every `BF<32>` row measured before this.
 template <typename T> constexpr Route route() {
   constexpr int DIGITS = 2 * T::MANTISSA_DIGITS + 2;
 
-  if (T::HAS_EXACT_F32_CONVERSION && DIGITS <= FLT_MANT_DIG)
+  if (is_host_float<T>() || (T::HAS_EXACT_F32_CONVERSION && DIGITS <= FLT_MANT_DIG))
     return Route::Float;
   if (T::HAS_EXACT_F64_CONVERSION && DIGITS <= DBL_MANT_DIG)
     return Route::Double;
