@@ -18,6 +18,9 @@
 //! one exists: a host float cannot referee a shape it cannot hold, and its NaN
 //! carries a sign that means nothing.  Speed is the bonus this file measures.
 //!
+//! A shape that *is* a host float has one route rather than two, and the ratio
+//! table skips it rather than timing a comparison against itself.
+//!
 //! A second table follows with the unary bodies — negation, `abs`, both
 //! conversions out, and construction back in — which have no second route and
 //! so report an absolute time, comparable only against another build of this
@@ -102,18 +105,6 @@ template <typename T> std::vector<std::pair<T, T>> draw_pairs() {
 //! The host float a shape may be compared against
 enum struct Route { None, Float, Double };
 
-//! The shape *is* `float`, so its round trip through one is the identity
-//!
-//! Precision, exponent range and non-finite semantics all have to match.
-//! `FN<8, 23>` and `Finite<8, 23>` reach one binade further than `float` does,
-//! and `IEEE<7, 23>` would fall a binade short, which turns a `float` normal
-//! into a shape subnormal and rounds it a second time.  `IEEE<8, 23>` —
-//! `BF<32>` — is the only admitted shape that clears all three.
-template <typename T> constexpr bool is_host_float() {
-  return T::HAS_INF && T::HAS_NAN && T::MANTISSA_DIGITS == FLT_MANT_DIG &&
-         T::MIN_EXP == FLT_MIN_EXP && T::MAX_EXP == FLT_MAX_EXP;
-}
-
 //! The narrowest host float that rounds every operator like the shape does
 //!
 //! Two things have to hold.  The operands must be exact, or the round trip
@@ -123,14 +114,17 @@ template <typename T> constexpr bool is_host_float() {
 //! once (Figueroa 1995).  Exactness alone is not enough — `IEEE<2, 13>` is
 //! exact in `float`, yet a product of two of its significands is 28 digits.
 //!
-//! The 2p + 2 rule is about *narrowing*, and `is_host_float` is the case where
+//! The 2p + 2 rule is about *narrowing*, and `IS_HOST_FLOAT` is the case where
 //! nothing narrows.  Applying the rule there charged `BF<32>` a `double` and a
 //! software re-encode to emulate arithmetic the FPU already performs exactly,
 //! which flattered the integer route on every `BF<32>` row measured before this.
+//! Those rows are gone now — `bench_shape` skips a shape that *is* a host float
+//! outright — but the first disjunct stays, so that dropping the skip cannot
+//! quietly send `BF<32>` back through a `double` a second time.
 template <typename T> constexpr Route route() {
   constexpr int DIGITS = 2 * T::MANTISSA_DIGITS + 2;
 
-  if (is_host_float<T>() || (T::HAS_EXACT_F32_CONVERSION && DIGITS <= FLT_MANT_DIG))
+  if (T::IS_HOST_FLOAT || (T::HAS_EXACT_F32_CONVERSION && DIGITS <= FLT_MANT_DIG))
     return Route::Float;
   if (T::HAS_EXACT_F64_CONVERSION && DIGITS <= DBL_MANT_DIG)
     return Route::Double;
@@ -271,10 +265,19 @@ template <typename T> void bench_unary_shape(const char *shape) {
 }
 
 //! One line per operator for a shape, or one line saying why it has none
+//!
+//! Two shapes have no ratio to report, for opposite reasons.  `IEEE<12, 3>`
+//! outruns every host float, so there is nothing to compare against.  `BF<32>`
+//! *is* a host float, and the library gives it the FPU — both arms would run
+//! the same instructions, and a row that reads 1.000x by construction is not a
+//! measurement but a tautology dressed as one.
 template <typename T> void bench_shape(const char *shape) {
   constexpr Route R = route<T>();
 
-  if constexpr (R == Route::None) {
+  if constexpr (T::IS_HOST_FLOAT) {
+    if (!emit_json)
+      std::printf("%-14s skipped: the library computes this shape on the FPU\n", shape);
+  } else if constexpr (R == Route::None) {
     if (!emit_json)
       std::printf("%-14s skipped: no host float rounds like it\n", shape);
   } else {
