@@ -247,10 +247,11 @@ template <typename Float>
 //!
 //! An addend further below the other than this cannot move it at all: the
 //! other is a representable value, and anything under half its ULP rounds
-//! straight back to it.  Dropping such an addend is also what keeps the
-//! aligned sum inside an `int64_t`, two 15-bit significands and this shift
-//! being 62 bits at worst.
-constexpr int ALIGN_CAP = 46;
+//! straight back to it.  For p-bit significands the cap must be at least p + 1,
+//! and no more than 62 - p keeps the aligned sum inside an `int64_t`.  32 meets
+//! both bounds through p = 30: two 30-bit significands and this shift make a
+//! 63-bit sum at worst.
+constexpr int ALIGN_CAP = 32;
 
 //! One addend at the common exponent, signed
 //!
@@ -264,7 +265,7 @@ align(bool negative, std::uint64_t significand, int exponent, int base) noexcept
 
 //! Sum of two signed magnitudes, exact enough to round
 //!
-//! The caller is responsible for the significands fitting in 15 bits, which
+//! The caller is responsible for the significands fitting in 30 bits, which
 //! every minifloat does.
 [[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts add_parts(Parts x, Parts y) noexcept {
   const int top = x.exponent > y.exponent ? x.exponent : y.exponent;
