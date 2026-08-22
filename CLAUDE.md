@@ -7,7 +7,7 @@ and the short list of things that will bite you.*
 
 | Touching | Read first |
 | --- | --- |
-| any operator, `from_parts` / `to_parts`, `round_to_scale`, `ALIGN_CAP`, `QUOTIENT_BITS` | [docs/arithmetic.md](docs/arithmetic.md) |
+| any operator, `from_parts` / `to_parts`, `round_to_scale`, `ALIGN_CAP` | [docs/arithmetic.md](docs/arithmetic.md) |
 | `tests/arith.cpp`, the exact oracle, `reference_encode` in `tests/support.hpp` | [docs/arithmetic.md](docs/arithmetic.md) |
 | `benches/arith.cpp`, or any claim with a number in it | [docs/benchmarking.md](docs/benchmarking.md) |
 | the format policy chain, adding a format, adding an alias | [README.md](README.md), its Design section |

@@ -114,8 +114,8 @@ struct Parts {
   }
 #endif
   // The constant-evaluated path, and the run-time one on 32-bit MSVC.  Six
-  // halvings, not a shift per bit: a sum or quotient arrives here with a
-  // 57-bit significand, and this is on the path of every operator.
+  // halvings, not a shift per bit: a sum or quotient can arrive here with a
+  // 63-bit significand, and this is on the path of every operator.
   int result = 0;
   if ((x >> 32) != 0) {
     x >>= 32;
@@ -219,8 +219,8 @@ template <typename Float>
 //! of any host float.
 //!
 //! The `shift >= 64` guard covers right shifts only.  A left shift is a caller
-//! contract: every call site here bounds it structurally, and a minifloat code
-//! is at most 16 bits wide, so the quotient always has room in an `int64_t`.
+//! contract: every significand handed in is below 2**63, so it has room in an
+//! `int64_t`.
 //!
 //! `parity_offset` maps the retained bit's parity to the destination code's.
 //! It matters only when the format has no mantissa bit, where the code's low
@@ -283,30 +283,28 @@ align(bool negative, std::uint64_t significand, int exponent, int base) noexcept
   };
 }
 
-//! Quotient bits computed below the dividend's own
-//!
-//! A minifloat keeps at most 15 of them; the rest are the guard and sticky
-//! room every rounding needs.  Unrelated to `ALIGN_CAP` despite the shared
-//! value: one is an alignment window, the other a quotient width.
-constexpr int QUOTIENT_BITS = 46;
-
 //! Quotient of two magnitudes, exact enough to round
 //!
 //! The remainder collapses into the lowest bit of the quotient, the sticky bit
-//! every divider keeps.  The caller is responsible for a nonzero divisor and
-//! for both significands fitting in 15 bits.
+//! every divider keeps.  A fixed shift leaves too few bits when a subnormal
+//! dividend meets a full-width divisor, so the dividend is normalized to bit
+//! 62.  That yields at least 63 - p quotient bits for p-bit significands, enough
+//! to round through p = 30, while keeping the quotient below 2**63.  The caller
+//! is responsible for a nonzero divisor and for both significands fitting in
+//! 30 bits.
 [[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts div_parts(
     bool negative, std::uint64_t significand, int exponent, std::uint64_t rhs_significand,
     int rhs_exponent
 ) noexcept {
-  const std::uint64_t numerator = significand << QUOTIENT_BITS;
+  const int shift = 62 - log2_floor(significand | 1U);
+  const std::uint64_t numerator = significand << shift;
   const std::uint64_t quotient = numerator / rhs_significand;
   const std::uint64_t remainder = numerator % rhs_significand;
 
   return {
       negative,
       quotient | static_cast<std::uint64_t>(remainder != 0),
-      exponent - rhs_exponent - QUOTIENT_BITS,
+      exponent - rhs_exponent - shift,
   };
 }
 
