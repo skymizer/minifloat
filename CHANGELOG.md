@@ -26,14 +26,21 @@ generated typedef grid are gone.
   its `FloatN` prefix: `E2M1FN`, `E2M3FN`, `E3M2FN`, `E3M4`, `E4M3`, `E4M3FN`,
   `E4M3FNUZ`, `E4M3B11FNUZ`, `E5M2`, `E5M2FNUZ`, `E5M10` (binary16), and `E8M7`
   (bfloat16).
+- `BF<N>` for the 10- through 32-bit brain-float family: an 8-bit exponent over
+  `N - 9` mantissa bits. `BF<16>` is `E8M7`, and `BF<32>` has `float`'s layout.
+- Formats through 32 total bits, stored in `uint_least32_t` where needed.
 - `HAS_INF`, `HAS_NAN`, and `HAS_NEG_ZERO` as public constants of every type.
 - `docs/arithmetic.md` and `docs/benchmarking.md`, recording the decisions
   behind the integer route and the protocol every measured claim has to meet,
   and `CLAUDE.md` as the routing table to them.
 - Exhaustive sweeps over all 2³² ordered pairs of `E5M10` and `E8M7`: the four
   operators against a `float` round trip, and the comparisons against both host
-  types. The other quadratic checks stop at 11 bits, and these two shapes are
-  the ones `benches/arith.cpp` publishes.
+  types. The other quadratic checks stop at 11 bits; these are the two benchmark
+  shapes routed through `float`, so they get the exhaustive referee.
+- Exhaustive code sweeps through 20 bits and odd-stride samples above that,
+  sampled wide-format exact-arithmetic and eligible host-round-trip checks, and
+  a `BF<32>` check that matches sampled non-NaN bit patterns in both directions
+  and preserves NaN class and sign while payloads canonicalize.
 - A benchmark page at <https://skymizer.github.io/minifloat/dev/bench/>,
   refreshed by `.github/workflows/bench.yml` on every push to `main` from
   `./bench --json`. One shared-runner GCC sample per commit is a tripwire for a
@@ -54,6 +61,11 @@ generated typedef grid are gone.
   instead of being evaluated in a host `float` or `double` and rounded back.
   Every operator is now correctly rounded for every declared shape, and the four
   of them are `constexpr`. Encoding a host float shares that one rounding path.
+- Addition's alignment window is 32 binades instead of 46, and division
+  normalizes its dividend to bit 62 instead of using a fixed 46-bit shift. These
+  bounds keep the integer engine correctly rounded through 30-bit significands.
+- `IntegerDecode::exponent` is now `int32_t`, so formats with exponent fields of
+  16 bits or wider decode without overflowing.
 - Conversion to and from a host float no longer calls libm. Powers of two are
   built from the exponent field by `detail::exp2i` instead of `std::exp2` and
   `std::ldexp`, neither of which the compilers reliably folded even where the
