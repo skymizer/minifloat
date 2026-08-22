@@ -30,6 +30,11 @@ generated typedef grid are gone.
   `N - 9` mantissa bits. `BF<16>` is `E8M7`, and `BF<32>` has `float`'s layout.
 - Formats through 32 total bits, stored in `uint_least32_t` where needed.
 - `HAS_INF`, `HAS_NAN`, and `HAS_NEG_ZERO` as public constants of every type.
+- `IS_HOST_FLOAT`, true for a type that *is* `float` bit for bit — matching
+  precision, exponent range and non-finite semantics, which among the shapes
+  this library admits means `IEEE<8, 23>` and nothing else. It is a stronger
+  question than `HAS_EXACT_F32_CONVERSION`, which only asks whether a `float`
+  can hold every value.
 - `docs/arithmetic.md` and `docs/benchmarking.md`, recording the decisions
   behind the integer route and the protocol every measured claim has to meet,
   and `CLAUDE.md` as the routing table to them.
@@ -66,6 +71,20 @@ generated typedef grid are gone.
   instead of being evaluated in a host `float` or `double` and rounded back.
   Every operator is now correctly rounded for every declared shape, and the four
   of them are `constexpr`. Encoding a host float shares that one rounding path.
+- `BF<32>` computes on the FPU rather than on integer significands, being the
+  one shape where that costs no correctness: `IEEE<8, 23>` has `float`'s
+  precision, exponent range and non-finite semantics, so nothing narrows and
+  IEEE 754 already rounds each operator once to exactly the digits the shape
+  stores. Its four operators, its `to_float` and its construction from a
+  `float` are a `bit_cast` and an FPU instruction. Addition and subtraction
+  cost 0.13x and 0.08x of what they did under GCC 11.4 and Clang 14,
+  multiplication 0.34x and 0.17x, division 0.38x under both, `to_float` 0.18x
+  and 0.28x, and construction 0.41x and 0.35x. Two things the route still does
+  in software: the result's NaN is canonicalized, since a host's default NaN
+  sign is not portable, and a constant evaluation goes back to the integer
+  engine, `bit_cast` not being a constant expression before C++20. No other
+  shape is affected, and there is no way to ask for this one — `IS_HOST_FLOAT`
+  reports it, it does not select it.
 - Addition's alignment window is 32 binades instead of 46, and division
   normalizes its dividend to bit 62 instead of using a fixed 46-bit shift. These
   bounds keep the integer engine correctly rounded through 30-bit significands.
@@ -116,7 +135,9 @@ generated typedef grid are gone.
 - `round_normal_float_to_mantissa` and `round_normal_double_to_mantissa`, which
   were implementation details. The integer rounding path replaced them.
 - `USE_FLT_ADD` and `USE_FLT_MUL`, public constants that selected the host type
-  an operator evaluated in. There is no host route left to select.
+  an operator evaluated in. There is no host route left to select: the one
+  shape that reaches the FPU, `BF<32>`, reaches it because it *is* `float`, not
+  because a constant said so.
 
 ### Fixed
 
