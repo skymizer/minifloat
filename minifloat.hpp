@@ -317,11 +317,14 @@ enum struct Kind { Zero, Subnormal, Normal, Infinite, NaN };
 //! layer owns the bit space and nothing else: no zero, no subnormal, no
 //! reserved code point.  The layers above reinterpret parts of it.
 template <int E, int M, int B> struct ScientificFormat {
-  static_assert(E + M < 16);
+  static_assert(E + M < 32);
   static_assert(E >= 2);
+  static_assert(E <= 30);
   static_assert(M >= 0);
 
-  using Storage = std::conditional_t<(E + M < 8), std::uint_least8_t, std::uint_least16_t>;
+  using Storage = std::conditional_t<
+      (E + M < 8), std::uint_least8_t,
+      std::conditional_t<(E + M < 16), std::uint_least16_t, std::uint_least32_t>>;
 
   static constexpr Storage MAG_MASK = static_cast<Storage>((1U << (E + M)) - 1U);
   static constexpr Storage SIGN_MASK = static_cast<Storage>(1U << (E + M));
@@ -521,7 +524,7 @@ from_parts(Parts parts) noexcept {
 
 } // namespace detail
 
-//! Configurable signed floating-point type up to 16 bits
+//! Configurable signed floating-point type up to 32 bits
 //!
 //! `Format` is one of the layered policies in `detail`, each of which
 //! reinterprets one part of the bit space in terms of the layer below it.
@@ -991,7 +994,7 @@ operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
       return detail::invalid<Format>();
     return detail::huge<Format>(negative);
   }
-  // Two significands of at most 15 bits multiply exactly.
+  // Two significands of at most 30 bits multiply exactly.
   const detail::Parts product{
       negative, lhs.significand * rhs.significand, lhs.exponent + rhs.exponent
   };
@@ -1035,7 +1038,7 @@ operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
 //! See also `integer_decode`.
 struct IntegerDecode {
   std::uint64_t mantissa;
-  std::int16_t exponent;
+  std::int32_t exponent;
   std::int8_t sign;
 };
 
@@ -1070,7 +1073,7 @@ template <class Format> IntegerDecode integer_decode(Minifloat<Format> x) noexce
 
   return {
       mantissa,
-      static_cast<std::int16_t>(exponent - BIAS),
+      static_cast<std::int32_t>(exponent - BIAS),
       static_cast<std::int8_t>(sign),
   };
 }
@@ -1171,9 +1174,9 @@ private:
     // log2(1 - 2^-p) indexed by precision p, so that a maximal finite
     // magnitude is 2^BINADE * (1 - 2^-PRECISION). Index 0 is unreachable —
     // a maximum's precision is at least 1 — and its entry is a leftover.
-    // `E + M < 16` bounds the precision at 15. Shared with the minifloat-rs
+    // `E + M < 32` bounds the precision at 30. Shared with the minifloat-rs
     // sibling, which spells the same table `detail::LOG2_SIGNIFICAND`.
-    constexpr double LOG2_SIGNIFICAND[16] = {
+    constexpr double LOG2_SIGNIFICAND[31] = {
         -2.0,
         -1.0,
         -4.15037499278843813e-1,
@@ -1190,6 +1193,21 @@ private:
         -1.76120984274024062e-4,
         -8.80578045800263834e-5,
         -4.40282304417772115e-5,
+        -2.20139472639555020e-5,
+        -1.10069316433851864e-5,
+        -5.50345532462453928e-6,
+        -2.75172503805526697e-6,
+        -1.37586186296463416e-6,
+        -6.87930767466723669e-7,
+        -3.43965342729483034e-7,
+        -1.71982661113774261e-7,
+        -8.59913279941456218e-8,
+        -4.29956633563874719e-8,
+        -2.14978315180224060e-8,
+        -1.07489157189683711e-8,
+        -5.37445784947347765e-9,
+        -2.68722892223406186e-9,
+        -1.34361446049136169e-9,
     };
 
     constexpr unsigned MAG = Format::MAX_FINITE_MAG;

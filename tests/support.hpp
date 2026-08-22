@@ -52,11 +52,14 @@ template <typename T> std::string describe() {
          (T::HAS_NEG_ZERO ? " -0" : "");
 }
 
-//! Iterate over every representation of a minifloat type
+//! Iterate over every representation through 20 bits, and about 2**20 above it
+//!
+//! The wider walks use an odd stride so low bits and tie parity keep varying.
 template <typename T, typename Predicate> bool for_all(Predicate pred) {
-  constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
+  constexpr std::uint64_t END = UINT64_C(1) << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
+  constexpr std::uint64_t STRIDE = (END >> 20) | 1U;
 
-  for (unsigned bits = 0; bits < END; ++bits)
+  for (std::uint64_t bits = 0; bits < END; bits += STRIDE)
     if (!pred(T::from_bits(static_cast<typename T::Storage>(bits))))
       return false;
   return true;
@@ -86,6 +89,7 @@ template <typename T> T from_code(std::uint32_t bits) {
 //! and not the first.
 template <typename T, typename Predicate>
 std::optional<std::pair<std::uint32_t, std::uint32_t>> find_failing_pair(Predicate pred) {
+  static_assert(T::EXPONENT_BITS + T::MANTISSA_BITS < 16);
   constexpr std::uint32_t END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
   const unsigned stripes = std::max(1U, std::thread::hardware_concurrency());
 
@@ -159,7 +163,7 @@ template <typename Checker> void test_small_types() {
 template <typename Checker> void test_wide_types() {
   check_each<
       Checker, IEEE<5, 10>, IEEE<8, 7>, IEEE<11, 4>, IEEE<12, 3>, IEEE<12, 3, 1000>, FN<12, 3>,
-      FNUZ<12, 3>, Finite<12, 3>, IEEE<2, 13>>();
+      FNUZ<12, 3>, Finite<12, 3>, IEEE<2, 13>, IEEE<20, 11>>();
 }
 
 template <typename Checker> void test_all_types() {
@@ -332,8 +336,10 @@ template <typename T> std::vector<double> rounding_inputs() {
     inputs.push_back(bit_cast<double>(UINT64_C(0xFFF80000DEADBEEF)));
   }
 
-  inputs.reserve(inputs.size() + static_cast<std::size_t>(max + 2) * 8);
-  for (std::uint64_t code = 0; code <= max + 1; ++code) {
+  const std::uint64_t count = max + 2;
+  const std::uint64_t stride = (count >> 20) | 1U;
+  inputs.reserve(inputs.size() + static_cast<std::size_t>((count - 1) / stride + 1) * 8 + 16);
+  const auto append = [&inputs, inf](std::uint64_t code) {
     const auto value = code_value<T>(code);
     const double exact = std::ldexp(static_cast<double>(value.significand), value.exponent);
     const double midpoint =
@@ -344,7 +350,11 @@ template <typename T> std::vector<double> rounding_inputs() {
       inputs.push_back(x);
       inputs.push_back(-x);
     }
-  }
+  };
+  for (std::uint64_t code = 0; code < count; code += stride)
+    append(code);
+  append(max);
+  append(max + 1);
   return inputs;
 }
 

@@ -62,14 +62,17 @@ template <Style S, typename T> double oracle(unsigned bits) {
 }
 
 template <Style S, typename T> void check_oracle() {
-  constexpr unsigned END = 1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1);
-
-  for (unsigned bits = 0; bits < END; ++bits) {
-    const T x = T::from_bits(static_cast<typename T::Storage>(bits));
-    ASSERT_TRUE(same_double(x.to_double(), oracle<S, T>(bits)))
-        << describe<T>() << " bits=" << bits << " got=" << x.to_double()
-        << " want=" << oracle<S, T>(bits);
-  }
+  std::uint32_t failing = 0;
+  const bool matches = for_all<T>([&failing](T x) {
+    const auto bits = static_cast<std::uint32_t>(x.to_bits());
+    if (same_double(x.to_double(), oracle<S, T>(bits)))
+      return true;
+    failing = bits;
+    return false;
+  });
+  ASSERT_TRUE(matches) << describe<T>() << " bits=" << failing
+                       << " got=" << T::from_bits(failing).to_double()
+                       << " want=" << oracle<S, T>(failing);
 }
 
 //! All four layers agree on a finite value they can represent
@@ -98,7 +101,7 @@ TEST(Spec, FiniteBits) {
   test_finite_bits<5, 7>(-1.25F, 0b1'01111'0100000);
 }
 
-TEST(Spec, EveryBitPatternMatchesFormula) {
+TEST(Spec, BitPatternsMatchFormula) {
   check_oracle<Style::Finite, E2M1FN>();
   check_oracle<Style::Finite, E2M3FN>();
   check_oracle<Style::Finite, E3M2FN>();
@@ -128,6 +131,7 @@ TEST(Spec, EveryBitPatternMatchesFormula) {
   check_oracle<Style::FNUZ, FNUZ<12, 3>>();
   check_oracle<Style::Finite, Finite<12, 3>>();
   check_oracle<Style::IEEE, IEEE<2, 13>>();
+  check_oracle<Style::IEEE, IEEE<20, 11>>();
 }
 
 TEST(Spec, AliasRanges) {
@@ -196,6 +200,7 @@ TEST(Spec, NumericLimits) {
 
   static_assert(std::numeric_limits<E5M10>::max_exponent10 == 4);
   static_assert(std::numeric_limits<E8M7>::max_exponent10 == 38);
+  static_assert(std::numeric_limits<IEEE<2, 29>>::max_exponent10 == 0);
   static_assert(std::numeric_limits<E4M3FN>::max_exponent10 == 2);
   static_assert(std::numeric_limits<E2M1FN>::max_exponent10 == 0);
   static_assert(std::numeric_limits<E3M2FN>::max_exponent10 == 1);
