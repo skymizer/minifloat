@@ -110,11 +110,11 @@ int compare_exact(const Exact &exact, Scaled candidate) {
 
 //! Exact sum with one sticky bit for an addend beyond the aligned range
 Exact exact_sum(bool xn, Scaled x, bool yn, Scaled y) {
-  // A 14-bit significand shifted by more overflows `int64_t` once the 16-bit
-  // shapes run through here; 48 keeps both aligned addends under 2**62.  The
-  // sticky substitute below is deliberately unlike the engine's drop to zero,
+  // A 30-bit significand shifted by more overflows `int64_t` once the 32-bit
+  // shapes run through here; 31 keeps their sum under 2**62.  The different
+  // window and sticky substitute below are deliberately unlike the engine,
   // and both round alike.
-  constexpr int ALIGN_CAP = 48;
+  constexpr int ALIGN_CAP = 31;
   const int top = std::max(x.exponent, y.exponent);
   const int bottom = std::min(x.exponent, y.exponent);
   const int base = std::max(bottom, top - ALIGN_CAP);
