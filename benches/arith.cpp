@@ -287,6 +287,9 @@ template <typename Visit> void for_each_shape(Visit visit) {
   visit(E5M2FNUZ{}, "E5M2FNUZ");
   visit(E5M10{}, "E5M10");
   visit(E8M7{}, "E8M7");
+  visit(BF<20>{}, "BF20");
+  visit(BF<24>{}, "BF24");
+  visit(BF<32>{}, "BF32");
   visit(IEEE<11, 4>{}, "E11M4");
   visit(IEEE<2, 13>{}, "E2M13");
   visit(IEEE<12, 3>{}, "E12M3");
