@@ -36,11 +36,16 @@ generated typedef grid are gone.
 - Exhaustive sweeps over all 2³² ordered pairs of `E5M10` and `E8M7`: the four
   operators against a `float` round trip, and the comparisons against both host
   types. The other quadratic checks stop at 11 bits; these are the two benchmark
-  shapes routed through `float`, so they get the exhaustive referee.
+  shapes routed through `float` by the 2*p* + 2 rule, so they get the exhaustive
+  referee. `BF<32>` is on that route as well — it *is* `float`, so IEEE 754
+  rounds it correctly with nothing to narrow — and takes 2²² sampled pairs,
+  its own pair space being 2⁶⁴.
 - Exhaustive code sweeps through 20 bits and odd-stride samples above that,
-  sampled wide-format exact-arithmetic and eligible host-round-trip checks, and
-  a `BF<32>` check that matches sampled non-NaN bit patterns in both directions
-  and preserves NaN class and sign while payloads canonicalize.
+  sampled wide-format exact-arithmetic and eligible host-round-trip checks
+  reaching `IEEE<6, 25>` and `IEEE<2, 29>` at the *p* = 30 ceiling the engine is
+  argued correct to, and a `BF<32>` check that matches sampled non-NaN bit
+  patterns in both directions and preserves NaN class and sign while payloads
+  canonicalize.
 - A benchmark page at <https://skymizer.github.io/minifloat/dev/bench/>,
   refreshed by `.github/workflows/bench.yml` on every push to `main` from
   `./bench --json`. One shared-runner GCC sample per commit is a tripwire for a
