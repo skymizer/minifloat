@@ -60,6 +60,9 @@ fewer, spelled without its `FloatN` prefix.
 | `E5M10`        | `IEEE<5, 10>`    | `IEEEhalf` (binary16)  | 65504      |
 | `E8M7`         | `IEEE<8, 7>`     | `BFloat` (bfloat16)    | ≈ 3.39 · 10³⁸  |
 
+The brain-float family is `BF<N>`: `BF<16>` is `E8M7`, `BF<19>` has
+TensorFloat-32's layout, and `BF<32>` has `float`'s layout.
+
 The `FN` suffix in an alias is LLVM's name for that format, not a promise about
 NaN: the OCP MX types `E2M1FN`, `E2M3FN`, and `E3M2FN` have no NaN at all, which
 is why they are `Finite`. The `FN` *template* always means "the all-ones

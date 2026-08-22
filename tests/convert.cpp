@@ -115,6 +115,41 @@ TEST(Convert, ExplicitCastsMatchNamedConversions) { test_all_types<CheckExplicit
 
 TEST(Convert, IntegerDecodeReconstruction) { test_all_types<CheckIntegerDecodeReconstruction>(); }
 
+//! `BF<32>` matches every non-NaN bit; NaN payloads canonicalize but class and
+//! sign remain
+TEST(Convert, BF32MatchesFloatBitsAndNaNSemantics) {
+  const auto matches = [](std::uint32_t bits) {
+    const float value = bit_cast<float>(bits);
+    const BF<32> encoded{value};
+    const float decoded = BF<32>::from_bits(bits).to_float();
+
+    if ((std::isnan)(value))
+      return encoded.is_nan() && encoded.signbit() == (std::signbit)(value) &&
+             (std::isnan)(decoded) && (std::signbit)(decoded) == (std::signbit)(value);
+    return encoded.to_bits() == bits && bit_cast<std::uint32_t>(decoded) == bits;
+  };
+
+  for (const std::uint32_t bits : {
+           0U,
+           UINT32_C(0x80000000),
+           UINT32_C(0x00000001),
+           UINT32_C(0x007FFFFF),
+           UINT32_C(0x00800000),
+           UINT32_C(0x7F7FFFFF),
+           UINT32_C(0x7F800000),
+           UINT32_C(0xFF800000),
+           UINT32_C(0x7FC00000),
+           UINT32_C(0xFFC00000),
+       })
+    EXPECT_TRUE(matches(bits)) << bits;
+
+  Lcg random{UINT64_C(0x123456789ABCDEF0)};
+  for (unsigned i = 0; i < 1U << 16; ++i) {
+    const std::uint32_t bits = random.next();
+    ASSERT_TRUE(matches(bits)) << bits;
+  }
+}
+
 //! `detail::exp2i` stands in for `std::exp2` on the inexact conversion paths
 //!
 //! Its two boundaries are the ones an off-by-one in the field arithmetic moves:

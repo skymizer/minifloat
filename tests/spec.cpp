@@ -15,6 +15,7 @@ using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 
 namespace {
 using NoexceptCheck = IEEE<3, 4>;
+static_assert(std::is_same_v<BF<16>, E8M7>);
 static_assert(std::is_nothrow_default_constructible_v<NoexceptCheck>);
 static_assert(std::is_nothrow_constructible_v<NoexceptCheck, float>);
 static_assert(std::is_nothrow_constructible_v<NoexceptCheck, double>);
@@ -132,6 +133,9 @@ TEST(Spec, BitPatternsMatchFormula) {
   check_oracle<Style::Finite, Finite<12, 3>>();
   check_oracle<Style::IEEE, IEEE<2, 13>>();
   check_oracle<Style::IEEE, IEEE<20, 11>>();
+  check_oracle<Style::IEEE, BF<20>>();
+  check_oracle<Style::IEEE, BF<24>>();
+  check_oracle<Style::IEEE, BF<32>>();
 }
 
 TEST(Spec, AliasRanges) {
@@ -158,6 +162,10 @@ TEST(Spec, AliasRanges) {
   EXPECT_EQ(E5M2::max().to_double(), 57344.0);
   EXPECT_EQ(E5M10::max().to_double(), 65504.0);
   EXPECT_EQ(E8M7::max().to_double(), std::ldexp(255.0, 120));
+  EXPECT_EQ(BF<20>::max().to_double(), std::ldexp(4095.0, 116));
+  EXPECT_EQ(BF<32>::max().to_double(), static_cast<double>(std::numeric_limits<float>::max()));
+  static_assert(std::numeric_limits<BF<20>>::max_exponent == FLT_MAX_EXP);
+  static_assert(std::numeric_limits<BF<32>>::max_exponent == FLT_MAX_EXP);
 }
 
 TEST(Spec, NumericLimits) {
@@ -200,6 +208,7 @@ TEST(Spec, NumericLimits) {
 
   static_assert(std::numeric_limits<E5M10>::max_exponent10 == 4);
   static_assert(std::numeric_limits<E8M7>::max_exponent10 == 38);
+  static_assert(std::numeric_limits<BF<32>>::max_exponent10 == FLT_MAX_10_EXP);
   static_assert(std::numeric_limits<IEEE<2, 29>>::max_exponent10 == 0);
   static_assert(std::numeric_limits<E4M3FN>::max_exponent10 == 2);
   static_assert(std::numeric_limits<E2M1FN>::max_exponent10 == 0);
