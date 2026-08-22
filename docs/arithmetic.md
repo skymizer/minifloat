@@ -115,8 +115,8 @@ digits — without the integer route paying a wide exponent range for it.
 
 Between those two corners the compilers part.  Clang stays near even, 0.89x to
 1.11x, while GCC gives the host route every narrow shape except `FNUZ`, which it
-wins at 1.09x to 1.10x.  Same source, same box; that difference is in the back
-end and it has not been diagnosed.
+wins at 1.09x to 1.10x.  Same source, same box; the difference is in the back
+end, and the next section has the diagnosis.
 
 The brain floats keep the split rather than settling it — except `BF<32>`,
 which has no split to keep.  On a Ryzen 9 7950X3D, 2026-08-23, under 15
@@ -150,6 +150,72 @@ only ever adds time, and the 68 unchanged rows agree across the pair at a
 geomean of 0.999x under GCC and 1.007x under Clang.  The bands quoted above are
 wider than [benchmarking.md](benchmarking.md)'s usual for the same reason, and
 the per-row readings are taken against them rather than against a fixed floor.
+
+## GCC's addition gap is Clang vectorizing `add_parts`
+
+*The two `align` calls are a two-lane operation, and Clang 14 packs them into
+one.  GCC 11.4 does not.  Nothing else in `operator+` accounts for the split.*
+
+`operator+` decomposes into four cumulative stages, and timing them one on top
+of another says which one the compilers disagree about.  On an idle core 2 of a
+Ryzen 9 7950X3D, 2026-08-23, `-O3 -march=native -DNDEBUG`, minimum of 30 passes
+over 1024 operand pairs, each column the nanoseconds that stage *adds* to the
+one left of it:
+
+| `E5M2` | `to_parts` &times;2 | `add_parts` | `from_parts` | non-finite ladder |
+| --- | --- | --- | --- | --- |
+| GCC 11.4 | 1.107 | +1.095 | +1.634 | +0.311 |
+| Clang 14 | 1.034 | +0.549 | +2.023 | &minus;0.222 |
+
+`to_parts` is a tie, `from_parts` is a GCC *win* by a quarter, and `add_parts`
+costs GCC twice what it costs Clang.  The same shape of answer at `E4M3`
+(+1.033 against +0.551), `E5M10` (+1.031 against +0.474) and `E8M7` (+1.290
+against +0.878).
+
+The disassembly says why.  Clang loads both operand codes as one 16-bit load,
+moves them into an `xmm`, and runs both `to_parts` and both `align` calls in
+parallel lanes — `vpsllvq` for the two variable shifts, a masked `vpsubq` for
+the two sign negations, `vpshufd` plus `vpaddq` to fold the two aligned addends
+together.  GCC emits two scalar `shlx` / `neg` / `cmovs` chains and an `add`.
+That is the plan's first suspect confirmed and its stated mechanism refuted: the
+two `align` calls *are* where the time goes, but as a missed SLP vectorization,
+not as a missed if-conversion.
+
+Taking the vector ISA away confirms it and then reverses it:
+
+| `add_parts`, ns added | `-march=native` | `-march=x86-64-v3` | `-march=x86-64-v2` |
+| --- | --- | --- | --- |
+| GCC 11.4 | +1.095 | +1.007 | +1.041 |
+| Clang 14 | +0.549 | +0.794 | +1.335 |
+
+GCC is flat, because it never vectorized.  Clang's advantage is bought with
+AVX-512 on Zen 4, shrinks to AVX2, and inverts once the packing is worth less
+than the shuffles — at `x86-64-v2` Clang's `add_parts` is the slower one.  So
+this is not a back end getting `operator+` wrong.  It is one back end finding a
+two-lane operation in the source and the other not, and the finding is worth
+what the host's vector width is worth.
+
+Two things this closes off.  Since GCC's loss is not a defect to be fixed in
+the source, the addition gap does not shrink on its own, and a `+`/`-` route
+decision cannot wait on it.  And the non-finite ladder is not the story: it
+costs about 0.3 ns under GCC and nothing measurable under Clang, which the
+ladder column above shows directly.
+
+That is worth stating because the ladder was the first hypothesis, and it
+looked strong.  Inside `benches/arith.cpp`, GCC's `E4M3` soft addition ran
+4.775 ns against `E4M3FN`'s 3.968 — same *E*, same *M*, same bias, an identical
+integer kernel, and only the ladder between them.  A standalone binary holding
+*E*, *M* and bias fixed and varying only the format layer found no such
+ordering under either compiler; GCC's `IEEE` row came out *faster* than its
+`Finite` one.  Comparing two shapes' rows inside the big benchmark binary
+compares two placements as much as two bodies, which is
+[benchmarking.md](benchmarking.md)'s warning arriving in a new disguise: the
+rows a shape's own ratio is built from are adjacent and comparable, and rows
+belonging to different shapes are not.
+
+Rewriting the ladder as one `is_finite` guard was measured and rejected; the
+before-and-after is on the `scratch/add-nonfinite-guard` ref, along with the
+stage harness these numbers come from.
 
 ## `BF<32>` is `float`, and used to be timed as though it were not
 
@@ -390,16 +456,3 @@ avoiding 64-bit division on a 32-bit host.  Nobody has measured whether that is
 worth a format-dependent path, and the 64-bit hosts this is developed on would
 not show it.
 
-**The GCC addition and subtraction gap.**  At every narrow shape that is not
-`FNUZ` or `E2M13`, GCC's `operator+` and `operator-` lose to the host route
-where Clang's come out even — `E5M2` is 0.67x against 1.01x, from the same
-source.  Whether
-that is `add_parts`'s two `align` calls failing to be if-converted, the
-`std::int64_t` sum, or something in `from_parts` has not been diagnosed.
-
-The diagnosis is a disassembly comparison of one shape's `operator+` under both
-compilers, and picking the shape matters: `E5M2` or `E4M3`, not `E8M7` or
-`E11M4`, since those two lose under both compilers and so have no difference to
-show.  `FNUZ` is the other end of the same question — GCC wins those at 1.09x
-to 1.10x while losing their non-`FNUZ` neighbours, which is a large enough
-split within one compiler to be a clue on its own.
