@@ -69,6 +69,19 @@ generated typedef grid are gone.
   stays at 199711L without `/Zc:__cplusplus`, and it is on the path of every
   operator and every host-float conversion through `from_parts`. The MSVC leg's
   exhaustive 2³² sweeps went from 783 s to 594 s.
+- `detail::log2_floor` then goes further on 64-bit MSVC, calling
+  `_BitScanReverse64` outside constant evaluation and keeping the halving search
+  for inside it. The discriminator is `__builtin_is_constant_evaluated`, which
+  MSVC exposes as a compiler intrinsic in every standard mode rather than as the
+  C++20 library entity, so the C++17 leg reaches it; the intrinsic is declared in
+  the header and pinned with `#pragma intrinsic` rather than pulled in with
+  `<intrin.h>`, which would be a dependency the library does not otherwise take.
+  32-bit MSVC, which has no 64-bit bit scan, keeps the halving search. The MSVC
+  leg's sweeps went from 594 s to 508 s at the median of six runs each. Note
+  that GitHub's Windows pool is bimodal — the same six runs also drew a host
+  where those figures are 352 s and 292 s — so the two thirds of the original
+  783 s that survives the halving search is largely which host the job landed
+  on, not codegen: on a fast draw this leg is level with GCC/Linux.
 
 - An invalid operation now returns the format's own NaN, or its maximum finite
   value where the format has none, rather than inheriting a host NaN's sign:
