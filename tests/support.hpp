@@ -160,10 +160,15 @@ template <typename Checker> void test_small_types() {
 }
 
 //! Shapes reaching conversion paths that no 8-bit type can reach
+//!
+//! The last two are here for precision, not for a conversion path: `IEEE<6, 25>`
+//! is the witness the fixed-width divider failed, and `IEEE<2, 29>` sits at the
+//! *p* = 30 ceiling `add_parts` and `div_parts` are argued correct up to.
 template <typename Checker> void test_wide_types() {
   check_each<
       Checker, IEEE<5, 10>, IEEE<8, 7>, IEEE<11, 4>, IEEE<12, 3>, IEEE<12, 3, 1000>, FN<12, 3>,
-      FNUZ<12, 3>, Finite<12, 3>, IEEE<2, 13>, IEEE<20, 11>, BF<20>, BF<24>, BF<32>>();
+      FNUZ<12, 3>, Finite<12, 3>, IEEE<2, 13>, IEEE<20, 11>, BF<20>, BF<24>, BF<32>, IEEE<6, 25>,
+      IEEE<2, 29>>();
 }
 
 template <typename Checker> void test_all_types() {

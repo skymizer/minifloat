@@ -69,7 +69,7 @@ nothing.
 `make check` before anything else, and before any benchmarking.
 
 It is exhaustive where exhaustive is affordable: every bit pattern through 20
-bits, and about 2<sup>20</sup> patterns on an odd stride above that, across 52
+bits, and about 2<sup>20</sup> patterns on an odd stride above that, across 54
 declared shapes for the encoding, conversion and classification checks; every
 *ordered pair* of the 42 shapes through 11 bits for comparison; and every
 *ordered pair* of the 39 shapes at 8 bits and under for arithmetic.  `E5M10` and
@@ -79,7 +79,7 @@ the sweeps below.  Three gates live in there and it is worth not conflating them
 - **the exact integer oracle** (`Arith.CorrectlyRoundedSmallFormats`) — refereed
   by cross-multiplication and a binary search over the format's own codes, with
   no float involved and no constant shared with the engine; the wide twin
-  samples 2<sup>16</sup> pairs of the 13-shape roster;
+  samples 2<sup>16</sup> pairs of the 15-shape roster;
 - **the host round-trip sweep** (`Arith.MatchesHostRoundTrip`) — narrower, but
   it covers the non-finite pairs the exact oracle skips, and it is what licenses
   `benches/arith.cpp` to time the two routes against each other;
