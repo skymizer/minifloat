@@ -469,8 +469,8 @@ template <int E, int M, int B> struct FnuzFormat {
 //! decodes to significand `1 << M`, and multiplication and division use
 //! `significand == 0` as their zero test after decoding unconditionally.
 template <class Format>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts
-to_parts(typename Format::Storage bits) noexcept {
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts to_parts(typename Format::Storage bits
+) noexcept {
   constexpr int M = Format::MANTISSA_BITS;
   const auto magnitude = static_cast<std::uint64_t>(bits & Format::MAG_MASK);
   const auto field = static_cast<int>(magnitude >> M);
@@ -488,8 +488,8 @@ to_parts(typename Format::Storage bits) noexcept {
 //! exact number, or one whose lowest bit is sticky, so it can come from a
 //! `double` or from arithmetic of its own.
 template <class Format>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage
-from_parts(Parts parts) noexcept {
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage from_parts(Parts parts
+) noexcept {
   using Storage = typename Format::Storage;
   constexpr int M = Format::MANTISSA_BITS;
   const auto sign_bit = static_cast<Storage>(parts.negative ? Format::SIGN_MASK : Storage{0});
@@ -520,6 +520,49 @@ from_parts(Parts parts) noexcept {
   const auto code = static_cast<Storage>(std::min<std::int64_t>(magnitude, Format::OVERFLOW_MAG));
   // A value that rounds to zero drops its sign for the same reason a zero does.
   return static_cast<Storage>(code | ((Format::HAS_NEG_ZERO || code != 0) ? sign_bit : Storage{0}));
+}
+
+//! The shape *is* `float`, so a round trip through one is the identity
+//!
+//! Precision, exponent range and non-finite semantics all have to match.
+//! `FN<8, 23>` and `Finite<8, 23>` reach one binade further than `float` does,
+//! and `IEEE<7, 23>` would fall a binade short, which turns a `float` normal
+//! into a shape subnormal and rounds it a second time.  `IEEE<8, 23>` --
+//! `BF<32>` -- is the only admitted shape that clears all three.
+//!
+//! The last two conjuncts are what `HAS_EXACT_F32_CONVERSION` carries for the
+//! same reason: a `float` that is not IEEE 754 has no layout to `bit_cast` to.
+template <class Format> constexpr bool is_host_float() noexcept {
+  return Format::HAS_INF && Format::HAS_NAN && Format::MANTISSA_BITS + 1 == FLT_MANT_DIG &&
+         Format::MIN_EXP == FLT_MIN_EXP && Format::MAX_EXP == FLT_MAX_EXP &&
+         std::numeric_limits<float>::radix == 2 && std::numeric_limits<float>::is_iec559;
+}
+
+//! Is this call being evaluated at compile time?
+//!
+//! The `float` route is a run-time route: `bit_cast` above is a `memcpy` before
+//! C++20, and no `memcpy` is a constant expression.  Answering `true` where the
+//! compiler cannot be asked is the safe lie -- it costs a shape that *is* a host
+//! float its FPU route and nothing else, the integer engine computing the same
+//! value either way.
+constexpr bool in_constant_expression() noexcept {
+#if defined(__GNUC__) || defined(__clang__) || (defined(_MSC_VER) && _MSC_VER >= 1925)
+  return __builtin_is_constant_evaluated();
+#else
+  return true;
+#endif
+}
+
+//! A host-float shape's code as the `float` it is
+//!
+//! `Storage` is `std::uint_least32_t`, which is only *at least* 32 bits wide;
+//! `bit_cast` needs exactly as many as `float` has, and `IEEE<8, 23>` never
+//! fills more than 32.
+template <class Format>
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST inline float as_host_float(typename Format::Storage bits
+) noexcept {
+  static_assert(is_host_float<Format>());
+  return bit_cast<float>(static_cast<std::uint32_t>(bits));
 }
 
 } // namespace detail
@@ -557,6 +600,13 @@ public:
       FLT_MANT_DIG >= MANTISSA_DIGITS && FLT_MAX_EXP >= MAX_EXP && FLT_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<float>::radix == 2 && std::numeric_limits<float>::is_iec559;
 
+  //! Is this type `float`, bit for bit?
+  //!
+  //! Where it holds, `to_float` and construction from a `float` are the
+  //! identity and every operator runs on the FPU.  `detail::is_host_float` is
+  //! the predicate and says which shapes miss it and why.
+  static constexpr bool IS_HOST_FLOAT = detail::is_host_float<Format>();
+
   static constexpr bool HAS_EXACT_F64_CONVERSION =
       DBL_MANT_DIG >= MANTISSA_DIGITS && DBL_MAX_EXP >= MAX_EXP && DBL_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<double>::radix == 2 && std::numeric_limits<double>::is_iec559;
@@ -572,6 +622,18 @@ private:
   //! any other.
   template <typename Float>
   [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
+    // A shape that *is* `float` has nothing to round and nothing to decompose.
+    // Its NaN still canonicalizes, because a payload is the one thing a code
+    // may carry that this library does not promise to keep, and the `double`
+    // constructor beside it cannot keep one either.  `double` itself still goes
+    // the long way: narrowing is a rounding, and `from_parts` owns those.
+    if constexpr (IS_HOST_FLOAT && std::is_same_v<Float, float>) {
+      const auto bits = static_cast<Storage>(bit_cast<std::uint32_t>(x));
+      if (!Format::is_nan(bits))
+        return bits;
+      return static_cast<Storage>((bits & Format::SIGN_MASK) | Format::NAN_BITS);
+    }
+
     const detail::Decomposed parts = detail::decompose(x);
     const auto sign = static_cast<Storage>(parts.negative ? Format::SIGN_MASK : Storage{0});
 
@@ -758,6 +820,9 @@ public:
   //! when the exponent range is too wide, and in that case a second conversion
   //! to float is safe.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE float to_float() const noexcept {
+    if constexpr (IS_HOST_FLOAT)
+      return detail::as_host_float<Format>(bits_);
+
     if constexpr (HAS_EXACT_F32_CONVERSION)
       return to_exact<float>();
 
@@ -931,6 +996,19 @@ SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format> huge(bool negative) noexcep
   return Minifloat<Format>::from_bits(static_cast<Storage>(Format::OVERFLOW_MAG | sign));
 }
 
+//! Wrap what the FPU worked out, canonicalizing its NaN
+//!
+//! The value is already the shape's, bit for bit, since the shape *is* `float`.
+//! The NaN is not: x86 signs its default NaN and ARM does not, and `invalid`
+//! exists so that a caller does not have to know which host it is on.  That is
+//! the same portability bug 0.1.0's host route had, and it is the only thing
+//! the FPU route still has to undo.
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST inline Minifloat<Format> from_host_float(float x) noexcept {
+  const auto bits = static_cast<typename Format::Storage>(bit_cast<std::uint32_t>(x));
+  return Format::is_nan(bits) ? invalid<Format>() : Minifloat<Format>::from_bits(bits);
+}
+
 //! `x + y`, or `x - y` when `flip` is set
 //!
 //! Subtraction is addition with the subtrahend's sign flipped.  Flipping it
@@ -968,18 +1046,36 @@ add_impl(Minifloat<Format> x, Minifloat<Format> y, bool flip) noexcept {
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator+(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (detail::is_host_float<Format>())
+    if (!detail::in_constant_expression())
+      return detail::from_host_float<Format>(
+          detail::as_host_float<Format>(x.to_bits()) + detail::as_host_float<Format>(y.to_bits())
+      );
+
   return detail::add_impl(x, y, false);
 }
 
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator-(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (detail::is_host_float<Format>())
+    if (!detail::in_constant_expression())
+      return detail::from_host_float<Format>(
+          detail::as_host_float<Format>(x.to_bits()) - detail::as_host_float<Format>(y.to_bits())
+      );
+
   return detail::add_impl(x, y, true);
 }
 
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (detail::is_host_float<Format>())
+    if (!detail::in_constant_expression())
+      return detail::from_host_float<Format>(
+          detail::as_host_float<Format>(x.to_bits()) * detail::as_host_float<Format>(y.to_bits())
+      );
+
   if (x.is_nan() || y.is_nan())
     return detail::invalid<Format>();
 
@@ -996,14 +1092,19 @@ operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   }
   // Two significands of at most 30 bits multiply exactly.
   const detail::Parts product{
-      negative, lhs.significand * rhs.significand, lhs.exponent + rhs.exponent
-  };
+      negative, lhs.significand * rhs.significand, lhs.exponent + rhs.exponent};
   return Minifloat<Format>::from_bits(detail::from_parts<Format>(product));
 }
 
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (detail::is_host_float<Format>())
+    if (!detail::in_constant_expression())
+      return detail::from_host_float<Format>(
+          detail::as_host_float<Format>(x.to_bits()) / detail::as_host_float<Format>(y.to_bits())
+      );
+
   if (x.is_nan() || y.is_nan())
     return detail::invalid<Format>();
 
