@@ -35,6 +35,18 @@
 #define SKYMIZER_MINIFLOAT_PURE
 #endif
 
+// `log2_floor` reaches for MSVC's 64-bit bit scan below. The intrinsic is
+// declared here rather than by including <intrin.h>: it is the compiler's own,
+// exactly as `__builtin_clzll` is, and the header is not part of the C++17
+// standard library this file otherwise confines itself to. VS 2019 16.5
+// (`_MSC_VER` 1925) is where `__builtin_is_constant_evaluated` arrives, and
+// `_WIN64` is where a 64-bit scan does -- 32-bit MSVC has only the 32-bit one.
+#if defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1925 && defined(_WIN64)
+#define SKYMIZER_MINIFLOAT_BSR64
+extern "C" unsigned char _BitScanReverse64(unsigned long *, unsigned __int64);
+#pragma intrinsic(_BitScanReverse64)
+#endif
+
 //! Namespace for Skymizer
 namespace skymizer {
 
@@ -88,10 +100,22 @@ struct Parts {
 #else
   // MSVC lands here in every standard: its `__cplusplus` stays at 199711L
   // without `/Zc:__cplusplus`, which CMake does not pass, so `std::countl_zero`
-  // above is out of reach, and `_BitScanReverse64` is not a constant expression
-  // where `from_parts` needs one.  Six halvings, not a shift per bit: a sum or
-  // quotient arrives here with a 57-bit significand, and this is on the path of
-  // every operator.
+  // above is out of reach.
+#ifdef SKYMIZER_MINIFLOAT_BSR64
+  // `_BitScanReverse64` is not a constant expression, and `from_parts` needs
+  // one.  `__builtin_is_constant_evaluated` is how both hold at once: MSVC
+  // exposes it as a compiler intrinsic in every standard mode, not as the
+  // C++20 library entity -- microsoft/STL declares its own
+  // `_Is_constant_evaluated` on it outside the `_HAS_CXX20` guard.
+  if (!__builtin_is_constant_evaluated()) {
+    unsigned long index = 0;
+    _BitScanReverse64(&index, x);
+    return static_cast<int>(index);
+  }
+#endif
+  // The constant-evaluated path, and the run-time one on 32-bit MSVC.  Six
+  // halvings, not a shift per bit: a sum or quotient arrives here with a
+  // 57-bit significand, and this is on the path of every operator.
   int result = 0;
   if ((x >> 32) != 0) {
     x >>= 32;
