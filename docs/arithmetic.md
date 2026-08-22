@@ -79,11 +79,13 @@ low bit is a constant, and the bit that has to be even is the exponent field's.
 `round_to_scale`, which flips the parity it reads.  The old bit-trick encoder
 carried this for free; an integer significand has to be told.
 
-## Why there is no hardware route left to choose
+## Why there is no hardware route left to choose but one
 
 The speed is a bonus.  The reason is correctness: a host float cannot referee a
 shape it cannot hold, so keeping it would have meant keeping a route that is
-wrong for exactly the shapes this library exists to support.
+wrong for exactly the shapes this library exists to support.  The one exception
+is the shape that needs no refereeing because it *is* a host float, and it has
+its own section below.
 
 But it is worth knowing what the bonus is, and here the answer depends on the
 compiler and on the operator — it is not one number.  `benches/arith.cpp` times
@@ -119,21 +121,22 @@ wins at 1.09x to 1.10x.  Same source, same box; the difference is in the back
 end, and the next section has the diagnosis.
 
 The brain floats keep the split rather than settling it — except `BF<32>`,
-which has no split to keep.  On a Ryzen 9 7950X3D, 2026-08-23, under 15
-alternating A/B passes pinned to core 2, each binary taking its own minimum
-over 30 internal passes, and with `host / soft` above one favouring the integer
-route:
+which turned out to have no split to keep and now has no ratio either.  On a
+Ryzen 9 7950X3D, 2026-08-23, under 15 alternating A/B passes pinned to core 2,
+each binary taking its own minimum over 30 internal passes, and with
+`host / soft` above one favouring the integer route:
 
 | | BF20 | BF24 | BF32 | all 12 operator rows |
 | --- | --- | --- | --- | --- |
 | GCC 11.4 | 1.029x | 1.031x | 0.768x | 0.934x |
 | Clang 14 | 0.889x | 0.857x | 0.649x | 0.791x |
 
-`BF20` and `BF24` are timed against a `double`; `BF32` is timed against a
-`float`, for the reason below.  Both compilers give addition and subtraction to
-the host route and multiplication to the integer engine.  Division favours the
-integer route under GCC and the host under Clang, so neither speed nor one
-compiler licenses a second engine.
+`BF20` and `BF24` are timed against a `double`; `BF32` was timed against a
+`float`, and its column is history — the library gives that shape the FPU now
+and the benchmark reports no ratio for it.  Of the two that remain, both
+compilers give addition and subtraction to the host route and multiplication to
+the integer engine.  Division favours the integer route under GCC and the host
+under Clang, so neither speed nor one compiler licenses a second engine.
 
 The whole table is re-measured rather than spliced, so `BF20` and `BF24` are
 not the 1.009x, 1.007x, 0.841x and 0.842x first recorded on 2026-08-23.
@@ -217,30 +220,95 @@ Rewriting the ladder as one `is_finite` guard was measured and rejected; the
 before-and-after is on the `scratch/add-nonfinite-guard` ref, along with the
 stage harness these numbers come from.
 
-## `BF<32>` is `float`, and used to be timed as though it were not
+## `BF<32>` is `float`, so the library hands it to the FPU
 
-That column read 1.194x and 0.887x until 2026-08-23, and every bit of the
-difference is in the baseline rather than in the engine.  `route`'s 2*p* + 2
-rule is Figueroa's bound on *narrowing* a wide intermediate, and `BF<32>`
-narrows nothing: `IEEE<8, 23>` has `float`'s precision, exponent range and
-non-finite semantics, so IEEE 754 already rounds each operator once, to exactly
-the digits the shape stores.  `Arith.BF32MatchesFloatArithmetic` is the
-referee.  Applying the rule anyway bought the shape a `double` and a software
-re-encode to emulate what the FPU was doing exactly, which cost the baseline
-2.1x on addition under GCC and 1.5x under Clang — and the integer engine
-collected all of it.
+*The one shape where adopting the host route costs no correctness at all,
+because there is no conversion to be correct about.*
 
-What survives is smaller and worth stating plainly.  Against a real `float`,
-`BF<32>` loses addition and subtraction by better than two to one under both
-compilers, 0.474x and 0.449x under GCC against 0.434x and 0.432x under Clang.
-It keeps multiplication at 1.449x and division at 1.128x under GCC; under Clang
-those two rows are 1.007x and 0.937x, inside that compiler's wider band and so
-reported as the shape aggregate only.
+`route`'s 2*p* + 2 rule is Figueroa's bound on *narrowing* a wide intermediate,
+and `BF<32>` narrows nothing: `IEEE<8, 23>` has `float`'s precision, exponent
+range and non-finite semantics, so IEEE 754 already rounds each operator once,
+to exactly the digits the shape stores.  `detail::is_host_float` is that
+predicate and `Minifloat::IS_HOST_FLOAT` publishes it; the comment on the
+predicate says why `FN<8, 23>`, `Finite<8, 23>` and `IEEE<7, 23>` all miss it.
+Under it, all four operators, `to_float` and the `float` constructor are a
+`bit_cast` in, an FPU instruction, and a `bit_cast` out.
+`Arith.BF32MatchesFloatArithmetic` is the referee and needed no editing;
+`Arith.SpecialValueLadder` and `Encode.RandomFloatSweep` are the two that
+constrain what follows.
 
-Even the two GCC wins are against `Minifloat<IEEE<8, 23>>{float}`, which
-decomposes and re-encodes a value the constructor is entitled to `bit_cast`.
-Nobody has measured what closing that would leave, and a caller who simply used
-`float` pays neither side of the comparison.
+Two debts the route still pays.  Its NaN canonicalizes, because x86 signs its
+default NaN and ARM does not — the portability bug 0.1.0's host route had, and
+the reason `detail::invalid` exists.  `detail::from_host_float` puts it back,
+and `operator+` for this shape is a `vaddss` and a `cmova` under GCC.  And a
+constant evaluation goes back to the integer engine, since C++17's `bit_cast`
+is a `memcpy` and no `memcpy` is a constant expression; `detail::in_constant_expression`
+is that switch, and answers `true` — integer engine, always — on a compiler
+that cannot be asked.
+
+What it is worth, ns per element, after over before.  Interleaved A/B, 15
+alternating passes each pinned to core 2 of a Ryzen 9 7950X3D, 2026-08-23, load
+average 7.3 falling to 1.8, both binaries carrying the previous
+`benches/arith.cpp` so the shape still reports rows on either side:
+
+| | add | sub | mul | div | `to_float` | from `float` |
+| --- | --- | --- | --- | --- | --- | --- |
+| GCC 11.4 | 0.131 | 0.129 | 0.344 | 0.379 | 0.179 | 0.412 |
+| Clang 14 | 0.083 | 0.082 | 0.171 | 0.378 | 0.283 | 0.351 |
+
+Every row clears its compiler's control band — 0.720x–1.404x under GCC and
+0.775x–1.353x under Clang, off 213 unchanged rows — by a factor of two or more,
+and `BF32`'s own `neg`, `abs` and `f64` rows, untouched code in the same binary,
+hold at 1.00x.
+
+Two earlier readings are settled by this and worth keeping.  The first is that
+the shape's column read 1.194x and 0.887x until 2026-08-23, and all of that
+difference was in the baseline: applying the 2*p* + 2 rule to a shape that
+narrows nothing bought it a `double` and a software re-encode to emulate what
+the FPU was doing exactly, costing the baseline 2.1x on addition under GCC and
+1.5x under Clang, which the integer engine then collected.  Timed against a real
+`float` instead, the integer engine lost addition and subtraction at 0.474x and
+0.449x under GCC against 0.434x and 0.432x under Clang.  Those four numbers
+reproduced to three digits on this box before the change.
+
+The second is the doubt recorded beside them.  The integer engine appeared to
+keep multiplication at 1.449x and division at 1.128x under GCC, but both wins
+were against a `Minifloat<IEEE<8, 23>>{float}` that decomposed and re-encoded a
+value the constructor was entitled to `bit_cast`.  With the constructor casting,
+the FPU takes both: `mul` 0.344x and `div` 0.379x above.  The doubt was
+justified and the wins were the baseline's.
+
+`benches/arith.cpp` no longer reports a ratio for the shape.  Both arms would
+run the same instructions, and a row that reads 1.000x by construction is a
+tautology rather than a regression detector.  The unary rows stay, a conversion
+still being timed, and `route` keeps its `IS_HOST_FLOAT` disjunct so that
+dropping the skip cannot quietly send the shape back through a `double`.
+
+What this does *not* license is a general `+`/`-` route for `E8M7`- or
+`E11M4`-class shapes, which lose to a host float by as much.  Those need a
+conversion to be correct about, and so need the DAZ-safe gate
+`MIN_EXP - MANTISSA_DIGITS >= FLT_MIN_EXP` rather than
+`HAS_EXACT_F32_CONVERSION` — which pins only the shape's least *normal*, leaving
+`E8M7`'s subnormals at 2<sup>&minus;133</sup> inside `float`'s subnormal range
+where a caller's `MXCSR` decides the answer.  That gate excludes bf16, which is
+most of the reason anyone would want the route.  `BF<32>` has no such gate to
+pass, and this is the whole of the difference between the two cases.
+
+Two costs finish the case against a general route.  Adopting the host route for
+a shape turns its benchmark row into 1.000x by construction, spending the
+regression detector for that shape — affordable once, for the shape that has
+nothing left to detect, and not as a policy.  And `*` and `/` still favour the
+integer engine at those shapes, so the result would be routing per operator
+*and* per shape in a header that otherwise has one engine.  Under Clang the
+narrow shapes are a wash at 0.89x to 1.11x besides, so the win on offer is a
+few wide-exponent shapes under one compiler.
+
+One behaviour does change with the caller's `MXCSR`, and it is worth naming
+rather than burying: `BF<32>` arithmetic now flushes subnormals when the caller
+has set DAZ or FTZ, where the integer engine did not.  That is not the hazard
+above — the shape's subnormals *are* `float`'s subnormals, so there is no
+mismatch, only the host's own setting reaching a type that is the host's own
+`float`.  A caller who wanted `float` semantics has them.
 
 ## Why the headline fell without the arithmetic changing
 
@@ -288,7 +356,7 @@ spends a shift and a `bit_cast` where minifloat-rs's `to_f32` spends two
 floating-point multiplies.  A ratio is a comparison, and the denominators are
 different libraries.
 
-## The 2*p* + 2 rule, and why the benchmark skips a shape
+## The 2*p* + 2 rule, and why the benchmark skips two shapes
 
 A host float may stand in for a shape only if both operands are exact in it
 **and** it carries at least 2*p* + 2 digits, where *p* is the shape's own
@@ -303,6 +371,11 @@ through `double`.  `IEEE<11, 4>` is not exact in `float` at all and falls back
 the same way.  `IEEE<12, 3>` reaches past `double` altogether and is skipped
 rather than timed against a different answer.
 
+`BF<32>` is skipped too, and for the opposite reason: not that no host float
+rounds like it, but that it *is* one, so both arms of the comparison run the
+same instructions.  The two skips print different messages because they are
+different facts.
+
 `route` compares `MANTISSA_DIGITS`, the *normal-range* precision, and that is
 the conservative side of the comparison rather than the loose one: a subnormal
 operand or result carries fewer digits, so it needs fewer intermediate ones, and
@@ -314,8 +387,8 @@ route forces `M` &le; 10 and `MIN_EXP` &ge; &minus;125, leaving the target's
 least subnormal at 2<sup>&minus;136</sup> or above with 13 `float` bits still
 below it — and the exhaustive oracle below found no disagreement either way.
 
-The benchmark's unary table has no such gate and runs every shape, `IEEE<12, 3>`
-included.  A conversion has no second route to be entitled to.
+The benchmark's unary table has no such gate and runs every shape, both skipped
+ones included.  A conversion has no second route to be entitled to.
 
 ## The oracle shares no arithmetic with the implementation
 
