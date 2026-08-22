@@ -114,18 +114,17 @@ implicit.
 Rounding is to nearest, ties to even. Arithmetic is correctly rounded: every
 operator works out a result exact enough to round, on integer significands, and
 rounds it once. Multiplication of two significands is exact; addition aligns
-both addends and sums them in an `int64_t`; division keeps 46 quotient bits and
-folds the remainder into a sticky bit. No host float takes part, so a shape
-whose exponent range outruns `double`'s is served like any other — `IEEE<12, 3>`
-squares 2⁻¹⁰⁰⁰ to 2⁻²⁰⁰⁰ rather than to zero — and an invalid operation yields
-the format's own NaN, or its maximum finite value where it has none, instead of
-whatever sign the host's default NaN happened to carry.
+both addends and sums them in an `int64_t`; division normalizes the dividend to
+bit 62 and folds the remainder into a sticky bit. No host float takes part, so a
+shape whose exponent range outruns `double`'s is served like any other —
+`IEEE<12, 3>` squares 2⁻¹⁰⁰⁰ to 2⁻²⁰⁰⁰ rather than to zero — and an invalid
+operation yields the format's own NaN, or its maximum finite value where it has
+none, instead of whatever sign the host's default NaN happened to carry.
 
-Correctness, not speed, is why the host route is gone. On speed the two are
-close, and which one leads depends on the operator and the compiler:
-multiplication and division favour the integer route under both, while addition
-and subtraction favour the host one at the widest exponent ranges under both,
-and under GCC at every narrow shape but `FNUZ` as well.
+Correctness, not speed, is why the host route is gone. Which route leads depends
+on the operator, shape, and compiler: for `BF<20>`, `BF<24>`, and `BF<32>`, both
+compilers give addition and subtraction to the host route and multiplication to
+the integer one, while division and the aggregate split by compiler.
 `benches/arith.cpp` times both routes over the same operands, and
 [docs/arithmetic.md](docs/arithmetic.md) has the numbers and what they do and do
 not license.
