@@ -118,20 +118,63 @@ Between those two corners the compilers part.  Clang stays near even, 0.89x to
 wins at 1.09x to 1.10x.  Same source, same box; that difference is in the back
 end and it has not been diagnosed.
 
-The brain floats keep the split rather than settling it.  On an otherwise idle
-Ryzen 9 7950X3D, 2026-08-23, under 15 passes pinned to core 2 and with
-`f64 / soft` above one favouring the integer route:
+The brain floats keep the split rather than settling it — except `BF<32>`,
+which has no split to keep.  On a Ryzen 9 7950X3D, 2026-08-23, under 15
+alternating A/B passes pinned to core 2, each binary taking its own minimum
+over 30 internal passes, and with `host / soft` above one favouring the integer
+route:
 
 | | BF20 | BF24 | BF32 | all 12 operator rows |
 | --- | --- | --- | --- | --- |
-| GCC 11.4 | 1.009x (null) | 1.007x (null) | 1.194x | 1.066x |
-| Clang 14 | 0.841x | 0.842x | 0.887x | 0.856x |
+| GCC 11.4 | 1.029x | 1.031x | 0.768x | 0.934x |
+| Clang 14 | 0.889x | 0.857x | 0.649x | 0.791x |
 
-The two narrow GCC aggregates are inside the documented `[0.98, 1.02]` noise
-floor; their individual operator rows still show the same split.
-Both compilers give addition and subtraction to `double` and multiplication to
-the integer engine.  Division favours the integer route under GCC and `double`
-under Clang, so neither speed nor one compiler licenses a second engine.
+`BF20` and `BF24` are timed against a `double`; `BF32` is timed against a
+`float`, for the reason below.  Both compilers give addition and subtraction to
+the host route and multiplication to the integer engine.  Division favours the
+integer route under GCC and the host under Clang, so neither speed nor one
+compiler licenses a second engine.
+
+The whole table is re-measured rather than spliced, so `BF20` and `BF24` are
+not the 1.009x, 1.007x, 0.841x and 0.842x first recorded on 2026-08-23.
+Nothing about those two shapes changed, including their route; the drift is
+inside the control band this build pair's 68 unchanged rows give, 0.958x–1.045x
+under GCC and 0.940x–1.164x under Clang.  Under GCC they are near enough to
+parity that the aggregate settles nothing either way, which is the same reading
+the earlier numbers got.
+
+The box was not idle for this one.  Load average was 1.15 at the start and
+17.02 and 14.33 at the ends of the two legs — a shared machine, other users'
+work, not the benchmark's own.  Minimum-of-N absorbs that, since interference
+only ever adds time, and the 68 unchanged rows agree across the pair at a
+geomean of 0.999x under GCC and 1.007x under Clang.  The bands quoted above are
+wider than [benchmarking.md](benchmarking.md)'s usual for the same reason, and
+the per-row readings are taken against them rather than against a fixed floor.
+
+## `BF<32>` is `float`, and used to be timed as though it were not
+
+That column read 1.194x and 0.887x until 2026-08-23, and every bit of the
+difference is in the baseline rather than in the engine.  `route`'s 2*p* + 2
+rule is Figueroa's bound on *narrowing* a wide intermediate, and `BF<32>`
+narrows nothing: `IEEE<8, 23>` has `float`'s precision, exponent range and
+non-finite semantics, so IEEE 754 already rounds each operator once, to exactly
+the digits the shape stores.  `Arith.BF32MatchesFloatArithmetic` is the
+referee.  Applying the rule anyway bought the shape a `double` and a software
+re-encode to emulate what the FPU was doing exactly, which cost the baseline
+2.1x on addition under GCC and 1.5x under Clang — and the integer engine
+collected all of it.
+
+What survives is smaller and worth stating plainly.  Against a real `float`,
+`BF<32>` loses addition and subtraction by better than two to one under both
+compilers, 0.474x and 0.449x under GCC against 0.434x and 0.432x under Clang.
+It keeps multiplication at 1.449x and division at 1.128x under GCC; under Clang
+those two rows are 1.007x and 0.937x, inside that compiler's wider band and so
+reported as the shape aggregate only.
+
+Even the two GCC wins are against `Minifloat<IEEE<8, 23>>{float}`, which
+decomposes and re-encodes a value the constructor is entitled to `bit_cast`.
+Nobody has measured what closing that would leave, and a caller who simply used
+`float` pays neither side of the comparison.
 
 ## Why the headline fell without the arithmetic changing
 

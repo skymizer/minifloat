@@ -320,6 +320,25 @@ TEST(Arith, EveryPairMatchesFloatRoundTrip) {
   expect_all_pairs<E8M7>(float_arithmetic_matches<E8M7>);
 }
 
+//! `BF<32>` against the float route, sampled where every pair is out of reach
+//!
+//! `route` grants this shape a `float` because the shape *is* one, not because
+//! 2p + 2 fits in one: `IEEE<8, 23>` has `float`'s precision, exponent range and
+//! non-finite semantics, so the round trip is the identity and IEEE 754 already
+//! rounds each operator once, to exactly the digits the shape stores.  Nothing
+//! else in the suite covers that, and it is what licenses `benches/arith.cpp`
+//! to time `BF<32>` against `float` rather than against a `double` and a
+//! software re-encode.
+TEST(Arith, BF32MatchesFloatArithmetic) {
+  Lcg random{UINT64_C(0x0FF32EE24DD16CC0)};
+
+  for (unsigned i = 0; i < 1U << 22; ++i) {
+    const BF<32> x = BF<32>::from_bits(random.next());
+    const BF<32> y = BF<32>::from_bits(random.next());
+    ASSERT_TRUE(float_arithmetic_matches(x, y)) << +x.to_bits() << ", " << +y.to_bits();
+  }
+}
+
 TEST(Arith, WideFormatsMatchHostRoundTrip) { test_wide_types<CheckWideHostArithmetic>(); }
 
 TEST(Arith, CorrectlyRoundedSmallFormats) { test_small_types<CheckExactSmallArithmetic>(); }

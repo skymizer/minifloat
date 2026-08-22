@@ -122,9 +122,11 @@ operation yields the format's own NaN, or its maximum finite value where it has
 none, instead of whatever sign the host's default NaN happened to carry.
 
 Correctness, not speed, is why the host route is gone. Which route leads depends
-on the operator, shape, and compiler: for `BF<20>`, `BF<24>`, and `BF<32>`, both
-compilers give addition and subtraction to the host route and multiplication to
-the integer one, while division and the aggregate split by compiler.
+on the operator, shape, and compiler: for `BF<20>` and `BF<24>`, both compilers
+give addition and subtraction to the host route and multiplication to the
+integer one, while division and the aggregate split by compiler. `BF<32>` is the
+exception with nothing to weigh — it *is* `float`, so the FPU rounds it
+correctly on its own and wins the shape outright under both compilers.
 `benches/arith.cpp` times both routes over the same operands, and
 [docs/arithmetic.md](docs/arithmetic.md) has the numbers and what they do and do
 not license.
