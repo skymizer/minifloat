@@ -163,7 +163,7 @@ template <typename Checker> void test_small_types() {
 template <typename Checker> void test_wide_types() {
   check_each<
       Checker, IEEE<5, 10>, IEEE<8, 7>, IEEE<11, 4>, IEEE<12, 3>, IEEE<12, 3, 1000>, FN<12, 3>,
-      FNUZ<12, 3>, Finite<12, 3>, IEEE<2, 13>, IEEE<20, 11>>();
+      FNUZ<12, 3>, Finite<12, 3>, IEEE<2, 13>, IEEE<20, 11>, BF<20>, BF<24>, BF<32>>();
 }
 
 template <typename Checker> void test_all_types() {

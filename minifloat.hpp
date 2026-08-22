@@ -1113,6 +1113,12 @@ using E5M2FNUZ = FNUZ<5, 2>;
 using E5M10 = IEEE<5, 10>; //!< IEEE 754 binary16
 using E8M7 = IEEE<8, 7>;   //!< bfloat16
 
+//! Brain float with `N` total bits
+//!
+//! `BF<16>` is `E8M7`, `BF<19>` has TensorFloat-32's layout, and `BF<32>` has
+//! `float`'s layout.
+template <int N> using BF = IEEE<8, N - 9>;
+
 } // namespace minifloat
 
 using minifloat::Minifloat;
