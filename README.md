@@ -7,7 +7,7 @@ C++ template library for minifloats dedicated to [@skymizer][skymizer]
 
 [skymizer]: https://github.com/skymizer
 
-This header-only C++ library provides emulation of minifloats up to 16 bits.
+This header-only C++ library provides emulation of minifloats up to 32 bits.
 All numeric conversions are explicit so that rounding, overflow, and other
 representation changes stay visible at call sites.
 
@@ -36,7 +36,7 @@ differently:
 | `FN<E, M, B>`     | all-ones magnitude: NaN                    | `default_bias(E)`     |
 | `FNUZ<E, M, B>`   | the &minus;0.0 slot: NaN                   | `default_bias(E) + 1` |
 
-Constraints: `E + M < 16`, `E >= 2`, `M >= 0`, and `M > 0` for `IEEE`.
+Constraints: `E + M < 32`, `2 <= E <= 30`, `M >= 0`, and `M > 0` for `IEEE`.
 
 ## Type aliases
 

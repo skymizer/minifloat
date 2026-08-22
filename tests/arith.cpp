@@ -56,7 +56,7 @@ struct CheckHostArithmetic {
 
 struct CheckWideHostArithmetic {
   template <typename T> static bool check() {
-    if (!T::HAS_EXACT_F64_CONVERSION)
+    if (!T::HAS_EXACT_F64_CONVERSION || 2 * T::MANTISSA_DIGITS + 2 > DBL_MANT_DIG)
       return true;
 
     Lcg random{UINT64_C(0x0FEDCBA987654321)};
@@ -354,6 +354,16 @@ TEST(Arith, ConstantEvaluation) {
   static_assert((TWO - ONE).to_bits() == ONE.to_bits());
   static_assert((TWO * ONE).to_bits() == TWO.to_bits());
   static_assert((TWO / TWO).to_bits() == ONE.to_bits());
+
+  using D = IEEE<6, 25>;
+  constexpr D DIVIDEND = D::from_bits(1);
+  constexpr D DIVISOR = D::from_bits((1U << 26) - 1U);
+  static_assert((D::from_bits(0) / D::from_bits(1)).to_bits() == 0);
+  static_assert((DIVIDEND / DIVISOR).to_bits() == 0x0A00'0001);
+
+  using P = IEEE<2, 29>;
+  constexpr P PRODUCT = P::from_bits((1U << 30) - 1U);
+  static_assert((PRODUCT * PRODUCT).to_bits() == 0x5FFF'FFFE);
   SUCCEED();
 }
 

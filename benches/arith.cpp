@@ -85,7 +85,7 @@ public:
 //! routes then run over the very same pairs.
 template <typename T> std::vector<std::pair<T, T>> draw_pairs() {
   Lcg random{UINT64_C(0x0FEDCBA987654321)};
-  constexpr auto MASK = (1U << (T::EXPONENT_BITS + T::MANTISSA_BITS + 1)) - 1U;
+  constexpr auto MASK = UINT32_MAX >> (31 - T::EXPONENT_BITS - T::MANTISSA_BITS);
 
   std::vector<std::pair<T, T>> pairs;
   pairs.reserve(PAIRS);
