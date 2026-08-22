@@ -109,7 +109,9 @@ Construction from numeric types and conversion back through `to_float()`,
 `to_double()`, or `static_cast` are explicit. The `HAS_EXACT_F32_CONVERSION` and
 `HAS_EXACT_F64_CONVERSION` traits report whether the corresponding host type can
 represent every value of a Minifloat type, but do not make the conversion
-implicit.
+implicit. `IS_HOST_FLOAT` is the stronger question the arithmetic below turns
+on — whether the type *is* `float`, bit for bit, rather than merely fitting in
+one.
 
 Rounding is to nearest, ties to even. Arithmetic is correctly rounded: every
 operator works out a result exact enough to round, on integer significands, and
@@ -121,12 +123,22 @@ shape whose exponent range outruns `double`'s is served like any other —
 operation yields the format's own NaN, or its maximum finite value where it has
 none, instead of whatever sign the host's default NaN happened to carry.
 
-Correctness, not speed, is why the host route is gone. Which route leads depends
-on the operator, shape, and compiler: for `BF<20>` and `BF<24>`, both compilers
-give addition and subtraction to the host route and multiplication to the
-integer one, while division and the aggregate split by compiler. `BF<32>` is the
-exception with nothing to weigh — it *is* `float`, so the FPU rounds it
-correctly on its own and wins the shape outright under both compilers.
+One shape is exempt, and only one. `IEEE<8, 23>` — `BF<32>` — has `float`'s
+precision, exponent range and non-finite semantics, so it *is* a `float`:
+nothing narrows, IEEE 754 already rounds each operator once to exactly the
+digits the shape stores, and the `IS_HOST_FLOAT` trait says so. Its four
+operators, its `to_float()` and its construction from a `float` are a
+`bit_cast` and an FPU instruction, which is between two and twelve times
+faster than the integer engine depending on the operator and the compiler. The
+NaN is still canonicalized on the way out, because that sign is the one thing
+a host disagrees with another host about. Constant evaluation still takes the
+integer engine, `bit_cast` not being a constant expression before C++20.
+
+Correctness, not speed, is why the host route is gone everywhere else, and the
+speed would not have argued for keeping it: which route leads depends on the
+operator, shape, and compiler. For `BF<20>` and `BF<24>`, both compilers give
+addition and subtraction to the host route and multiplication to the integer
+one, while division and the aggregate split by compiler.
 `benches/arith.cpp` times both routes over the same operands, and
 [docs/arithmetic.md](docs/arithmetic.md) has the numbers and what they do and do
 not license.

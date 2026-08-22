@@ -231,6 +231,10 @@ The unary table also runs shapes the ratio table skips.  `route` in
 `benches/arith.cpp` refuses a shape no host float rounds like, which is right
 for an operator comparison and wrong for a conversion: `IEEE<12, 3>` has no
 opinion about which float should referee it, but it certainly has a `to_double`.
+`BF<32>` is skipped from the other side — it *is* a `float`, and the library
+computes it on the FPU, so both arms would run one route and the ratio would
+read 1.000x by construction.  Its conversions are still worth a row, and one
+that changes is a real finding rather than an arithmetic identity.
 
 ## An operator is timed only against a float that rounds like it
 
