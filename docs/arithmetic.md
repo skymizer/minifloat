@@ -14,22 +14,32 @@ a `double`, though it represents both answers exactly.
 
 The route now is `to_parts` → an exact integer computation → `from_parts`:
 
-- **multiply** — two significands of at most 15 bits multiply exactly in a
+- **multiply** — two significands of at most 30 bits multiply exactly in a
   `std::uint64_t`, exponents add.  Genuinely exact.
 - **add** — `detail::add_parts` aligns both addends on the lower exponent and
   sums them signed in an `std::int64_t`.  Addends more than `detail::ALIGN_CAP`
-  = 46 binades apart drop the smaller one, which is under half the ULP of the
-  larger and rounds straight back to it; that cap is also what keeps the aligned
-  sum inside an `std::int64_t`.
-- **divide** — `detail::div_parts` computes `detail::QUOTIENT_BITS` = 46
-  quotient bits and folds the remainder into the lowest as a sticky bit.  The
-  two 46s are unrelated: one is an alignment window, the other a quotient width,
-  and the constants' own doc comments say so because the shared value invites
-  the wrong conclusion.
+  = 32 binades apart drop the smaller one.  For precision *p* the cap must be at
+  least *p* + 1 so the dropped value rounds straight back to the larger, and at
+  most 62 &minus; *p* so the aligned sum fits `std::int64_t`; 32 meets both
+  bounds through *p* = 30.
+- **divide** — `detail::div_parts` normalizes the dividend to bit 62 before the
+  integer division, then folds the remainder into the quotient's lowest bit as
+  sticky.  A fixed shift leaves too few quotient bits for a subnormal dividend
+  over a full-width divisor.  Normalization yields at least 63 &minus; *p* bits,
+  enough for the *p* + 2 rounding bits through *p* = 30, and keeps the quotient
+  below 2<sup>63</sup>.
 
-So two of the four carry a deliberately inexact tail.  Neither tail can change a
-rounding — that is what the two constants are sized for — which is why the
-thesis says *exact enough to round*.
+Addition's dropped addend and division's sticky remainder are deliberately
+inexact tails.  Neither can change a rounding, which is why the thesis says
+*exact enough to round*.
+
+Normalizing the dividend is not free.  Against the preceding kernel, on an
+otherwise idle Ryzen 9 7950X3D under 15 alternating passes pinned to core 2 on
+2026-08-23, division took 1.056x under GCC 11.4 and 1.097x under Clang 14.  Every
+one of the 14 existing rows lay beyond its compiler's unchanged-`mul` control
+band (0.963x–1.002x and 0.982x–1.008x).  The fixed-width divider is incorrectly
+rounded for admitted wide significands, so correctness buys that measured
+regression.
 
 `detail::from_parts` is the only place *arithmetic* rounds, ties to even, by
 way of `detail::round_to_scale`.  One rounding, so no intermediate can lose
@@ -78,8 +88,9 @@ wrong for exactly the shapes this library exists to support.
 But it is worth knowing what the bonus is, and here the answer depends on the
 compiler and on the operator — it is not one number.  `benches/arith.cpp` times
 each operator twice over the same operands — once as the library computes it,
-once the way a caller would fake it. On an idle Ryzen 7 8700F, 2026-08-21,
-under the protocol in [benchmarking.md](benchmarking.md):
+once the way a caller would fake it. At commit `c045c04`, on an idle Ryzen 7
+8700F, 2026-08-21, under the protocol in
+[benchmarking.md](benchmarking.md):
 
 | | wins | geomean | add | sub | mul | div |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -106,6 +117,21 @@ Between those two corners the compilers part.  Clang stays near even, 0.89x to
 1.11x, while GCC gives the host route every narrow shape except `FNUZ`, which it
 wins at 1.09x to 1.10x.  Same source, same box; that difference is in the back
 end and it has not been diagnosed.
+
+The brain floats keep the split rather than settling it.  On an otherwise idle
+Ryzen 9 7950X3D, 2026-08-23, under 15 passes pinned to core 2 and with
+`f64 / soft` above one favouring the integer route:
+
+| | BF20 | BF24 | BF32 | all 12 operator rows |
+| --- | --- | --- | --- | --- |
+| GCC 11.4 | 1.009x (null) | 1.007x (null) | 1.194x | 1.066x |
+| Clang 14 | 0.841x | 0.842x | 0.887x | 0.856x |
+
+The two narrow GCC aggregates are inside the documented `[0.98, 1.02]` noise
+floor; their individual operator rows still show the same split.
+Both compilers give addition and subtraction to `double` and multiplication to
+the integer engine.  Division favours the integer route under GCC and `double`
+under Clang, so neither speed nor one compiler licenses a second engine.
 
 ## Why the headline fell without the arithmetic changing
 
@@ -201,7 +227,7 @@ which is what `tests/encode.cpp` checks encoding against.
 
 Two details are deliberate rather than incidental:
 
-- `exact_sum` uses an `ALIGN_CAP` of **48**, against the engine's 46, and where
+- `exact_sum` uses an `ALIGN_CAP` of **31**, against the engine's 32, and where
   the engine drops an out-of-range addend to **0** the oracle substitutes **1**.
   Two different windows and two opposite sticky policies, and they round alike.
   An oracle that shared the engine's constants would agree with a wrong engine.
@@ -215,9 +241,9 @@ Coverage, stated precisely because the loose version keeps getting repeated.
 pair of finite operands** of all 39 shapes in `test_small_types` — every
 declared width through 8 bits, all four format layers, exponent widths 2 through
 7 — which is exhaustive, 2<sup>16</sup> pairs at the top end.
-`Arith.CorrectlyRoundedWideFormats` runs the same oracle over the 9 shapes of
-`test_wide_types`, where every ordered pair is 2<sup>32</sup> and out of reach,
-so it samples.
+`Arith.CorrectlyRoundedWideFormats` runs the same oracle over the 13 shapes of
+`test_wide_types`, where even the narrowest ordered-pair space is
+2<sup>32</sup> and out of reach, so it samples.
 
 Pairs involving an infinity or a NaN have no exact magnitude to compare against
 and return early; those are pinned by `Arith.SpecialValueLadder`, which
@@ -239,8 +265,8 @@ Both of those go through a `double`, and `route` in `benches/arith.cpp` puts
 are not on that route: `IEEE<2, 13>` and `IEEE<11, 4>` are timed against a
 `double`, and `IEEE<12, 3>` is skipped outright.  `Ops.EveryPairComparesLikeHost`
 carries the same 2<sup>32</sup> treatment to comparison, which
-`Ops.Comparison` stops at 11 bits.  Those two sweeps are most of what
-`make check` spends its time on.
+`Ops.Comparison` stops at 11 bits.  Those two sweeps and the strided wide
+rounding-boundary check share most of what `make check` spends its time on.
 
 ## No lookup tables
 
@@ -315,11 +341,11 @@ again rather than testing it.
 
 ## Open questions
 
-**Format-dependent `QUOTIENT_BITS`.**  46 is sized for the widest significand a
-minifloat can have.  A narrow shape could divide in fewer bits, which would fit
-a 32-bit numerator and let `div_parts` avoid 64-bit division on a 32-bit host.
-Nobody has measured whether that is worth a format-dependent constant, and the
-64-bit hosts this is developed on would not show it.
+**A 32-bit divider on 32-bit hosts.**  A narrow shape could normalize its
+dividend to bit 30 instead of bit 62, fitting the numerator in 32 bits and
+avoiding 64-bit division on a 32-bit host.  Nobody has measured whether that is
+worth a format-dependent path, and the 64-bit hosts this is developed on would
+not show it.
 
 **The GCC addition and subtraction gap.**  At every narrow shape that is not
 `FNUZ` or `E2M13`, GCC's `operator+` and `operator-` lose to the host route

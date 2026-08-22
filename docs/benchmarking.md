@@ -112,10 +112,9 @@ measurements, because they share almost nothing: the `soft` column is
 it.  Three worked examples:
 
 - **A conversion change** — `bits_from`, `to_float`, `to_double`, `to_exact`,
-  `decompose`, `exp2i`.  Every one of the 56 `soft` rows is a control, since
-  none of them calls any of that.  Its effect shows up in the `host` column and
-  therefore in the ratio, which is why the ratio falling does not mean the
-  library got slower.
+  `decompose`, `exp2i`.  Every `soft` row is a control, since none of them calls
+  any of that.  Its effect shows up in the `host` column and therefore in the
+  ratio, which is why the ratio falling does not mean the library got slower.
 - **An addition or subtraction kernel change** — `align`, `add_parts`, the sign
   flip in `add_impl`.  The `mul` and `div` `soft` rows are controls, since those
   three are the only steps the other operators do not share.
@@ -304,7 +303,7 @@ are readable; levels are not.
 
 ## Reference figures
 
-Ryzen 7 8700F, `taskset -c 2`, idle box, 2026-08-21, at the head of this branch.
+Ryzen 7 8700F, `taskset -c 2`, idle box, 2026-08-21, at commit `c045c04`.
 Ratio table geomeans over 56 comparisons; unary rows in nanoseconds per element.
 
 | | GCC 16.1.1 | Clang 22.1.8 |
