@@ -548,33 +548,6 @@ template <class Format> constexpr bool is_host_float() noexcept {
   return shares_host_exponent<Format, float>() && Format::MANTISSA_BITS + 1 == FLT_MANT_DIG;
 }
 
-//! Is this call being evaluated at compile time?
-//!
-//! The `float` route is a run-time route: `bit_cast` above is a `memcpy` before
-//! C++20, and no `memcpy` is a constant expression.  Answering `true` where the
-//! compiler cannot be asked is the safe lie -- it costs a shape that *is* a host
-//! float its FPU route and nothing else, the integer engine computing the same
-//! value either way.
-constexpr bool in_constant_expression() noexcept {
-#if defined(__GNUC__) || defined(__clang__) || (defined(_MSC_VER) && _MSC_VER >= 1925)
-  return __builtin_is_constant_evaluated();
-#else
-  return true;
-#endif
-}
-
-//! A host-float shape's code as the `float` it is
-//!
-//! `Storage` is `std::uint_least32_t`, which is only *at least* 32 bits wide;
-//! `bit_cast` needs exactly as many as `float` has, and `IEEE<8, 23>` never
-//! fills more than 32.
-template <class Format>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST inline float as_host_float(typename Format::Storage bits
-) noexcept {
-  static_assert(is_host_float<Format>());
-  return bit_cast<float>(static_cast<std::uint32_t>(bits));
-}
-
 } // namespace detail
 
 //! Configurable signed floating-point type up to 32 bits
@@ -613,8 +586,13 @@ public:
   //! Is this type `float`, bit for bit?
   //!
   //! Where it holds, `to_float` and construction from a `float` are the
-  //! identity and every operator runs on the FPU.  `detail::is_host_float` is
-  //! the predicate and says which shapes miss it and why.
+  //! identity, and an array of these is an array of `float`.  Arithmetic is
+  //! *not*: the operators stay on the integer engine, because a shape that is
+  //! a `float` is also a shape whose FPU answer moves with the caller's
+  //! rounding mode and MXCSR, and this library rounds to nearest either way.
+  //! `detail::is_host_float` is the predicate and says which shapes miss it and
+  //! why; `benches/arith.cpp` reads this to pick the host type it compares the
+  //! shape against, so the two cannot drift apart.
   static constexpr bool IS_HOST_FLOAT = detail::is_host_float<Format>();
 
   static constexpr bool HAS_EXACT_F64_CONVERSION =
@@ -1020,19 +998,6 @@ SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format> huge(bool negative) noexcep
   return Minifloat<Format>::from_bits(static_cast<Storage>(Format::OVERFLOW_MAG | sign));
 }
 
-//! Wrap what the FPU worked out, canonicalizing its NaN
-//!
-//! The value is already the shape's, bit for bit, since the shape *is* `float`.
-//! The NaN is not: x86 signs its default NaN and ARM does not, and `invalid`
-//! exists so that a caller does not have to know which host it is on.  That is
-//! the same portability bug 0.1.0's host route had, and it is the only thing
-//! the FPU route still has to undo.
-template <class Format>
-SKYMIZER_MINIFLOAT_CONST inline Minifloat<Format> from_host_float(float x) noexcept {
-  const auto bits = static_cast<typename Format::Storage>(bit_cast<std::uint32_t>(x));
-  return Format::is_nan(bits) ? invalid<Format>() : Minifloat<Format>::from_bits(bits);
-}
-
 //! `x + y`, or `x - y` when `flip` is set
 //!
 //! Subtraction is addition with the subtrahend's sign flipped.  Flipping it
@@ -1070,36 +1035,18 @@ add_impl(Minifloat<Format> x, Minifloat<Format> y, bool flip) noexcept {
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator+(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  if constexpr (detail::is_host_float<Format>())
-    if (!detail::in_constant_expression())
-      return detail::from_host_float<Format>(
-          detail::as_host_float<Format>(x.to_bits()) + detail::as_host_float<Format>(y.to_bits())
-      );
-
   return detail::add_impl(x, y, false);
 }
 
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator-(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  if constexpr (detail::is_host_float<Format>())
-    if (!detail::in_constant_expression())
-      return detail::from_host_float<Format>(
-          detail::as_host_float<Format>(x.to_bits()) - detail::as_host_float<Format>(y.to_bits())
-      );
-
   return detail::add_impl(x, y, true);
 }
 
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  if constexpr (detail::is_host_float<Format>())
-    if (!detail::in_constant_expression())
-      return detail::from_host_float<Format>(
-          detail::as_host_float<Format>(x.to_bits()) * detail::as_host_float<Format>(y.to_bits())
-      );
-
   if (x.is_nan() || y.is_nan())
     return detail::invalid<Format>();
 
@@ -1123,12 +1070,6 @@ operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
 operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  if constexpr (detail::is_host_float<Format>())
-    if (!detail::in_constant_expression())
-      return detail::from_host_float<Format>(
-          detail::as_host_float<Format>(x.to_bits()) / detail::as_host_float<Format>(y.to_bits())
-      );
-
   if (x.is_nan() || y.is_nan())
     return detail::invalid<Format>();
 
