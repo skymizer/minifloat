@@ -54,8 +54,17 @@ namespace skymizer {
 namespace minifloat {
 
 //! Backport of C++20 std::bit_cast
+//!
+//! `PURE`, not `CONST`.  `[[gnu::const]]` promises the result depends on the
+//! argument *values* and nothing else, which for a reference parameter means
+//! the address rather than what is at it -- GCC's own documentation says a
+//! function that examines what a pointer argument points to must not be
+//! declared `const`.  GCC 11.4 at `-O1` takes the promise: with `CONST` here,
+//! `BF<32>{2.0F}.to_bits()` folds to zero and `BF<32>{2.0F} * BF<32>{3.0F}` to
+//! a NaN, while `-O0`, `-O2` and `-O3` come out right.  Nothing in the suite
+//! can catch that, `make check` and the CMake route both building optimized.
 template <typename To, typename From>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST To bit_cast(const From &from) noexcept {
+[[nodiscard]] SKYMIZER_MINIFLOAT_PURE To bit_cast(const From &from) noexcept {
   static_assert(sizeof(To) == sizeof(From));
   static_assert(std::is_trivially_copyable_v<To>);
   static_assert(std::is_trivially_copyable_v<From>);
