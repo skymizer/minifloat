@@ -56,8 +56,37 @@ struct CheckRandomFloatPatterns {
     return true;
   }
 };
+
+template <int N> void expect_float_path_matches_generic(std::uint64_t stride) {
+  constexpr std::uint64_t END = UINT64_C(1) << 32;
+
+  for (std::uint64_t code = 0; code < END; code += stride) {
+    const auto bits = static_cast<std::uint32_t>(code);
+    const float x = bit_cast<float>(bits);
+    const auto actual = BF<N>{x}.to_bits();
+    const auto expected = (bits & (UINT32_MAX >> 1)) > UINT32_C(0x7F800000)
+                              ? static_cast<typename BF<N>::Storage>(
+                                    BF<N>::quiet_NaN().to_bits() | (bits >> 31) << (N - 1)
+                                )
+                              : BF<N>{static_cast<double>(x)}.to_bits();
+
+    if (actual != expected) {
+      ADD_FAILURE() << "BF<" << N << "> mismatch for float bits " << bits;
+      return;
+    }
+  }
+}
 } // namespace
 
 TEST(Encode, RoundsEveryBoundaryCorrectly) { test_all_types<CheckRoundingBoundaries>(); }
 
 TEST(Encode, RandomFloatSweep) { test_all_types<CheckRandomFloatPatterns>(); }
+
+TEST(Encode, BFFloatFastPathMatchesGenericPath) {
+  constexpr std::uint64_t END = UINT64_C(1) << 32;
+  constexpr std::uint64_t STRIDE = (END >> 20) | 1U;
+
+  expect_float_path_matches_generic<16>(1);
+  expect_float_path_matches_generic<20>(STRIDE);
+  expect_float_path_matches_generic<24>(STRIDE);
+}

@@ -99,6 +99,11 @@ generated typedef grid are gone.
   Clang and 0.83x under GCC, and `to_float`/`to_double` for a shape with no
   exact host conversion costs about a quarter. `docs/arithmetic.md` has the
   measurements and the null this round also produced.
+- `BF<10>` through `BF<31>` now convert to and from `float` by shifting their
+  shared exponent field instead of taking the generic decomposition path.
+  `BF<20>` and `BF<24>` conversion costs 0.18x–0.34x across GCC and Clang; their
+  arithmetic and `double` conversions are unchanged. Construction still
+  canonicalizes NaNs, while `to_float` now preserves a stored NaN payload.
 - `detail::log2_floor` finds the top bit by halving where neither
   `std::countl_zero` nor `__builtin_clzll` is reachable, instead of shifting one
   bit at a time. That branch is MSVC's in every standard, since its `__cplusplus`
