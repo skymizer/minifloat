@@ -132,21 +132,21 @@ are a `bit_cast`. Its four operators are not, though for one round they were.
 An FPU rounds each operator once, but it rounds the way the caller's rounding
 mode says, flushes subnormals the way the caller's `MXCSR` says, and — under
 the default floating-point model, attribute or no attribute — may answer a
-second call from the first across a change of either. On this box, the same `BF<32>`
-sum answered `0x3F800001` wherever the operands were opaque and `0x3F800000`
-wherever a constant fold could reach them, under both compilers; the first
-breaks ties to even and the second ignores the caller, and which one you get is
-the optimizer's business. Correctly
-rounded is the promise, so the shape stays on the integer engine and pays about
-five times a native `float` for addition. `Arith.IgnoresHostEnvironment` is the
-referee, and [docs/arithmetic.md](docs/arithmetic.md) has the readings.
+second call from the first across a change of either. On this box the same
+`BF<32>` sum answered `0x3F800001` wherever the operands were opaque and
+`0x3F800000` wherever a constant fold could reach them, under both compilers:
+the first breaks ties to even, the second ignores the caller, and which one you
+get is the optimizer's business. Correctly rounded is the promise, so the shape
+stays on the integer engine and pays about five times a native `float` for
+addition. `Arith.IgnoresHostEnvironment` is the referee, and
+[docs/arithmetic.md](docs/arithmetic.md) has the readings.
 
 The speed is still there for whoever can vouch for their own floating-point
 environment, which is the caller and not this header:
 
 ```cpp
 if constexpr (T::IS_HOST_FLOAT)
-  out[i] = T{a[i].to_float() + b[i].to_float()};  // both conversions are the identity
+  out[i] = T{a[i].to_float() + b[i].to_float()};  // both casts are the identity
 else
   out[i] = a[i] + b[i];
 ```
