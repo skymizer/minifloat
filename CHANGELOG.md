@@ -104,6 +104,10 @@ generated typedef grid are gone.
   `BF<20>` and `BF<24>` conversion costs 0.18x–0.34x across GCC and Clang; their
   arithmetic and `double` conversions are unchanged. Construction still
   canonicalizes NaNs, while `to_float` now preserves a stored NaN payload.
+- Default-biased `IEEE<11, 1>` through `IEEE<11, 20>` now take the same
+  field-shift route to and from `double`. Their arithmetic is unchanged;
+  construction canonicalizes NaNs, while `to_double` preserves a stored NaN
+  payload.
 - `detail::log2_floor` finds the top bit by halving where neither
   `std::countl_zero` nor `__builtin_clzll` is reachable, instead of shifting one
   bit at a time. That branch is MSVC's in every standard, since its `__cplusplus`
