@@ -8,7 +8,15 @@
 
 #include "support.hpp"
 
+#include <array>
+#include <cfenv>
 #include <functional>
+#include <utility>
+#include <vector>
+
+#if defined(__x86_64__) || defined(_M_X64)
+#include <xmmintrin.h>
+#endif
 
 using namespace minifloat_test;      // NOLINT(google-build-using-namespace)
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
@@ -299,6 +307,111 @@ struct CheckSpecialLadder {
     return ok;
   }
 };
+
+//! The caller's floating-point environment, put back however the body leaves
+//!
+//! `ASSERT_*` returns from the middle of a test body and gtest runs the rest of
+//! the suite afterwards, so a leaked rounding mode would be someone else's
+//! failure.  On x86 `fesetenv` restores MXCSR whole, FTZ and DAZ included.
+class HostEnvironment {
+  std::fenv_t saved_;
+
+public:
+  HostEnvironment() noexcept { std::fegetenv(&saved_); }
+  ~HostEnvironment() { std::fesetenv(&saved_); }
+  HostEnvironment(const HostEnvironment &) = delete;
+  HostEnvironment &operator=(const HostEnvironment &) = delete;
+};
+
+//! A value the optimizer has to load where it is written
+//!
+//! Both readings have to happen where they stand.  An operand hoisted out of
+//! the environment change, or a second evaluation answered from the first --
+//! which `[[gnu::const]]` on the operators licenses -- would let a route that
+//! *does* read the environment pass this test.
+template <typename T> T opaque(std::uint32_t bits) noexcept {
+  volatile typename T::Storage cell = static_cast<typename T::Storage>(bits);
+  return T::from_bits(cell);
+}
+
+inline float opaque_float(std::uint32_t bits) noexcept {
+  volatile std::uint32_t cell = bits;
+  return bit_cast<float>(static_cast<std::uint32_t>(cell));
+}
+
+using Bits4 = std::array<std::uint32_t, 4>;
+
+//! All four operators of one pair, through the library and through the host
+struct Sweep {
+  std::vector<Bits4> mini;
+  std::vector<Bits4> host;
+};
+
+//! Operands that separate the rounding modes, and operands FTZ and DAZ erase
+//!
+//! The drawn pairs are normal, so no NaN payload can move for reasons that have
+//! nothing to do with the environment, and every quotient has a divisor.  Four
+//! binades either side of zero leaves room for a product to overflow, which is
+//! a stable answer, and none to underflow, which is why the subnormal cases are
+//! written out.
+inline std::vector<std::pair<std::uint32_t, std::uint32_t>> environment_pairs() {
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> pairs{
+      // One plus half an ulp: ties to even keeps the one, and no other mode does.
+      {UINT32_C(0x3F800000), UINT32_C(0x33800000)},
+      // A subnormal product, a subnormal difference, and a subnormal operand:
+      // what FTZ erases on the way out and DAZ on the way in.
+      {UINT32_C(0x00800000), UINT32_C(0x3F000000)},
+      {UINT32_C(0x00800000), UINT32_C(0x007FFFFF)},
+      {UINT32_C(0x00000001), UINT32_C(0x00000002)},
+  };
+  Lcg random{UINT64_C(0x0FF32EE24DD16CC0)};
+  const auto draw = [&random] {
+    const std::uint32_t bits = random.next();
+    return (bits & UINT32_C(0x807FFFFF)) | ((bits >> 23 & 0x7F) + 64) << 23;
+  };
+
+  for (int i = 0; i < 1 << 12; ++i)
+    pairs.emplace_back(draw(), draw());
+
+  return pairs;
+}
+
+inline Sweep sweep(const std::vector<std::pair<std::uint32_t, std::uint32_t>> &pairs) {
+  const auto bits = [](float x) { return bit_cast<std::uint32_t>(x); };
+  Sweep result;
+  result.mini.reserve(pairs.size());
+  result.host.reserve(pairs.size());
+
+  for (const auto &pair : pairs) {
+    const std::uint32_t x = pair.first;
+    const std::uint32_t y = pair.second;
+    using T = BF<32>;
+    result.mini.push_back(
+        {static_cast<std::uint32_t>((opaque<T>(x) + opaque<T>(y)).to_bits()),
+         static_cast<std::uint32_t>((opaque<T>(x) - opaque<T>(y)).to_bits()),
+         static_cast<std::uint32_t>((opaque<T>(x) * opaque<T>(y)).to_bits()),
+         static_cast<std::uint32_t>((opaque<T>(x) / opaque<T>(y)).to_bits())}
+    );
+    result.host.push_back(
+        {bits(opaque_float(x) + opaque_float(y)), bits(opaque_float(x) - opaque_float(y)),
+         bits(opaque_float(x) * opaque_float(y)), bits(opaque_float(x) / opaque_float(y))}
+    );
+  }
+  return result;
+}
+
+//! Set FTZ and DAZ, and report whether the host has them to set
+inline bool set_flush_to_zero() {
+#if defined(__x86_64__) || defined(_M_X64)
+  // Bit 15 is FTZ and bit 6 DAZ.  Written by hand rather than through
+  // `<pmmintrin.h>`, which needs SSE3 enabled at compile time; the CMake route
+  // builds without `-march`.
+  _mm_setcsr(_mm_getcsr() | 0x8040U);
+  return true;
+#else
+  return false;
+#endif
+}
 } // namespace
 
 TEST(Arith, MatchesHostRoundTrip) { test_paired_types<CheckHostArithmetic>(); }
@@ -337,6 +450,46 @@ TEST(Arith, BF32MatchesFloatArithmetic) {
     const BF<32> y = BF<32>::from_bits(random.next());
     ASSERT_TRUE(float_arithmetic_matches(x, y)) << +x.to_bits() << ", " << +y.to_bits();
   }
+}
+
+//! Arithmetic does not read the caller's floating-point environment
+//!
+//! Rounding is to nearest with ties to even whatever the caller left in the
+//! rounding mode or in MXCSR, because every shape computes on integer
+//! significands.  `BF<32>` is the shape with something to lose: it is `float`
+//! bit for bit, and an FPU route for it inherits both the host's rounding mode
+//! and its flush-to-zero bit -- and, being `[[gnu::const]]`, lets a compiler
+//! answer the second call from the first across the change, so the answer is
+//! neither this contract nor a faithful `float`.  The native `float` computed
+//! beside it is the control: where the control does not move either, the
+//! platform ignored the request and a pass here would be vacuous.
+TEST(Arith, IgnoresHostEnvironment) {
+  const HostEnvironment saved;
+  const auto pairs = environment_pairs();
+  const Sweep nearest = sweep(pairs);
+
+  const auto check = [&pairs, &nearest](const char *what) {
+    static const char *const OPERATORS[] = {"+", "-", "*", "/"};
+    const Sweep disturbed = sweep(pairs);
+
+    for (std::size_t i = 0; i < pairs.size(); ++i)
+      for (std::size_t op = 0; op < 4; ++op)
+        ASSERT_EQ(disturbed.mini[i][op], nearest.mini[i][op])
+            << what << ": " << std::hex << pairs[i].first << ' ' << OPERATORS[op] << ' '
+            << pairs[i].second;
+
+    EXPECT_NE(disturbed.host, nearest.host)
+        << what << " moved no native float; this platform leaves the test vacuous";
+  };
+
+  ASSERT_EQ(std::fesetround(FE_UPWARD), 0);
+  check("FE_UPWARD");
+  ASSERT_EQ(std::fesetround(FE_DOWNWARD), 0);
+  check("FE_DOWNWARD");
+  ASSERT_EQ(std::fesetround(FE_TONEAREST), 0);
+
+  if (set_flush_to_zero())
+    check("FTZ and DAZ");
 }
 
 TEST(Arith, WideFormatsMatchHostRoundTrip) { test_wide_types<CheckWideHostArithmetic>(); }
