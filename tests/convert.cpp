@@ -177,6 +177,27 @@ TEST(Convert, IntegerInterop) {
   EXPECT_EQ(static_cast<long>(T{0.0F}), 0L);
   EXPECT_TRUE(static_cast<bool>(T{1.0F}));
   EXPECT_FALSE(static_cast<bool>(T{0.0F}));
+
+  EXPECT_TRUE((std::is_constructible_v<T, bool>));
+  EXPECT_FALSE((std::is_constructible_v<T, int *>));
+  EXPECT_EQ(T{true}, T{1});
+  EXPECT_EQ(T{false}, T{0});
+
+  EXPECT_EQ(BF<32>{INT64_C(9007199791611905)}.to_bits(), UINT32_C(0x5A000001));
+  EXPECT_EQ(BF<32>{INT64_MIN}.to_bits(), UINT32_C(0xDF000000));
+  EXPECT_EQ(BF<32>{UINT64_MAX}.to_bits(), UINT32_C(0x5F800000));
+#if defined(__SIZEOF_INT128__) && !defined(__STRICT_ANSI__)
+  using Wide = unsigned __int128;
+  const Wide wide = (Wide{1} << 100) | (Wide{1} << 76) | 1;
+  EXPECT_EQ(BF<32>{wide}.to_bits(), UINT32_C(0x71800001));
+#endif
+
+  using W = IEEE<12, 3>;
+  EXPECT_EQ(static_cast<int>(W::infinity()), (std::numeric_limits<int>::max)());
+  EXPECT_EQ(static_cast<int>(-W::infinity()), (std::numeric_limits<int>::min)());
+  EXPECT_EQ(static_cast<int>(W::quiet_NaN()), 0);
+  EXPECT_EQ(static_cast<int>(W::max()), (std::numeric_limits<int>::max)());
+  EXPECT_EQ(static_cast<unsigned>(-W::max()), 0U);
 }
 
 TEST(Convert, WideExponentRange) {
@@ -200,6 +221,17 @@ TEST(Convert, WideExponentRange) {
   EXPECT_EQ(T{FLT_TRUE_MIN}.to_double(), static_cast<double>(FLT_TRUE_MIN));
   EXPECT_EQ(T{0x1p-1070}.to_bits(), (unsigned{T::BIAS} - 1070) << 3);
   EXPECT_EQ(T{0x1p-1070}.to_double(), 0x1p-1070);
+
+  using AboveDouble = Finite<2, 1, -10000>;
+  EXPECT_EQ(bit_cast<std::uint64_t>(AboveDouble::from_bits(0).to_double()), UINT64_C(0));
+  EXPECT_EQ(
+      bit_cast<std::uint64_t>(AboveDouble::from_bits(AboveDouble::Storage{1} << 3).to_double()),
+      UINT64_C(0x8000000000000000)
+  );
+  EXPECT_EQ(
+      bit_cast<std::uint32_t>(AboveDouble::from_bits(AboveDouble::Storage{1} << 3).to_float()),
+      UINT32_C(0x80000000)
+  );
 
   using U = IEEE<9, 3>;
   static_assert(!U::HAS_EXACT_F32_CONVERSION);

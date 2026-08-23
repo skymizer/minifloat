@@ -150,6 +150,23 @@ generated typedef grid are gone.
 
 ### Fixed
 
+- Exact conversion of a Minifloat subnormal now constructs the destination
+  fields directly. It no longer multiplies in the host type, where FTZ or DAZ
+  could turn an exactly representable value into zero.
+- Lossy `to_float()` and `to_double()` conversions now return a stored signed
+  zero before scaling. With a large negative bias, the old scale split could
+  otherwise evaluate zero times infinity and produce a NaN.
+- Integral construction now rounds directly from the integer magnitude instead
+  of first rounding through `double`; `BF<32>{9007199791611905}` now produces
+  `0x5A000001` in one rounding. `bool` construction is unambiguous and uses the
+  same direct integer path. Integral conversion now maps NaN to zero and
+  saturates infinity and out-of-range values instead of invoking undefined
+  behaviour.
+- Format biases are constrained to the range in which the integer engine's
+  exponent arithmetic cannot overflow.
+- `std::numeric_limits<T>::epsilon()` and `round_error()` now saturate to
+  `max()` when their power of two lies above a format's finite exponent range,
+  rather than wrapping the exponent field.
 - `detail::bit_cast` was declared `[[gnu::const]]`, which promises the result
   depends on the argument *values* alone — for a reference parameter, the
   address rather than what is at it. GCC's own documentation forbids it for a
@@ -166,8 +183,8 @@ generated typedef grid are gone.
   19 for maxima below 10¹⁹. It is now derived from the maximal finite code.
 - `std::numeric_limits<T>::min_exponent10` truncated toward zero, which is the
   ceiling the standard asks for only while the value is negative. A bias at or
-  below zero — legal, since the format templates constrain `E` and `M` and not
-  `B` — puts `min()` above 1 and turns that truncation into a floor:
+  below zero — legal while it remains inside the exponent-arithmetic bound —
+  puts `min()` above 1 and turns that truncation into a floor:
   `Finite<4, 3, 0>::min()` is 2, and the member said 0 where 1 is the least
   power of ten inside the normal range.
 - NaN is no longer detected with `x != x`, which a compiler is free to fold

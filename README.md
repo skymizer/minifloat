@@ -37,6 +37,8 @@ differently:
 | `FNUZ<E, M, B>`   | the &minus;0.0 slot: NaN                   | `default_bias(E) + 1` |
 
 Constraints: `E + M < 32`, `2 <= E <= 30`, `M >= 0`, and `M > 0` for `IEEE`.
+The bias must also keep exponent arithmetic in range:
+`(2^E - 1) - INT_MAX/2 <= B <= 1 - M - INT_MIN/2`.
 
 ## Type aliases
 
@@ -112,7 +114,10 @@ represent every value of a Minifloat type, but do not make the conversion
 implicit. `IS_HOST_FLOAT` asks the stronger question — whether the type *is*
 `float`, bit for bit, rather than merely fitting in one — and where it holds,
 `to_float()` is the identity, while construction from a `float` preserves every
-non-NaN bit pattern and canonicalizes NaN payloads.
+non-NaN bit pattern and canonicalizes NaN payloads. Integer construction rounds
+once; conversion to an integer truncates, maps NaN to zero, and saturates values
+outside the destination range (to zero for a negative value converted to an
+unsigned type).
 
 Rounding is to nearest, ties to even. Arithmetic is correctly rounded: every
 operator works out a result exact enough to round, on integer significands, and

@@ -513,6 +513,25 @@ TEST(Arith, IgnoresHostEnvironment) {
     check("FTZ and DAZ");
 }
 
+//! Exact conversions do not borrow the caller's subnormal mode
+TEST(Convert, ExactConversionsIgnoreFlushToZero) {
+  const HostEnvironment saved;
+  using F = FN<7, 23, 120>;
+  using D = FN<10, 1, 1023>;
+
+  const auto check = [] {
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<F>(1).to_float()), UINT32_C(0x00000080));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<F>(0x40000001).to_float()), UINT32_C(0x80000080));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<F>(0x40000000).to_float()), UINT32_C(0x80000000));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<F>(0x007FFFFF).to_float()), UINT32_C(0x03FFFFFE));
+    EXPECT_EQ(bit_cast<std::uint64_t>(opaque<D>(1).to_double()), UINT64_C(0x0008000000000000));
+  };
+
+  check();
+  if (set_flush_to_zero())
+    check();
+}
+
 TEST(Arith, WideFormatsMatchHostRoundTrip) { test_wide_types<CheckWideHostArithmetic>(); }
 
 TEST(Arith, CorrectlyRoundedSmallFormats) { test_small_types<CheckExactSmallArithmetic>(); }
@@ -557,6 +576,11 @@ TEST(Arith, ConstantEvaluation) {
   using P = IEEE<2, 29>;
   constexpr P PRODUCT = P::from_bits((1U << 30) - 1U);
   static_assert((PRODUCT * PRODUCT).to_bits() == 0x5FFF'FFFE);
+
+  using LowBias = Finite<30, 0, 0>;
+  static_assert((LowBias::max() * LowBias::max()).to_bits() == LowBias::max().to_bits());
+  using HighBias = Finite<2, 1, 1073741824>;
+  static_assert((HighBias::true_min() * HighBias::true_min()).to_bits() == 0);
   SUCCEED();
 }
 

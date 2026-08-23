@@ -224,6 +224,10 @@ TEST(Spec, NumericLimits) {
   static_assert(std::numeric_limits<FN<4, 0, 8>>::max_exponent10 == 1);
   EXPECT_EQ((FN<4, 0, 8>::max().to_double()), 64.0);
 
+  using Tiny = Finite<2, 2, 10>;
+  EXPECT_EQ(std::numeric_limits<Tiny>::epsilon(), Tiny::max());
+  EXPECT_EQ(std::numeric_limits<Tiny>::round_error(), Tiny::max());
+
   // `min_exponent10` is a ceiling. Truncating toward zero is one only while
   // the dividend stays negative, and a bias at or below zero puts `min()`
   // above 1: `Finite<4, 3, 0>::min()` is 2, so 10**1 is its least normal

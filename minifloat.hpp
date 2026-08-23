@@ -330,6 +330,14 @@ template <int E, int M, int B> struct ScientificFormat {
   static_assert(E >= 2);
   static_assert(E <= 30);
   static_assert(M >= 0);
+  static_assert(
+      std::int64_t{(1U << E) - 1U} - B <= (std::numeric_limits<int>::max)() / 2,
+      "bias is too small for exponent arithmetic"
+  );
+  static_assert(
+      std::int64_t{1} - B - M >= (std::numeric_limits<int>::min)() / 2,
+      "bias is too large for exponent arithmetic"
+  );
 
   using Storage = std::conditional_t<
       (E + M < 8), std::uint_least8_t,
@@ -674,14 +682,29 @@ private:
       if (magnitude == Format::INF_MAG)
         return std::copysign(std::numeric_limits<Float>::infinity(), sign);
 
-    if (magnitude < Bits{1} << M)
-      return magnitude *
-             std::copysign(static_cast<Float>(detail::exp2i(MIN_EXP - MANTISSA_DIGITS)), sign);
+    const auto sign_bit =
+        static_cast<Bits>(Bits{signbit()} << (std::numeric_limits<Bits>::digits - 1));
+
+    if (magnitude < Bits{1} << M) {
+      if (magnitude == 0)
+        return bit_cast<Float>(sign_bit);
+
+      // Build host fields directly; scaling in `Float` would inherit FTZ/DAZ.
+      const int leading = detail::log2_floor(magnitude);
+      const int exponent = MIN_EXP - MANTISSA_DIGITS + leading;
+
+      if (exponent < DST_MIN_EXP - 1) {
+        const int shift = exponent - leading - DST_MIN_EXP + MANT_DIG;
+        return bit_cast<Float>(static_cast<Bits>(sign_bit | (magnitude << shift)));
+      }
+
+      const auto shifted = static_cast<Bits>(magnitude << (MANT_DIG - 1 - leading));
+      const auto bias = static_cast<Bits>(exponent - DST_MIN_EXP + 1) << (MANT_DIG - 1);
+      return bit_cast<Float>(static_cast<Bits>(sign_bit | (shifted + bias)));
+    }
 
     const auto shifted = static_cast<Bits>(magnitude << (MANT_DIG - MANTISSA_DIGITS));
     const auto bias = static_cast<Bits>(Bits{MIN_EXP - DST_MIN_EXP} << (MANT_DIG - 1));
-    const auto sign_bit =
-        static_cast<Bits>(Bits{signbit()} << (std::numeric_limits<Bits>::digits - 1));
     return bit_cast<Float>(static_cast<Bits>(sign_bit | (shifted + bias)));
   }
 
@@ -696,14 +719,39 @@ public:
     assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
   }
 
-  //! Construct from any non-bool integer type by routing through double.
-  //! `bool` is excluded so it routes through `operator bool()` instead and
-  //! does not collide with that overload.
-  template <
-      typename Int,
-      std::enable_if_t<
-          std::is_integral_v<Int> && !std::is_same_v<std::remove_cv_t<Int>, bool>, int> = 0>
-  explicit Minifloat(Int x) noexcept : bits_(bits_from(static_cast<double>(x))) {}
+  //! Construct from any integer type, rounding once.
+  template <typename Int, std::enable_if_t<std::is_integral_v<Int>, int> = 0>
+  explicit constexpr Minifloat(Int x) noexcept {
+    if constexpr (std::is_same_v<std::remove_cv_t<Int>, bool>) {
+      bits_ = detail::from_parts<Format>({false, static_cast<std::uint64_t>(x), 0});
+    } else {
+      using Unsigned = std::make_unsigned_t<Int>;
+      bool negative = false;
+      auto magnitude = static_cast<Unsigned>(x);
+      if constexpr (std::is_signed_v<Int>) {
+        negative = x < 0;
+        if (negative)
+          magnitude = Unsigned{0} - magnitude;
+      }
+
+      std::uint64_t significand = 0;
+      int exponent = 0;
+      if constexpr (std::numeric_limits<Unsigned>::digits <= 63) {
+        significand = static_cast<std::uint64_t>(magnitude);
+      } else {
+        bool sticky = false;
+        const auto limit = static_cast<Unsigned>((std::numeric_limits<std::int64_t>::max)());
+        while (magnitude > limit) {
+          sticky = sticky || (magnitude & Unsigned{1}) != 0;
+          magnitude >>= 1;
+          ++exponent;
+        }
+        significand = static_cast<std::uint64_t>(magnitude) | static_cast<std::uint64_t>(sticky);
+      }
+
+      bits_ = detail::from_parts<Format>({negative, significand, exponent});
+    }
+  }
 
   static constexpr Minifloat from_bits(Storage bits) noexcept {
     Minifloat result;
@@ -863,6 +911,9 @@ public:
       if (magnitude == Format::INF_MAG)
         return std::copysign(HUGE_VAL, sign);
 
+    if (magnitude == 0)
+      return std::copysign(0.0, sign);
+
     const bool subnormal = magnitude < 1U << M;
     const auto significand =
         subnormal ? magnitude
@@ -874,9 +925,9 @@ public:
     // so the first product is exact wherever the value is representable at all
     // and the second rounds at most once.  A single factor would flush to zero
     // or to infinity long before the product does, which is the whole reason
-    // this branch exists.  These two multiplies are one of the three places a
+    // this branch exists.  These two multiplies are one of the two places a
     // caller's rounding mode can still reach a result; `arithmetic.md` names
-    // all three, and all three are conversions this shape cannot make exactly.
+    // both, and both are conversions this shape cannot make exactly.
     const int head = exponent < DBL_MIN_EXP - 1   ? DBL_MIN_EXP - 1
                      : exponent > DBL_MAX_EXP - 1 ? DBL_MAX_EXP - 1
                                                   : exponent;
@@ -887,15 +938,32 @@ public:
     return to_double();
   }
 
-  //! Truncating conversion to any non-bool integer type. As with
-  //! `static_cast<Int>(double)`, behavior is undefined for NaN, infinity, or a
-  //! finite value whose truncated value is not representable in `Int`.
+  //! Truncating conversion to any non-bool integer type.
+  //!
+  //! NaN converts to zero. Values outside the destination range, including
+  //! infinities, saturate; negative values saturate to zero for unsigned types.
+  //! `bool` stays on the dedicated nonzero conversion above.
   template <
       typename Int,
       std::enable_if_t<
           std::is_integral_v<Int> && !std::is_same_v<std::remove_cv_t<Int>, bool>, int> = 0>
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE explicit operator Int() const noexcept {
-    return static_cast<Int>(to_double());
+    if (is_nan())
+      return Int{0};
+
+    const double value = to_double();
+    const double limit = detail::exp2i(std::numeric_limits<Int>::digits);
+    if (value >= limit)
+      return (std::numeric_limits<Int>::max)();
+
+    if constexpr (std::is_signed_v<Int>) {
+      if (value <= -limit)
+        return (std::numeric_limits<Int>::min)();
+    } else if (value <= 0) {
+      return Int{0};
+    }
+
+    return static_cast<Int>(value);
   }
 
   Minifloat &operator+=(Minifloat y) noexcept { return *this = *this + y; }
@@ -1228,6 +1296,8 @@ private:
   // epsilon() and round_error().
   static constexpr T pow2(int k) noexcept {
     const int biased = k + T::BIAS;
+    if (biased > static_cast<int>(Format::MAX_FINITE_MAG >> T::MANTISSA_BITS))
+      return (T::max)();
     if (biased >= 1)
       return T::from_bits(static_cast<typename T::Storage>(biased) << T::MANTISSA_BITS);
     if (biased + T::MANTISSA_BITS >= 1)

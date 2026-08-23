@@ -51,21 +51,22 @@ rounds.
 
 That rounding is also where a caller's floating-point environment still reaches,
 and it is worth naming the whole of it rather than discovering it a third time.
-Three sites emit a host arithmetic instruction, all three on conversions the
-shape cannot make exactly: `to_double`'s scale split, for the six shapes without
-`HAS_EXACT_F64_CONVERSION`; `to_float`'s `static_cast<float>(to_double())`
-fallback, for the nine shapes that take neither the field shift nor `to_exact`;
-and the integer constructor's `static_cast<double>`, for the fourteen shapes
-whose exponent range reaches above 2<sup>53</sup>, and only for arguments past
-it.  A rounding mode or an FTZ bit moves those.  It moves nothing else: the four
-operators, the comparisons, `from_parts` and every `bit_cast` conversion are
-bit-identical under all four rounding modes and under FTZ and DAZ across all 54
-declared shapes, measured 2026-08-24 under GCC 11.4 and Clang 14 with and
-without `-frounding-math`.  `Arith.IgnoresHostEnvironment` pins the operators;
-the `BF<32>` section below is what happens when this is forgotten.  `bits_from` rounds a host float *in* either by dropping mantissa bits
-directly when its exponent field matches the source type's, or by decomposing
-exactly and handing the triple to that same `from_parts`.  The direct route is
-only a conversion: no host arithmetic or caller floating-point mode takes part.
+Two sites emit a host arithmetic instruction, both on conversions the shape
+cannot make exactly: `to_double`'s scale split, for the six shapes without
+`HAS_EXACT_F64_CONVERSION`; and `to_float`'s
+`static_cast<float>(to_double())` fallback, for the nine shapes that take
+neither the field shift nor `to_exact`.  A rounding mode or an FTZ bit moves
+those.  It moves nothing else: the four operators, the comparisons,
+`from_parts`, integral construction and exact host conversions contain no host
+arithmetic.  `Arith.IgnoresHostEnvironment` pins the operators, and
+`Convert.ExactConversionsIgnoreFlushToZero` pins the exact conversion branch
+that once multiplied subnormals.  The `BF<32>` section below is what happens
+when this is forgotten.  `bits_from` rounds a host float *in* either by dropping
+mantissa bits directly when its exponent field matches the source type's, or by
+decomposing exactly and handing the triple to that same `from_parts`.  Integral
+construction hands an integer significand directly to `from_parts`, and
+`to_exact` constructs host fields directly.  None of these routes performs host
+arithmetic or reads the caller's floating-point mode.
 
 Subtraction does not build a negated operand.  `detail::add_impl(x, y, flip)`
 inverts the right sign where `add_parts` already has it as a `bool`; `operator+`
@@ -416,7 +417,7 @@ moves.
 
 Rust's 1.709x does not transfer, and the reason is not that this library is
 slower.  It is that the *other* side of the ratio is faster here: `to_exact`
-spends a shift and a `bit_cast` where minifloat-rs's `to_f32` spends two
+constructs host fields and `bit_cast`s where minifloat-rs's `to_f32` spends two
 floating-point multiplies.  A ratio is a comparison, and the denominators are
 different libraries.
 
@@ -617,15 +618,10 @@ again rather than testing it.
 
 ## Open questions
 
-**The three conversion sites the environment reaches.**  Named in full above.
+**The two conversion sites the environment reaches.**  Named in full above.
 Each is on a conversion the format cannot make exactly, so the host's answer is
 defensible, but nothing has decided that it *is* the answer — a shape that
-overruns `double` could compute its own scale rather than borrow one.  The
-integer constructor has a second defect underneath the first, independent of any
-rounding mode: `static_cast<double>` then `bits_from` rounds twice, so
-`BF<32>{9007199791611905}` is `0x5A000000` where one rounding gives
-`0x5A000001`.  Fourteen shapes reach it, and only for arguments past
-2<sup>53</sup>.
+overruns `double` could compute its own scale rather than borrow one.
 
 **A 32-bit divider on 32-bit hosts.**  A narrow shape could normalize its
 dividend to bit 30 instead of bit 62, fitting the numerator in 32 bits and
