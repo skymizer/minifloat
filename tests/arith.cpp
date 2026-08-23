@@ -311,14 +311,31 @@ struct CheckSpecialLadder {
 //! The caller's floating-point environment, put back however the body leaves
 //!
 //! `ASSERT_*` returns from the middle of a test body and gtest runs the rest of
-//! the suite afterwards, so a leaked rounding mode would be someone else's
-//! failure.  On x86 `fesetenv` restores MXCSR whole, FTZ and DAZ included.
+//! the suite in the same process under `ctest`, so a leaked rounding mode or a
+//! leaked FTZ bit would be someone else's failure -- and `gtest-parallel`, which
+//! forks per test, would hide it locally while CI saw it.  MXCSR is saved beside
+//! `fenv_t` rather than through it: glibc's `fesetenv` does restore the denormal
+//! bits, and UCRT's `fenv_t` is a control word and a status word with no
+//! documented place to keep them.
 class HostEnvironment {
   std::fenv_t saved_;
+#if defined(__x86_64__) || defined(_M_X64)
+  unsigned mxcsr_;
+#endif
 
 public:
-  HostEnvironment() noexcept { std::fegetenv(&saved_); }
-  ~HostEnvironment() { std::fesetenv(&saved_); }
+  HostEnvironment() noexcept {
+    std::fegetenv(&saved_);
+#if defined(__x86_64__) || defined(_M_X64)
+    mxcsr_ = _mm_getcsr();
+#endif
+  }
+  ~HostEnvironment() {
+    std::fesetenv(&saved_);
+#if defined(__x86_64__) || defined(_M_X64)
+    _mm_setcsr(mxcsr_);
+#endif
+  }
   HostEnvironment(const HostEnvironment &) = delete;
   HostEnvironment &operator=(const HostEnvironment &) = delete;
 };
@@ -401,11 +418,15 @@ inline Sweep sweep(const std::vector<std::pair<std::uint32_t, std::uint32_t>> &p
 }
 
 //! Set FTZ and DAZ, and report whether the host has them to set
+//!
+//! There is no portable way to ask: it is MXCSR on x86, `FPCR.FZ` on AArch64
+//! and `FCSR` on RISC-V, and C++ names none of them.  Answering `false` skips
+//! the arm rather than faking it, which is the only honest option on a host
+//! this cannot reach -- `macos-latest` in CI is one.
 inline bool set_flush_to_zero() {
 #if defined(__x86_64__) || defined(_M_X64)
-  // Bit 15 is FTZ and bit 6 DAZ.  Written by hand rather than through
-  // `<pmmintrin.h>`, which needs SSE3 enabled at compile time; the CMake route
-  // builds without `-march`.
+  // Bit 15 is FTZ and bit 6 DAZ, written by hand so that `<xmmintrin.h>` is the
+  // only header needed.  `HostEnvironment` puts MXCSR back.
   _mm_setcsr(_mm_getcsr() | 0x8040U);
   return true;
 #else
