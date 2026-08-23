@@ -34,10 +34,17 @@ generated typedef grid are gone.
   precision, exponent range and non-finite semantics, which among the shapes
   this library admits means `IEEE<8, 23>` and nothing else. It is a stronger
   question than `HAS_EXACT_F32_CONVERSION`, which only asks whether a `float`
-  can hold every value.
+  can hold every value. It reports a fact about the layout and selects nothing:
+  `to_float` and construction from a `float` are the identity where it holds,
+  and arithmetic is the same integer engine every other shape gets.
 - `docs/arithmetic.md` and `docs/benchmarking.md`, recording the decisions
   behind the integer route and the protocol every measured claim has to meet,
   and `CLAUDE.md` as the routing table to them.
+- `Arith.IgnoresHostEnvironment`, which puts 4100 operand pairs through all four
+  operators under `FE_UPWARD`, `FE_DOWNWARD` and MXCSR's FTZ and DAZ bits and
+  requires every answer to equal the one the default environment gives, with a
+  native `float` computed beside it as the control so that a platform ignoring
+  the request cannot make the pass vacuous.
 - Exhaustive sweeps over all 2³² ordered pairs of `E5M10` and `E8M7`: the four
   operators against a `float` round trip, and the comparisons against both host
   types. The other quadratic checks stop at 11 bits; these are the two benchmark
@@ -71,20 +78,13 @@ generated typedef grid are gone.
   instead of being evaluated in a host `float` or `double` and rounded back.
   Every operator is now correctly rounded for every declared shape, and the four
   of them are `constexpr`. Encoding a host float shares that one rounding path.
-- `BF<32>` computes on the FPU rather than on integer significands, being the
-  one shape where that costs no correctness: `IEEE<8, 23>` has `float`'s
-  precision, exponent range and non-finite semantics, so nothing narrows and
-  IEEE 754 already rounds each operator once to exactly the digits the shape
-  stores. Its four operators, its `to_float` and its construction from a
-  `float` are a `bit_cast` and an FPU instruction. Addition and subtraction
-  cost 0.13x and 0.08x of what they did under GCC 11.4 and Clang 14,
-  multiplication 0.34x and 0.17x, division 0.38x under both, `to_float` 0.18x
-  and 0.28x, and construction 0.41x and 0.35x. Two things the route still does
-  in software: the result's NaN is canonicalized, since a host's default NaN
-  sign is not portable, and a constant evaluation goes back to the integer
-  engine, `bit_cast` not being a constant expression before C++20. No other
-  shape is affected, and there is no way to ask for this one — `IS_HOST_FLOAT`
-  reports it, it does not select it.
+  No shape is exempt, including `BF<32>`, which *is* `float` bit for bit: an FPU
+  rounds each operator once, but it rounds the way the caller's rounding mode
+  says and flushes subnormals the way the caller's `MXCSR` says, so no operator
+  reaches one. An answer therefore never moves with the floating-point
+  environment a caller left behind — which is a promise about the operators and
+  about encoding, not about `to_double` for a shape whose exponent range exceeds
+  `double`'s, where the conversion is already documented as lossy.
 - Addition's alignment window is 32 binades instead of 46, and division
   normalizes its dividend to bit 62 instead of using a fixed 46-bit shift. These
   bounds keep the integer engine correctly rounded through 30-bit significands.
@@ -144,9 +144,8 @@ generated typedef grid are gone.
 - `round_normal_float_to_mantissa` and `round_normal_double_to_mantissa`, which
   were implementation details. The integer rounding path replaced them.
 - `USE_FLT_ADD` and `USE_FLT_MUL`, public constants that selected the host type
-  an operator evaluated in. There is no host route left to select: the one
-  shape that reaches the FPU, `BF<32>`, reaches it because it *is* `float`, not
-  because a constant said so.
+  an operator evaluated in. There is no host route left to select, for any
+  shape, whether or not a constant says so.
 
 ### Fixed
 
