@@ -522,16 +522,21 @@ template <class Format>
   return static_cast<Storage>(code | ((Format::HAS_NEG_ZERO || code != 0) ? sign_bit : Storage{0}));
 }
 
-//! The shape's fields differ from `float` only in mantissa width
+//! The shape's fields differ from a host float only in mantissa width
 //!
 //! Matching exponent range and IEEE special values make conversion a mantissa
-//! shift.  The host checks license reading `float` through its integer layout.
-template <class Format> constexpr bool shares_host_exponent() noexcept {
+//! shift.  The host checks license reading `Float` through its integer layout.
+template <class Format, typename Float> constexpr bool shares_host_exponent() noexcept {
+  using Bits = BitsOf<Float>;
+
   return Format::HAS_INF && Format::HAS_NAN && Format::HAS_NEG_ZERO &&
-         Format::MANTISSA_BITS < FLT_MANT_DIG && Format::MIN_EXP == FLT_MIN_EXP &&
-         Format::MAX_EXP == FLT_MAX_EXP && sizeof(float) == sizeof(std::uint32_t) &&
-         Format::EXPONENT_BITS + FLT_MANT_DIG == std::numeric_limits<std::uint32_t>::digits &&
-         std::numeric_limits<float>::radix == 2 && std::numeric_limits<float>::is_iec559;
+         Format::MANTISSA_BITS < std::numeric_limits<Float>::digits &&
+         Format::MIN_EXP == std::numeric_limits<Float>::min_exponent &&
+         Format::MAX_EXP == std::numeric_limits<Float>::max_exponent &&
+         sizeof(Float) == sizeof(Bits) &&
+         Format::EXPONENT_BITS + std::numeric_limits<Float>::digits ==
+             std::numeric_limits<Bits>::digits &&
+         std::numeric_limits<Float>::radix == 2 && std::numeric_limits<Float>::is_iec559;
 }
 
 //! The shape *is* `float`, so a round trip through one is the identity
@@ -540,7 +545,7 @@ template <class Format> constexpr bool shares_host_exponent() noexcept {
 //! values, and `IEEE<7, 23>` on exponent range.  Matching precision leaves
 //! `IEEE<8, 23>` -- `BF<32>` -- as the only admitted shape.
 template <class Format> constexpr bool is_host_float() noexcept {
-  return shares_host_exponent<Format>() && Format::MANTISSA_BITS + 1 == FLT_MANT_DIG;
+  return shares_host_exponent<Format, float>() && Format::MANTISSA_BITS + 1 == FLT_MANT_DIG;
 }
 
 //! Is this call being evaluated at compile time?
@@ -621,33 +626,29 @@ private:
 
   //! Encode a host float, rounding to nearest with ties to even
   //!
-  //! A NaN input needs `Format::HAS_NAN`; see the constructors.  A `float` with
-  //! the same exponent field rounds by discarding mantissa bits directly; every
-  //! other finite value is decomposed exactly and rounded once by
+  //! A NaN input needs `Format::HAS_NAN`; see the constructors.  A host input
+  //! with the same exponent field rounds by discarding mantissa bits directly;
+  //! every other finite value is decomposed exactly and rounded once by
   //! `detail::from_parts`, so a shape whose exponent range outruns `double`'s is
   //! served as exactly as any other.
   template <typename Float>
   [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
-    // A shape that *is* `float` has nothing to round and nothing to decompose.
-    // Its NaN still canonicalizes, because a payload is the one thing a code
-    // may carry that this library does not promise to keep, and the `double`
-    // constructor beside it cannot keep one either.  `double` itself still goes
-    // the long way: narrowing is a rounding, and `from_parts` owns those.
-    if constexpr (IS_HOST_FLOAT && std::is_same_v<Float, float>) {
-      const auto bits = static_cast<Storage>(bit_cast<std::uint32_t>(x));
-      if (!Format::is_nan(bits))
-        return bits;
-      return static_cast<Storage>((bits & Format::SIGN_MASK) | Format::NAN_BITS);
-    } else if constexpr (detail::shares_host_exponent<Format>() && std::is_same_v<Float, float>) {
-      constexpr int SHIFT = FLT_MANT_DIG - 1 - M;
-      const std::uint32_t bits = bit_cast<std::uint32_t>(x);
+    if constexpr (detail::shares_host_exponent<Format, Float>()) {
+      using Bits = detail::BitsOf<Float>;
+      constexpr int SHIFT = std::numeric_limits<Float>::digits - 1 - M;
+      const Bits bits = bit_cast<Bits>(x);
 
       // Rounding a NaN can erase its retained payload and spell infinity.
-      if ((bits & (UINT32_MAX >> 1)) > static_cast<std::uint32_t>(Format::INF_MAG) << SHIFT)
+      if ((bits & ((std::numeric_limits<Bits>::max)() >> 1)) > static_cast<Bits>(Format::INF_MAG)
+                                                                 << SHIFT)
         return static_cast<Storage>(((bits >> SHIFT) & Format::SIGN_MASK) | Format::NAN_BITS);
 
-      const std::uint32_t bias = (UINT32_C(1) << (SHIFT - 1)) - 1U + ((bits >> SHIFT) & 1U);
-      return static_cast<Storage>((bits + bias) >> SHIFT);
+      if constexpr (SHIFT == 0) {
+        return static_cast<Storage>(bits);
+      } else {
+        const Bits bias = (Bits{1} << (SHIFT - 1)) - 1U + ((bits >> SHIFT) & 1U);
+        return static_cast<Storage>((bits + bias) >> SHIFT);
+      }
     }
 
     const detail::Decomposed parts = detail::decompose(x);
@@ -836,8 +837,10 @@ public:
   //! when the exponent range is too wide, and in that case a second conversion
   //! to float is safe.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE float to_float() const noexcept {
-    if constexpr (detail::shares_host_exponent<Format>())
-      return bit_cast<float>(static_cast<std::uint32_t>(bits_) << (FLT_MANT_DIG - 1 - M));
+    if constexpr (detail::shares_host_exponent<Format, float>())
+      return bit_cast<float>(
+          static_cast<detail::BitsOf<float>>(bits_) << (FLT_MANT_DIG - 1 - M)
+      );
 
     if constexpr (HAS_EXACT_F32_CONVERSION)
       return to_exact<float>();
@@ -854,6 +857,11 @@ public:
   //! When `HAS_EXACT_F64_CONVERSION` holds, the result is exact; otherwise the
   //! exponent range overflows to `HUGE_VAL` or underflows toward zero.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE double to_double() const noexcept {
+    if constexpr (detail::shares_host_exponent<Format, double>())
+      return bit_cast<double>(
+          static_cast<detail::BitsOf<double>>(bits_) << (DBL_MANT_DIG - 1 - M)
+      );
+
     if constexpr (HAS_EXACT_F64_CONVERSION)
       return to_exact<double>();
 

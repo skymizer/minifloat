@@ -48,9 +48,9 @@ what the format is able to hold, and a shape whose exponent range overruns
 is genuinely elsewhere: `to_double` splitting its scale into two in-range
 factors once a shape's exponent leaves `double`'s, where the second multiply
 rounds.  `bits_from` rounds a host float *in* either by dropping mantissa bits
-directly when the exponent field matches `float`'s, or by decomposing exactly
-and handing the triple to that same `from_parts`.  The direct route is only a
-conversion: no host arithmetic or caller floating-point mode takes part.
+directly when its exponent field matches the source type's, or by decomposing
+exactly and handing the triple to that same `from_parts`.  The direct route is
+only a conversion: no host arithmetic or caller floating-point mode takes part.
 
 Subtraction does not build a negated operand.  `detail::add_impl(x, y, flip)`
 inverts the right sign where `add_parts` already has it as a `bool`; `operator+`
@@ -362,11 +362,15 @@ The `BF<N>` family takes that conversion shortcut to its endpoint.  Every
 `BF<10>` through `BF<32>` has `float`'s exponent field and special-value rows,
 so conversion out is a left shift; below `BF<32>`, conversion in is a right
 shift with a round-to-nearest-even bias.  Only construction from a `float`
-takes this path;
-construction from a `double` still narrows through `from_parts`, and every
-operator below `BF<32>` stays on the integer engine.  A NaN still canonicalizes
-on construction; conversion out preserves the stored payload as well as its
-sign because the whole code shifts unchanged.
+takes this path for a `BF<N>`; construction from a `double` still narrows
+through `from_parts`, and every operator below `BF<32>` stays on the integer
+engine.  A NaN still canonicalizes on construction; conversion out preserves
+the stored payload as well as its sign because the whole code shifts unchanged.
+
+The same route serves default-biased `IEEE<11, M>` through `double`: this
+library admits `M` from 1 through 20, and their exponent and special-value rows
+are `double`'s.  It changes no arithmetic route and does not apply to a
+`BF<N>`'s `double` conversions, whose exponent field is still `float`'s.
 
 What the two unary conversions now cost, after over before.  Interleaved
 binaries, 15 alternating passes each pinned to core 2 of a Ryzen 9 7950X3D,
