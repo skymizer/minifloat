@@ -522,20 +522,25 @@ template <class Format>
   return static_cast<Storage>(code | ((Format::HAS_NEG_ZERO || code != 0) ? sign_bit : Storage{0}));
 }
 
+//! The shape's fields differ from `float` only in mantissa width
+//!
+//! Matching exponent range and IEEE special values make conversion a mantissa
+//! shift.  The host checks license reading `float` through its integer layout.
+template <class Format> constexpr bool shares_host_exponent() noexcept {
+  return Format::HAS_INF && Format::HAS_NAN && Format::HAS_NEG_ZERO &&
+         Format::MANTISSA_BITS < FLT_MANT_DIG && Format::MIN_EXP == FLT_MIN_EXP &&
+         Format::MAX_EXP == FLT_MAX_EXP && sizeof(float) == sizeof(std::uint32_t) &&
+         Format::EXPONENT_BITS + FLT_MANT_DIG == std::numeric_limits<std::uint32_t>::digits &&
+         std::numeric_limits<float>::radix == 2 && std::numeric_limits<float>::is_iec559;
+}
+
 //! The shape *is* `float`, so a round trip through one is the identity
 //!
-//! Precision, exponent range and non-finite semantics all have to match.
-//! `FN<8, 23>` and `Finite<8, 23>` reach one binade further than `float` does,
-//! and `IEEE<7, 23>` would fall a binade short, which turns a `float` normal
-//! into a shape subnormal and rounds it a second time.  `IEEE<8, 23>` --
-//! `BF<32>` -- is the only admitted shape that clears all three.
-//!
-//! The last two conjuncts are what `HAS_EXACT_F32_CONVERSION` carries for the
-//! same reason: a `float` that is not IEEE 754 has no layout to `bit_cast` to.
+//! `shares_host_exponent` excludes `FN<8, 23>` and `Finite<8, 23>` on special
+//! values, and `IEEE<7, 23>` on exponent range.  Matching precision leaves
+//! `IEEE<8, 23>` -- `BF<32>` -- as the only admitted shape.
 template <class Format> constexpr bool is_host_float() noexcept {
-  return Format::HAS_INF && Format::HAS_NAN && Format::MANTISSA_BITS + 1 == FLT_MANT_DIG &&
-         Format::MIN_EXP == FLT_MIN_EXP && Format::MAX_EXP == FLT_MAX_EXP &&
-         std::numeric_limits<float>::radix == 2 && std::numeric_limits<float>::is_iec559;
+  return shares_host_exponent<Format>() && Format::MANTISSA_BITS + 1 == FLT_MANT_DIG;
 }
 
 //! Is this call being evaluated at compile time?
@@ -616,10 +621,11 @@ private:
 
   //! Encode a host float, rounding to nearest with ties to even
   //!
-  //! A NaN input needs `Format::HAS_NAN`; see the constructors.  Every finite
-  //! value is decomposed exactly and rounded once by `detail::from_parts`, so
-  //! a shape whose exponent range outruns `double`'s is served as exactly as
-  //! any other.
+  //! A NaN input needs `Format::HAS_NAN`; see the constructors.  A `float` with
+  //! the same exponent field rounds by discarding mantissa bits directly; every
+  //! other finite value is decomposed exactly and rounded once by
+  //! `detail::from_parts`, so a shape whose exponent range outruns `double`'s is
+  //! served as exactly as any other.
   template <typename Float>
   [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
     // A shape that *is* `float` has nothing to round and nothing to decompose.
@@ -632,6 +638,16 @@ private:
       if (!Format::is_nan(bits))
         return bits;
       return static_cast<Storage>((bits & Format::SIGN_MASK) | Format::NAN_BITS);
+    } else if constexpr (detail::shares_host_exponent<Format>() && std::is_same_v<Float, float>) {
+      constexpr int SHIFT = FLT_MANT_DIG - 1 - M;
+      const std::uint32_t bits = bit_cast<std::uint32_t>(x);
+
+      // Rounding a NaN can erase its retained payload and spell infinity.
+      if ((bits & (UINT32_MAX >> 1)) > static_cast<std::uint32_t>(Format::INF_MAG) << SHIFT)
+        return static_cast<Storage>(((bits >> SHIFT) & Format::SIGN_MASK) | Format::NAN_BITS);
+
+      const std::uint32_t bias = (UINT32_C(1) << (SHIFT - 1)) - 1U + ((bits >> SHIFT) & 1U);
+      return static_cast<Storage>((bits + bias) >> SHIFT);
     }
 
     const detail::Decomposed parts = detail::decompose(x);
@@ -820,8 +836,8 @@ public:
   //! when the exponent range is too wide, and in that case a second conversion
   //! to float is safe.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE float to_float() const noexcept {
-    if constexpr (IS_HOST_FLOAT)
-      return detail::as_host_float<Format>(bits_);
+    if constexpr (detail::shares_host_exponent<Format>())
+      return bit_cast<float>(static_cast<std::uint32_t>(bits_) << (FLT_MANT_DIG - 1 - M));
 
     if constexpr (HAS_EXACT_F32_CONVERSION)
       return to_exact<float>();
