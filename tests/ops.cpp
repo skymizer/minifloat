@@ -76,9 +76,7 @@ struct CheckComparison {
 using Tiny = Finite<3, 4>;
 
 //! Fails on one pair, and on the same pair every time it is asked
-bool fails_on_one_pair(Tiny x, Tiny y) {
-  return !(x.to_bits() == 0x12 && y.to_bits() == 0x34);
-}
+bool fails_on_one_pair(Tiny x, Tiny y) { return !(x.to_bits() == 0x12 && y.to_bits() == 0x34); }
 
 std::atomic<int> flaky_calls{0};
 
@@ -111,7 +109,8 @@ struct CheckClassification {
                            !x << to_shift(FP_ZERO) |                    //
                            x.is_subnormal() << to_shift(FP_SUBNORMAL) | //
                            x.is_normal() << to_shift(FP_NORMAL);
-      return category == 1 << to_shift(x.classify());
+      return category == 1 << to_shift(x.classify()) &&
+             x.is_finite() == !(x.is_nan() || x.is_infinite());
     });
   }
 };
