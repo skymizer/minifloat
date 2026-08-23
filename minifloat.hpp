@@ -862,9 +862,12 @@ public:
         subnormal ? MIN_EXP - MANTISSA_DIGITS : static_cast<int>(magnitude >> M) - B - M;
 
     // Splitting the scale keeps either factor inside `double`'s exponent range,
-    // so the first product is exact and the second rounds at most once.  A
-    // single factor would flush to zero or to infinity long before the product
-    // does, which is the whole reason this branch exists.
+    // so the first product is exact wherever the value is representable at all
+    // and the second rounds at most once.  A single factor would flush to zero
+    // or to infinity long before the product does, which is the whole reason
+    // this branch exists.  These two multiplies are one of the three places a
+    // caller's rounding mode can still reach a result; `arithmetic.md` names
+    // all three, and all three are conversions this shape cannot make exactly.
     const int head = exponent < DBL_MIN_EXP - 1   ? DBL_MIN_EXP - 1
                      : exponent > DBL_MAX_EXP - 1 ? DBL_MAX_EXP - 1
                                                   : exponent;

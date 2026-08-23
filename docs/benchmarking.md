@@ -227,14 +227,14 @@ the host route — so each row is an absolute nanoseconds-per-element figure, an
 absolute figures mean nothing on their own.  A row from this table is quoted
 only as a ratio between two builds measured under the interleaving above.
 
-The unary table also runs shapes the ratio table skips.  `route` in
+The unary table also runs the one shape the ratio table skips.  `route` in
 `benches/arith.cpp` refuses a shape no host float rounds like, which is right
 for an operator comparison and wrong for a conversion: `IEEE<12, 3>` has no
 opinion about which float should referee it, but it certainly has a `to_double`.
-`BF<32>` is skipped from the other side — it *is* a `float`, and the library
-computes it on the FPU, so both arms would run one route and the ratio would
-read 1.000x by construction.  Its conversions are still worth a row, and one
-that changes is a real finding rather than an arithmetic identity.
+It is the only shape the ratio table skips.  `BF<32>` was skipped from the other
+side for one round, while the library computed it on the FPU and both arms ran
+the same instructions; [arithmetic.md](arithmetic.md) says why that route was
+withdrawn, and the shape's four rows measure something again.
 
 ## An operator is timed only against a float that rounds like it
 
