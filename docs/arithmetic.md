@@ -294,9 +294,8 @@ reading is the whole case; the rest are how it was found and what it survives.
 
 A header cannot promise *the `float` it is* without owning `#pragma STDC
 FENV_ACCESS`, `-frounding-math`, the optimization level and the user's link
-line; and it cannot promise *correctly rounded* with an FPU in the loop.  So
-the four operators
-go back through the integer engine; `detail::as_host_float`,
+line; and it cannot promise *correctly rounded* with an FPU in the loop.  So the
+four operators go back through the integer engine; `detail::as_host_float`,
 `detail::from_host_float` and `detail::in_constant_expression` go with them,
 having no other caller; and `[[gnu::const]]` on the operators is true again.
 `to_float` and the `float` constructor stay exactly as they are, a `bit_cast`
@@ -319,7 +318,7 @@ hand-picked results to drift out of date.  A native `float` computed beside
 each pair is the control: where *it* does not move either, the platform ignored
 the request and a pass would be vacuous.  Both arms reload their operands
 through `volatile`, which is not decoration.  Without it Clang answers the
-second sweep from the first, exactly as the second reading above predicts, and
+second sweep from the first, exactly as the third reading above predicts, and
 the test passes on the broken header.
 
 What the withdrawal costs, as `host / soft` from the ratio table — both routes
