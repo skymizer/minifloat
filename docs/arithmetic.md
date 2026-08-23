@@ -253,35 +253,63 @@ instruction.  It is not.  Rounding *once* is a different promise from rounding
 to *nearest*, and an FPU is not a function of its operands: it is a function of
 its operands and of a control register the caller owns.
 
-Three readings against `c1f8b6f`, the last commit that had the route, on a
-Ryzen 9 7950X3D under Ubuntu 22.04, 2026-08-24:
+Four readings against `c1f8b6f`, the last commit that had the route, on a Ryzen
+9 7950X3D under Ubuntu 22.04, 2026-08-24, with `bit_cast`'s attribute corrected
+first so that its own `-O1` fold is not read as one of these.  The first
+reading is the whole case; the rest are how it was found and what it survives.
 
 - `std::fesetround(FE_UPWARD)`, then `BF<32>::from_bits(0x3F800000) +
-  BF<32>::from_bits(0x33800000)` — one plus half an ulp.  GCC 11.4 at `-O3`
-  answered `0x3F800001`.  Ties to even is `0x3F800000`, which is what every
-  other shape answers, and what a constant evaluation of that same expression
-  answered on that same header, a constant evaluation having had no route but
-  the integer engine.
-- The same two calls, separated by the `fesetround`, under Clang 14 at `-O3`:
-  the same answer twice.  `SKYMIZER_MINIFLOAT_CONST` is `[[gnu::const]]`, a
-  promise that the result depends on the arguments and on nothing else, so the
-  second call is entitled to be answered from the first.  That promise was
-  false for exactly as long as the route existed.
-- With MXCSR's FTZ and DAZ bits set, `BF<32>::from_bits(0x00800000) *
-  BF<32>{0.5F}` answered zero under GCC, where `0x00400000` is a code the shape
-  has and the integer engine returns.
+  BF<32>::from_bits(0x33800000)` — one plus half an ulp — answered
+  `0x3F800001` at `-O0` and `0x3F800000` from `-O1` up, under *both* compilers.
+  Same expression, same header, same environment, two answers, and which one a
+  caller gets is the optimizer's business.  Neither is defensible as a
+  contract: `0x3F800000` is ties to even, which is what every other shape
+  answers and what a constant evaluation gives on that same header, and
+  `0x3F800001` is what the caller asked for.  A result that moves with `-O`
+  keeps neither promise.
+- Put the operands where the fold cannot reach them — out of line, or through
+  `volatile` — and the second answer is the only answer: `0x3F800001` under
+  both compilers at `-O1`, `-O2` and `-O3` alike.  That is the defect with no
+  compiler cleverness in it at all, the FPU honouring `FE_UPWARD` and the
+  library breaking its own rounding contract.  The reading above is the same
+  defect wearing a constant fold, which is why it looked like a disagreement
+  between compilers before the operands were made opaque.
+- Two such calls separated by the `fesetround` answer the same value twice
+  under Clang 14 at `-O3`.  `[[gnu::const]]` licenses exactly that, and it was
+  a false promise for as long as the route existed — but deleting it is not the
+  cheap fix it looks like.  A copy of the header with
+  `SKYMIZER_MINIFLOAT_CONST` defined empty is bit-identical on this probe under
+  both compilers.  Without `#pragma STDC FENV_ACCESS` — which GCC 11.4 does not
+  implement, and which Clang rejects outright in a translation unit built with
+  `-ffast-math` — the default floating-point model already permits the reuse.
+- Compile a translation unit *without* `-ffast-math` and link it *with*
+  `-ffast-math`: the driver pulls in `crtfastmath.o`, which sets FTZ and DAZ
+  before `main`.  `BF<32>::from_bits(0x00800000) * BF<32>{0.5F}` is then zero
+  under both compilers, where `0x00400000` is a code the shape has and the
+  integer engine returns.  No `fesetround`, no pragma, nothing undefined
+  anywhere in the program — one flag on somebody's link line, and one shape out
+  of 54 quietly loses its subnormals while the other 53 stay right.  MXCSR is
+  outside the standard, so *the caller was already in undefined behaviour*
+  never covered this half.
 
-The first two disagreeing with each other is the whole of the case.  A caller
-who set a rounding mode had it honoured under one compiler and ignored under
-the other; neither answer is *correctly rounded*, and only one of them is *the
-`float` it is*.  A header cannot promise the second without owning `#pragma
-STDC FENV_ACCESS`, `-frounding-math`, and both back ends' reading of the two,
-and it cannot promise the first with an FPU in the loop.  So the four operators
+A header cannot promise *the `float` it is* without owning `#pragma STDC
+FENV_ACCESS`, `-frounding-math`, the optimization level and the user's link
+line; and it cannot promise *correctly rounded* with an FPU in the loop.  So
+the four operators
 go back through the integer engine; `detail::as_host_float`,
 `detail::from_host_float` and `detail::in_constant_expression` go with them,
 having no other caller; and `[[gnu::const]]` on the operators is true again.
 `to_float` and the `float` constructor stay exactly as they are, a `bit_cast`
 reading no control register.
+
+What is withdrawn is the library *choosing* the FPU for a caller who cannot be
+asked.  The caller can still choose it, and is the only party in a position to
+know whether its own floating-point environment is safe: `IS_HOST_FLOAT` is
+public and both conversions are the identity, so
+`if constexpr (T::IS_HOST_FLOAT) out[i] = T{a[i].to_float() + b[i].to_float()};`
+compiles to SSE float adds at `BF<32>` under both compilers — vectorized under
+Clang — while the same template at `BF<16>` emits no float instruction at all.
+That is what the trait is for now.
 
 `Arith.IgnoresHostEnvironment` is the referee.  It puts 4100 operand pairs
 through all four operators under `FE_UPWARD`, `FE_DOWNWARD` and FTZ+DAZ, and

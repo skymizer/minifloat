@@ -130,12 +130,31 @@ No shape is exempt, including the one that *is* a `float`. `IEEE<8, 23>` —
 `IS_HOST_FLOAT` holds, and its `to_float()` and its construction from a `float`
 are a `bit_cast`. Its four operators are not, though for one round they were.
 An FPU rounds each operator once, but it rounds the way the caller's rounding
-mode says and flushes subnormals the way the caller's `MXCSR` says — and the
-operators being `[[gnu::const]]`, a compiler may answer the second call from
-the first across a change of either. Correctly rounded is the promise, so the
-shape stays on the integer engine and pays about five times a native `float`
-for addition. `Arith.IgnoresHostEnvironment` is the referee, and
-[docs/arithmetic.md](docs/arithmetic.md) has the readings.
+mode says, flushes subnormals the way the caller's `MXCSR` says, and — under
+the default floating-point model, attribute or no attribute — may answer a
+second call from the first across a change of either. On this box, the same `BF<32>`
+sum answered `0x3F800001` wherever the operands were opaque and `0x3F800000`
+wherever a constant fold could reach them, under both compilers; the first
+breaks ties to even and the second ignores the caller, and which one you get is
+the optimizer's business. Correctly
+rounded is the promise, so the shape stays on the integer engine and pays about
+five times a native `float` for addition. `Arith.IgnoresHostEnvironment` is the
+referee, and [docs/arithmetic.md](docs/arithmetic.md) has the readings.
+
+The speed is still there for whoever can vouch for their own floating-point
+environment, which is the caller and not this header:
+
+```cpp
+if constexpr (T::IS_HOST_FLOAT)
+  out[i] = T{a[i].to_float() + b[i].to_float()};  // both conversions are the identity
+else
+  out[i] = a[i] + b[i];
+```
+
+A `BF<32>` instantiation of that compiles to SSE float adds under GCC and
+Clang, vectorized under Clang, while a `BF<16>` instantiation of the same
+template emits no float instruction at all. That is what `IS_HOST_FLOAT` is
+for.
 
 Correctness, not speed, is why the host route is gone everywhere else, and the
 speed would not have argued for keeping it: which route leads depends on the
