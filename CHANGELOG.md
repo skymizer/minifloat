@@ -149,6 +149,15 @@ generated typedef grid are gone.
 
 ### Fixed
 
+- `detail::bit_cast` was declared `[[gnu::const]]`, which promises the result
+  depends on the argument *values* alone — for a reference parameter, the
+  address rather than what is at it. GCC's own documentation forbids it for a
+  function that examines what a pointer argument points to, and GCC 11.4 at
+  `-O1` takes the promise: `BF<32>{2.0F}.to_bits()` folded to zero and
+  `BF<32>{2.0F} * BF<32>{3.0F}` to a NaN, while `-O0`, `-O2` and `-O3` came out
+  right. It is `[[gnu::pure]]` now. The attribute has been wrong since 0.1.0;
+  what made it reachable was this round's `bit_cast` conversion fast path.
+  Neither `make check` nor the CMake route can see it, both building optimized.
 - `std::numeric_limits<T>::max_exponent10` read the top of the exponent range
   and ignored the significand of `max()`, so it came out one too high for every
   format that spends the all-ones magnitude on something that is not a number.
