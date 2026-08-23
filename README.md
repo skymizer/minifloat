@@ -111,7 +111,8 @@ Construction from numeric types and conversion back through `to_float()`,
 represent every value of a Minifloat type, but do not make the conversion
 implicit. `IS_HOST_FLOAT` asks the stronger question — whether the type *is*
 `float`, bit for bit, rather than merely fitting in one — and where it holds,
-`to_float()` and construction from a `float` are the identity.
+`to_float()` is the identity, while construction from a `float` preserves every
+non-NaN bit pattern and canonicalizes NaN payloads.
 
 Rounding is to nearest, ties to even. Arithmetic is correctly rounded: every
 operator works out a result exact enough to round, on integer significands, and
@@ -127,8 +128,9 @@ flush-to-zero bit set.
 
 No shape is exempt, including the one that *is* a `float`. `IEEE<8, 23>` —
 `BF<32>` — has `float`'s precision, exponent range and non-finite semantics, so
-`IS_HOST_FLOAT` holds, and its `to_float()` and its construction from a `float`
-are a `bit_cast`. Its four operators are not, though for one round they were.
+`IS_HOST_FLOAT` holds. Its `to_float()` is a `bit_cast`, while construction from
+a `float` preserves non-NaN bits and canonicalizes NaN payloads. Its four
+operators are not, though for one round they were.
 An FPU rounds each operator once, but it rounds the way the caller's rounding
 mode says, flushes subnormals the way the caller's `MXCSR` says, and — under
 the default floating-point model, attribute or no attribute — may answer a
@@ -146,7 +148,7 @@ environment, which is the caller and not this header:
 
 ```cpp
 if constexpr (T::IS_HOST_FLOAT)
-  out[i] = T{a[i].to_float() + b[i].to_float()};  // both casts are the identity
+  out[i] = T{a[i].to_float() + b[i].to_float()};  // no conversion rounding
 else
   out[i] = a[i] + b[i];
 ```

@@ -548,7 +548,7 @@ template <class Format, typename Float> constexpr bool shares_host_exponent() no
          std::numeric_limits<Float>::radix == 2 && std::numeric_limits<Float>::is_iec559;
 }
 
-//! The shape *is* `float`, so a round trip through one is the identity
+//! The shape has `float`'s layout; only NaN payload canonicalization changes bits
 //!
 //! `shares_host_exponent` excludes `FN<8, 23>` and `Finite<8, 23>` on special
 //! values, and `IEEE<7, 23>` on exponent range.  Matching precision leaves
@@ -594,10 +594,10 @@ public:
 
   //! Is this type `float`, bit for bit?
   //!
-  //! Where it holds, `to_float` and construction from a `float` are the
-  //! identity, and an array of these is an array of `float`.  Arithmetic is
-  //! *not*: the operators stay on the integer engine, because a shape that is
-  //! a `float` is also a shape whose FPU answer moves with the caller's
+  //! Where it holds, `to_float` is the identity, while construction from a
+  //! `float` preserves non-NaN bits and canonicalizes NaN payloads.  Arithmetic
+  //! is *not*: the operators stay on the integer engine, because a shape that
+  //! is a `float` is also a shape whose FPU answer moves with the caller's
   //! rounding mode and MXCSR, and this library rounds to nearest either way.
   //! `detail::is_host_float` is the predicate and says which shapes miss it and
   //! why; `benches/arith.cpp` reads this to pick the host type it compares the
@@ -725,12 +725,12 @@ public:
   [[nodiscard]] static constexpr Minifloat true_min() noexcept { return from_bits(1); }
 
   /// Minimum positive normal value
-  [[nodiscard]] static constexpr Minifloat min() noexcept {
+  [[nodiscard]] static constexpr Minifloat(min)() noexcept {
     return from_bits(static_cast<Storage>(1U << M));
   }
 
   /// Maximum finite value
-  [[nodiscard]] static constexpr Minifloat max() noexcept {
+  [[nodiscard]] static constexpr Minifloat(max)() noexcept {
     return from_bits(Format::MAX_FINITE_MAG);
   }
 
@@ -887,10 +887,9 @@ public:
     return to_double();
   }
 
-  //! Truncating conversion to any non-bool integer type. Out-of-range values
-  //! invoke the host's float-to-integer truncation, matching what
-  //! `static_cast<Int>(double)` would do — for NaN and infinity this is
-  //! implementation-defined per the C++ standard.
+  //! Truncating conversion to any non-bool integer type. As with
+  //! `static_cast<Int>(double)`, behavior is undefined for NaN, infinity, or a
+  //! finite value whose truncated value is not representable in `Int`.
   template <
       typename Int,
       std::enable_if_t<
@@ -1342,9 +1341,9 @@ public:
   static constexpr bool traps = false;
   static constexpr bool tinyness_before = false;
 
-  static constexpr T min() noexcept { return T::min(); }
-  static constexpr T max() noexcept { return T::max(); }
-  static constexpr T lowest() noexcept { return -T::max(); }
+  static constexpr T(min)() noexcept { return (T::min)(); }
+  static constexpr T(max)() noexcept { return (T::max)(); }
+  static constexpr T lowest() noexcept { return -(T::max)(); }
   static constexpr T denorm_min() noexcept { return T::true_min(); }
   static constexpr T epsilon() noexcept { return pow2(1 - digits); }
   static constexpr T round_error() noexcept { return pow2(-1); }

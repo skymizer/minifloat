@@ -7,7 +7,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 with Cargo-style compatibility before 1.0: `0.y.z` releases may break
 compatibility when `y` changes, while changes to `z` remain compatible.
 
-## [Unreleased] — 0.2.0-dev
+## [0.2.0] - 2026-08-24
 
 Rewrite of the header as layered formats over one engine. This is a breaking
 change: the `Minifloat<E, M, NanStyle, Bias, SubnormalStyle>` signature and the
@@ -35,8 +35,9 @@ generated typedef grid are gone.
   this library admits means `IEEE<8, 23>` and nothing else. It is a stronger
   question than `HAS_EXACT_F32_CONVERSION`, which only asks whether a `float`
   can hold every value. It reports a fact about the layout and selects nothing:
-  `to_float` and construction from a `float` are the identity where it holds,
-  and arithmetic is the same integer engine every other shape gets.
+  `to_float` is the identity where it holds, while construction from a `float`
+  preserves every non-NaN bit pattern and canonicalizes NaN payloads. Arithmetic
+  is the same integer engine every other shape gets.
 - `docs/arithmetic.md` and `docs/benchmarking.md`, recording the decisions
   behind the integer route and the protocol every measured claim has to meet,
   and `CLAUDE.md` as the routing table to them.
@@ -208,5 +209,5 @@ Initial public release.
 - Host `float` and `double` types must use IEEE 754 binary32 and binary64
   representations.
 
-[Unreleased]: https://github.com/skymizer/minifloat/compare/0.1.0...HEAD
+[0.2.0]: https://github.com/skymizer/minifloat/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/skymizer/minifloat/commits/0.1.0

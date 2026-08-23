@@ -298,13 +298,14 @@ line; and it cannot promise *correctly rounded* with an FPU in the loop.  So the
 four operators go back through the integer engine; `detail::as_host_float`,
 `detail::from_host_float` and `detail::in_constant_expression` go with them,
 having no other caller; and `[[gnu::const]]` on the operators is true again.
-`to_float` and the `float` constructor stay exactly as they are, a `bit_cast`
-reading no control register.
+`to_float` stays a `bit_cast`; the `float` constructor also only inspects bits,
+though it canonicalizes NaN payloads.  Neither reads a control register.
 
 What is withdrawn is the library *choosing* the FPU for a caller who cannot be
 asked.  The caller can still choose it, and is the only party in a position to
 know whether its own floating-point environment is safe: `IS_HOST_FLOAT` is
-public and both conversions are the identity, so
+public, `to_float()` is the identity, and construction back preserves every
+non-NaN bit pattern while canonicalizing NaN payloads, so
 `if constexpr (T::IS_HOST_FLOAT) out[i] = T{a[i].to_float() + b[i].to_float()};`
 compiles to SSE float adds at `BF<32>` under both compilers — vectorized under
 Clang — while the same template at `BF<16>` emits no float instruction at all.
@@ -516,7 +517,7 @@ Coverage, stated precisely because the loose version keeps getting repeated.
 pair of finite operands** of all 39 shapes in `test_small_types` — every
 declared width through 8 bits, all four format layers, exponent widths 2 through
 7 — which is exhaustive, 2<sup>16</sup> pairs at the top end.
-`Arith.CorrectlyRoundedWideFormats` runs the same oracle over the 13 shapes of
+`Arith.CorrectlyRoundedWideFormats` runs the same oracle over the 15 shapes of
 `test_wide_types`, where even the narrowest ordered-pair space is
 2<sup>32</sup> and out of reach, so it samples.
 
