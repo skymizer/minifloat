@@ -622,10 +622,10 @@ private:
   //! Encode a host float, rounding to nearest with ties to even
   //!
   //! A NaN input needs `Format::HAS_NAN`; see the constructors.  A host input
-  //! with the same exponent field rounds by discarding mantissa bits directly;
-  //! every other finite value is decomposed exactly and rounded once by
-  //! `detail::from_parts`, so a shape whose exponent range outruns `double`'s is
-  //! served as exactly as any other.
+  //! with the same exponent field rounds by discarding mantissa bits directly.
+  //! Other exact, narrow shapes rebase the source field and round its integer
+  //! code; the remaining values are decomposed exactly and rounded once by
+  //! `detail::from_parts`.
   template <typename Float>
   [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
     if constexpr (detail::shares_host_exponent<Format, Float>()) {
@@ -635,7 +635,7 @@ private:
 
       // Rounding a NaN can erase its retained payload and spell infinity.
       if ((bits & ((std::numeric_limits<Bits>::max)() >> 1)) > static_cast<Bits>(Format::INF_MAG)
-                                                                 << SHIFT)
+                                                                   << SHIFT)
         return static_cast<Storage>(((bits >> SHIFT) & Format::SIGN_MASK) | Format::NAN_BITS);
 
       if constexpr (SHIFT == 0) {
@@ -644,6 +644,49 @@ private:
         const Bits bias = (Bits{1} << (SHIFT - 1)) - 1U + ((bits >> SHIFT) & 1U);
         return static_cast<Storage>((bits + bias) >> SHIFT);
       }
+    }
+
+    constexpr bool EXACT_CONVERSION =
+        std::is_same_v<Float, float> ? HAS_EXACT_F32_CONVERSION : HAS_EXACT_F64_CONVERSION;
+    constexpr bool SUBNORMALS_ROUND_TO_ZERO =
+        MIN_EXP - MANTISSA_DIGITS >= std::numeric_limits<Float>::min_exponent;
+    if constexpr (EXACT_CONVERSION && SUBNORMALS_ROUND_TO_ZERO) {
+      using Bits = detail::BitsOf<Float>;
+      constexpr int DIGITS = std::numeric_limits<Float>::digits;
+      constexpr int FRACTION_BITS = DIGITS - 1;
+      constexpr int RESERVED_FIELD = 2 * std::numeric_limits<Float>::max_exponent - 1;
+      constexpr Bits SIGN = Bits{1} << (std::numeric_limits<Bits>::digits - 1);
+
+      const Bits bits = bit_cast<Bits>(x);
+      const Bits magnitude = bits & ~SIGN;
+      const auto sign = static_cast<Storage>((bits & SIGN) != 0 ? Format::SIGN_MASK : Storage{0});
+      const int field = static_cast<int>(magnitude >> FRACTION_BITS);
+      const std::uint64_t fraction = magnitude & ((Bits{1} << FRACTION_BITS) - 1U);
+
+      if (field == RESERVED_FIELD) {
+        if (fraction == 0)
+          return static_cast<Storage>(sign | Format::OVERFLOW_MAG);
+        if constexpr (Format::HAS_NAN)
+          return static_cast<Storage>(sign | Format::NAN_BITS);
+        else
+          return static_cast<Storage>(sign | Format::MAX_FINITE_MAG);
+      }
+
+      // This tier's floor gate makes every source subnormal less than half the
+      // destination's true minimum.
+      if (field == 0)
+        return Format::HAS_NEG_ZERO ? sign : Storage{0};
+
+      const int rebased = field + std::numeric_limits<Float>::min_exponent - MIN_EXP;
+      const int shift = std::min(63, DIGITS - MANTISSA_DIGITS + std::max(1 - rebased, 0));
+      const std::uint64_t unrounded =
+          (static_cast<std::uint64_t>(std::max(rebased, 1)) << FRACTION_BITS) | fraction;
+      const std::uint64_t bias =
+          shift == 0 ? 0 : (UINT64_C(1) << (shift - 1)) - 1U + ((unrounded >> shift) & 1U);
+      const std::uint64_t rounded = shift == 0 ? unrounded : (unrounded + bias) >> shift;
+      const auto code =
+          static_cast<Storage>(std::min(rounded, static_cast<std::uint64_t>(Format::OVERFLOW_MAG)));
+      return static_cast<Storage>(code | ((Format::HAS_NEG_ZERO || code != 0) ? sign : Storage{0}));
     }
 
     const detail::Decomposed parts = detail::decompose(x);

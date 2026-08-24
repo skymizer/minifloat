@@ -76,6 +76,14 @@ template <int N> void expect_float_path_matches_generic(std::uint64_t stride) {
     }
   }
 }
+
+template <typename T> bool float_encoder_matches_reference(float x) {
+  if constexpr (!T::HAS_NAN)
+    if ((std::isnan)(x))
+      return true;
+
+  return T{x}.to_bits() == reference_encode<T>(static_cast<double>(x)).to_bits();
+}
 } // namespace
 
 TEST(Encode, RoundsEveryBoundaryCorrectly) { test_all_types<CheckRoundingBoundaries>(); }
@@ -89,4 +97,17 @@ TEST(Encode, BFFloatFastPathMatchesGenericPath) {
   expect_float_path_matches_generic<16>(1);
   expect_float_path_matches_generic<20>(STRIDE);
   expect_float_path_matches_generic<24>(STRIDE);
+}
+
+TEST(Encode, GeneralizedFloatFastPathMatchesReference) {
+  const auto failing = find_failing_pair<E5M10>([](E5M10 high, E5M10 low) {
+    const auto bits = static_cast<std::uint32_t>(high.to_bits()) << 16 | low.to_bits();
+    const float x = bit_cast<float>(bits);
+    return float_encoder_matches_reference<E4M3>(x) && float_encoder_matches_reference<E4M3FN>(x) &&
+           float_encoder_matches_reference<E4M3FNUZ>(x) &&
+           float_encoder_matches_reference<E2M1FN>(x) && float_encoder_matches_reference<E5M10>(x);
+  });
+
+  if (failing)
+    ADD_FAILURE() << "float bits " << (failing->first << 16 | failing->second);
 }

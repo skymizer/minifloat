@@ -63,10 +63,22 @@ arithmetic.  `Arith.IgnoresHostEnvironment` pins the operators, and
 that once multiplied subnormals.  The `BF<32>` section below is what happens
 when this is forgotten.  `bits_from` rounds a host float *in* either by dropping
 mantissa bits directly when its exponent field matches the source type's, or by
-decomposing exactly and handing the triple to that same `from_parts`.  Integral
-construction hands an integer significand directly to `from_parts`, and
-`to_exact` constructs host fields directly.  None of these routes performs host
-arithmetic or reads the caller's floating-point mode.
+rebasing and rounding its integer fields when the destination is exact in the
+source and its true minimum is above the source's subnormal range.  The latter
+gate makes every source subnormal round to zero, leaving the remaining narrow
+shapes to skip both `decompose` and `from_parts`.  Other inputs decompose exactly
+and hand the triple to that same `from_parts`.  Integral construction hands an
+integer significand directly to `from_parts`, and `to_exact` constructs host
+fields directly.  None of these routes performs host arithmetic or reads the
+caller's floating-point mode.
+
+Across the 12 unary `from` rows that take the rebased-field tier, after over
+before was 0.943x under GCC 11.4 and 0.818x under Clang 14.  These are the
+geomeans, not per-shape claims: code placement left the six unchanged `from`
+rows spread across 0.947x–1.007x and 0.899x–1.328x.  The `soft` controls
+centered at 1.005x and 1.009x, and `neg`/`abs` at 1.005x and 0.998x.  Ryzen 9
+7950X3D, 2026-08-24, minimum of 15 alternating passes pinned to core 2 under
+the protocol in [benchmarking.md](benchmarking.md).
 
 Subtraction does not build a negated operand.  `detail::add_impl(x, y, flip)`
 inverts the right sign where `add_parts` already has it as a `bool`; `operator+`
