@@ -7,7 +7,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 with Cargo-style compatibility before 1.0: `0.y.z` releases may break
 compatibility when `y` changes, while changes to `z` remain compatible.
 
-## [Unreleased]
+## [0.2.1] - 2026-08-25
 
 ### Changed
 
@@ -236,6 +236,6 @@ Initial public release.
 - Host `float` and `double` types must use IEEE 754 binary32 and binary64
   representations.
 
-[Unreleased]: https://github.com/skymizer/minifloat/compare/0.2.0...HEAD
+[0.2.1]: https://github.com/skymizer/minifloat/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/skymizer/minifloat/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/skymizer/minifloat/commits/0.1.0
