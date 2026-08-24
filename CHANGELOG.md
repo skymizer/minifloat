@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 with Cargo-style compatibility before 1.0: `0.y.z` releases may break
 compatibility when `y` changes, while changes to `z` remain compatible.
 
+## [Unreleased]
+
+### Changed
+
+- Exact narrow host inputs now encode by rebasing and rounding their integer
+  fields, and arithmetic shares one subnormal/normal rounding path.
+- Lossy `to_float` and `to_double` conversions now build host fields directly,
+  so they always round to nearest-even and ignore directed rounding and
+  flush-to-zero settings.
+
 ## [0.2.0] - 2026-08-24
 
 Rewrite of the header as layered formats over one engine. This is a breaking
@@ -226,5 +236,6 @@ Initial public release.
 - Host `float` and `double` types must use IEEE 754 binary32 and binary64
   representations.
 
+[Unreleased]: https://github.com/skymizer/minifloat/compare/0.2.0...HEAD
 [0.2.0]: https://github.com/skymizer/minifloat/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/skymizer/minifloat/commits/0.1.0
