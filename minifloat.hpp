@@ -517,22 +517,14 @@ template <class Format>
 
   // The exponent of the value, which is in [2**e, 2**(e+1)).
   const int e = parts.exponent + log2_floor(parts.significand);
-
-  std::int64_t magnitude = 0;
-  if (e < Format::MIN_EXP - 1) {
-    // Subnormal numbers all share the ULP of the smallest one, so their code
-    // *is* the rounded multiple of that ULP.
-    magnitude = round_to_scale(parts.significand, parts.exponent, Format::MIN_EXP - 1 - M);
-  } else {
-    // Rounding to `M + 1` digits may carry into the implicit bit.  That lands
-    // on the next exponent field with a zero mantissa, which is exactly where
-    // the extra ULP belongs.  The code trails the rounded significand by
-    // `(e + B - 1) << M`, whose parity is the tie-break's only correction.
-    const bool parity_offset = M == 0 && (e + Format::BIAS) % 2 == 0;
-    const std::int64_t rounded =
-        round_to_scale(parts.significand, parts.exponent, e - M, parity_offset);
-    magnitude = (static_cast<std::int64_t>(e + Format::BIAS) << M) + rounded - (INT64_C(1) << M);
-  }
+  constexpr int FLOOR = Format::MIN_EXP - 1;
+  const int clamped_e = std::max(e, FLOOR);
+  // Subnormal codes and normal exponent rows meet at the same rounding scale.
+  // M == 0 still takes its tie parity from the normal exponent field.
+  const bool parity_offset = M == 0 && e >= FLOOR && (e + Format::BIAS) % 2 == 0;
+  const std::int64_t magnitude =
+      round_to_scale(parts.significand, parts.exponent, clamped_e - M, parity_offset) +
+      (static_cast<std::int64_t>(clamped_e - FLOOR) << M);
 
   const auto code = static_cast<Storage>(std::min<std::int64_t>(magnitude, Format::OVERFLOW_MAG));
   // A value that rounds to zero drops its sign for the same reason a zero does.

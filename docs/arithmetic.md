@@ -109,6 +109,15 @@ low bit is a constant, and the bit that has to be even is the exponent field's.
 `round_to_scale`, which flips the parity it reads.  The old bit-trick encoder
 carried this for free; an integer significand has to be told.
 
+The subnormal and normal cases use one scale rather than two rounding arms.
+Clamping the value exponent at `MIN_EXP - 1` makes the subnormal code the
+rounded significand and the normal code that same result plus its exponent-row
+offset; the parity gate above stays off below the boundary.  GCC 11.4 and Clang
+14 both replace the old branch with a conditional move, shrinking the benchmark
+binary's `.text` by 4684 and 2476 bytes.  With no unaffected operator control,
+the 68 `soft` rows aggregate to 1.004x and 0.913x after over before.  Ryzen 9
+7950X3D, 2026-08-24, minimum of 15 alternating passes pinned to core 2.
+
 ## Why there is no hardware route left to choose but one
 
 The speed is a bonus.  The reason is correctness: a host float cannot referee a
