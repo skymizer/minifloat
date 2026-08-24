@@ -575,6 +575,17 @@ cannot be used to argue for the thing that fails that way.
 
 ## Nulls from this round, recorded on purpose
 
+**Selecting every `to_exact` case: split by compiler, reverted.**  Computing
+the normal and subnormal host fields unconditionally removed the early returns
+and shrank `.text` by 738 bytes under GCC 11.4 and 3292 bytes under Clang 14.
+That did not make it a portable win: the 36 unary `f32`/`f64` rows measured
+0.897x after over before under GCC and 1.513x under Clang.  The unchanged
+controls centered at 1.004x and 0.987x.  Clang's selects were branchless, but
+they paid the subnormal renormalization on every normal value; GCC made a
+different trade.  Minimum of 15 alternating passes per compiler on the Ryzen 9
+7950X3D, pinned to core 2, 2026-08-24.  The rebuildable experiment is
+`scratch/to-exact-selects` (`8858a58`).
+
 **The branchless sign flip: measured, reverted.**  minifloat-rs found that the
 zero guard in its `Neg` — a format without a negative zero must not flip a zero,
 because the code it would flip into is the NaN — compiled to a `setcc`, whose
