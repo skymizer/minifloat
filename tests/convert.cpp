@@ -150,7 +150,7 @@ TEST(Convert, BF32MatchesFloatBitsAndNaNSemantics) {
   }
 }
 
-//! `detail::exp2i` stands in for `std::exp2` on the inexact conversion paths
+//! `detail::exp2i` stands in for `std::exp2` on integer range checks
 //!
 //! Its two boundaries are the ones an off-by-one in the field arithmetic moves:
 //! the least subnormal `double` and the largest finite power of two.
@@ -163,6 +163,94 @@ TEST(Convert, Exp2i) {
   EXPECT_EQ(detail::exp2i(-1075), 0.0);
   EXPECT_EQ(detail::exp2i(1023), std::ldexp(1.0, 1023));
   EXPECT_EQ(detail::exp2i(1024), HUGE_VAL);
+}
+
+TEST(Convert, InexactConversionsIgnoreHostEnvironment) {
+  const HostEnvironment saved;
+  using Wide = IEEE<12, 3>;
+  const auto wide_code = [](int exponent, unsigned fraction = 0, bool negative = false) {
+    const unsigned magnitude = (exponent + Wide::BIAS) << Wide::MANTISSA_BITS | fraction;
+    return magnitude | static_cast<unsigned>(negative)
+                           << (Wide::EXPONENT_BITS + Wide::MANTISSA_BITS);
+  };
+
+  const auto check = [wide_code] {
+    EXPECT_EQ(bit_cast<std::uint64_t>(opaque<Wide>(wide_code(-1076)).to_double()), UINT64_C(0));
+    EXPECT_EQ(bit_cast<std::uint64_t>(opaque<Wide>(wide_code(-1075)).to_double()), UINT64_C(0));
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<Wide>(wide_code(-1075, 0, true)).to_double()),
+        UINT64_C(0x8000000000000000)
+    );
+    EXPECT_EQ(bit_cast<std::uint64_t>(opaque<Wide>(wide_code(-1074)).to_double()), UINT64_C(1));
+    EXPECT_EQ(bit_cast<std::uint64_t>(opaque<Wide>(wide_code(-1074, 4)).to_double()), UINT64_C(2));
+    EXPECT_EQ(bit_cast<std::uint64_t>(opaque<Wide>(wide_code(-1073, 2)).to_double()), UINT64_C(2));
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<Wide>(wide_code(1024)).to_double()),
+        UINT64_C(0x7FF0000000000000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<Wide>(wide_code(1024, 0, true)).to_double()),
+        UINT64_C(0xFFF0000000000000)
+    );
+
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<Wide>(wide_code(-151)).to_float()), UINT32_C(0));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<Wide>(wide_code(-150)).to_float()), UINT32_C(0));
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(opaque<Wide>(wide_code(-150, 0, true)).to_float()),
+        UINT32_C(0x80000000)
+    );
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<Wide>(wide_code(-149)).to_float()), UINT32_C(1));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<Wide>(wide_code(-149, 4)).to_float()), UINT32_C(2));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<Wide>(wide_code(-148, 2)).to_float()), UINT32_C(2));
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(opaque<Wide>(wide_code(128)).to_float()), UINT32_C(0x7F800000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(opaque<Wide>(wide_code(128, 0, true)).to_float()),
+        UINT32_C(0xFF800000)
+    );
+
+    using Precise = IEEE<2, 29>;
+    constexpr std::uint32_t ONE = static_cast<std::uint32_t>(Precise::BIAS) << 29;
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<Precise>(ONE | 32).to_float()), UINT32_C(0x3F800000));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<Precise>(ONE | 96).to_float()), UINT32_C(0x3F800002));
+
+    using AtNormalBoundary = IEEE<7, 24, 128>;
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(opaque<AtNormalBoundary>((1U << 25) - 2).to_float()),
+        UINT32_C(0x00800000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(opaque<AtNormalBoundary>((1U << 25) - 3).to_float()),
+        UINT32_C(0x007FFFFF)
+    );
+
+    using AtOverflow = IEEE<7, 24, -1>;
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(opaque<AtOverflow>(AtOverflow::max().to_bits()).to_float()),
+        UINT32_C(0x7F800000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(opaque<AtOverflow>(AtOverflow::max().to_bits() - 1).to_float()),
+        UINT32_C(0x7F7FFFFF)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint32_t>(
+            opaque<AtOverflow>(AtOverflow::max().to_bits() | UINT32_C(0x80000000)).to_float()
+        ),
+        UINT32_C(0xFF800000)
+    );
+  };
+
+  ASSERT_EQ(std::fesetround(FE_TONEAREST), 0);
+  check();
+  ASSERT_EQ(std::fesetround(FE_UPWARD), 0);
+  check();
+  ASSERT_EQ(std::fesetround(FE_DOWNWARD), 0);
+  check();
+  ASSERT_EQ(std::fesetround(FE_TONEAREST), 0);
+  if (set_flush_to_zero())
+    check();
 }
 
 TEST(Convert, IntegerInterop) {

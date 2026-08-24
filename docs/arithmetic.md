@@ -44,24 +44,29 @@ regression.
 `detail::from_parts` is the only place *arithmetic* rounds, ties to even, by
 way of `detail::round_to_scale`.  One rounding, so no intermediate can lose
 what the format is able to hold, and a shape whose exponent range overruns
-`double`'s is served as exactly as any other.  The library's one other rounding
-is genuinely elsewhere: `to_double` splitting its scale into two in-range
-factors once a shape's exponent leaves `double`'s, where the second multiply
-rounds.
+`double`'s is served as exactly as any other.  Outbound lossy conversion rounds
+elsewhere but uses the same integer primitive: `detail::host_from_parts` treats
+`float` or `double` as the destination fields, rounds the exact minifloat parts
+once, and saturates at the host infinity.  `to_float` targets its own fields
+directly rather than rounding through `double` first.
 
-That rounding is also where a caller's floating-point environment still reaches,
-and it is worth naming the whole of it rather than discovering it a third time.
-Two sites emit a host arithmetic instruction, both on conversions the shape
-cannot make exactly: `to_double`'s scale split, for the six shapes without
-`HAS_EXACT_F64_CONVERSION`; and `to_float`'s
-`static_cast<float>(to_double())` fallback, for the nine shapes that take
-neither the field shift nor `to_exact`.  A rounding mode or an FTZ bit moves
-those.  It moves nothing else: the four operators, the comparisons,
-`from_parts`, integral construction and exact host conversions contain no host
-arithmetic.  `Arith.IgnoresHostEnvironment` pins the operators, and
-`Convert.ExactConversionsIgnoreFlushToZero` pins the exact conversion branch
-that once multiplied subnormals.  The `BF<32>` section below is what happens
-when this is forgotten.  `bits_from` rounds a host float *in* either by dropping
+The unary roster exposes three of those lossy routes.  Their after-over-before
+geomean is 0.626x under GCC 11.4 and 0.742x under Clang 14.  The result is
+mixed but clears its own controls at every row: `E12M3` `f32`/`f64` take
+0.264x/0.428x and 0.294x/0.424x, while `E11M4` `f32` takes 2.177x and 3.271x.
+The nine BF conversion controls span 0.962x–1.394x and 0.964x–1.035x; the 68
+`soft` controls center at 0.999x and 1.000x.  Across the whole benchmark binary,
+the scalar FP-multiply count falls from 32 to 17 under GCC and 24 to 15 under
+Clang, and the four and seven `cvtsd2ss` instructions both fall to zero.  Ryzen
+9 7950X3D, 2026-08-24, minimum of 15 alternating passes pinned to core 2.
+
+No caller floating-point environment reaches the library now.  The four
+operators, comparisons, integral construction, and every inbound and outbound
+floating conversion contain no host arithmetic.  `Arith.IgnoresHostEnvironment`
+pins the operators, `Convert.ExactConversionsIgnoreFlushToZero` pins exact decoding, and
+`Convert.InexactConversionsIgnoreHostEnvironment` covers directed rounding and
+FTZ at both widths.  The `BF<32>` section below is what happens when this is
+forgotten.  `bits_from` rounds a host float *in* either by dropping
 mantissa bits directly when its exponent field matches the source type's, or by
 rebasing and rounding its integer fields when the destination is exact in the
 source and its true minimum is above the source's subnormal range.  The latter
@@ -333,8 +338,10 @@ compiles to SSE float adds at `BF<32>` under both compilers — vectorized under
 Clang — while the same template at `BF<16>` emits no float instruction at all.
 That is what the trait is for now.
 
-`Arith.IgnoresHostEnvironment` is the referee.  It puts 4100 operand pairs
-through all four operators under `FE_UPWARD`, `FE_DOWNWARD` and FTZ+DAZ, and
+`Arith.IgnoresHostEnvironment` is the arithmetic referee;
+`Convert.InexactConversionsIgnoreHostEnvironment` is its outbound-conversion
+counterpart.  The former puts 4100 operand pairs through all four operators
+under `FE_UPWARD`, `FE_DOWNWARD` and FTZ+DAZ, and
 requires each answer to equal the one the same sweep gave under the default
 environment — the contract restated as a property, rather than a table of
 hand-picked results to drift out of date.  A native `float` computed beside
@@ -649,11 +656,6 @@ binaries, and layout is a property of the binary, so re-running measured it
 again rather than testing it.
 
 ## Open questions
-
-**The two conversion sites the environment reaches.**  Named in full above.
-Each is on a conversion the format cannot make exactly, so the host's answer is
-defensible, but nothing has decided that it *is* the answer — a shape that
-overruns `double` could compute its own scale rather than borrow one.
 
 **A 32-bit divider on 32-bit hosts.**  A narrow shape could normalize its
 dividend to bit 30 instead of bit 62, fitting the numerator in 32 bits and

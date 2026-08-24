@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cfenv>
 #include <cmath>
 #include <cstdint>
 #include <gtest/gtest.h>
@@ -22,8 +23,62 @@
 #include <utility>
 #include <vector>
 
+#if defined(__x86_64__) || defined(_M_X64)
+#include <xmmintrin.h>
+#endif
+
 namespace minifloat_test {
 using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
+
+//! The caller's floating-point environment, restored when a test scope ends
+//!
+//! `fenv_t` does not portably carry x86's denormal controls, so MXCSR is saved
+//! beside it.  This keeps an assertion return from leaking either setting into
+//! the rest of a non-forked test run.
+class HostEnvironment {
+  std::fenv_t saved_;
+#if defined(__x86_64__) || defined(_M_X64)
+  unsigned mxcsr_;
+#endif
+
+public:
+  HostEnvironment() noexcept {
+    std::fegetenv(&saved_);
+#if defined(__x86_64__) || defined(_M_X64)
+    mxcsr_ = _mm_getcsr();
+#endif
+  }
+  ~HostEnvironment() {
+    std::fesetenv(&saved_);
+#if defined(__x86_64__) || defined(_M_X64)
+    _mm_setcsr(mxcsr_);
+#endif
+  }
+  HostEnvironment(const HostEnvironment &) = delete;
+  HostEnvironment &operator=(const HostEnvironment &) = delete;
+};
+
+//! A minifloat value the optimizer has to reload where it is written
+//!
+//! The volatile load prevents a `PURE` conversion or `CONST` operator from
+//! being reused across a floating-point environment change.
+template <typename T> T opaque(std::uint32_t bits) noexcept {
+  volatile typename T::Storage cell = static_cast<typename T::Storage>(bits);
+  return T::from_bits(cell);
+}
+
+//! Set FTZ and DAZ, and report whether the host has them to set
+//!
+//! C++ names neither setting.  Platforms whose control register is not covered
+//! skip that arm rather than pretending it ran.
+inline bool set_flush_to_zero() {
+#if defined(__x86_64__) || defined(_M_X64)
+  _mm_setcsr(_mm_getcsr() | 0x8040U);
+  return true;
+#else
+  return false;
+#endif
+}
 
 //! Test floating-point identity like Object.is in JavaScript
 inline bool same_float(float x, float y) {

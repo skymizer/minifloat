@@ -203,7 +203,8 @@ template <typename Float>
 //! it, and `std::ldexp` costs a call even where its exponent is a literal.
 //! Building the field directly needs neither, and reaches the subnormal results
 //! a naive `1 << (52 + field)` would not.  Out of range it saturates to
-//! infinity or to zero, which is what both callers want at either end.
+//! infinity or to zero, which is what integral conversion's range check wants
+//! at either end.
 //!
 //! Not `constexpr`: `bit_cast` is only constexpr from C++20, and C++17 is the
 //! floor.  A literal argument folds regardless, the body being `inline` and in
@@ -250,6 +251,40 @@ template <typename Float>
   const bool odd = ((kept & 1) != 0) != parity_offset;
   const bool round_up = dropped > half || (dropped == half && odd);
   return static_cast<std::int64_t>(kept + static_cast<std::uint64_t>(round_up));
+}
+
+//! Round an integer significand directly into a host IEEE representation
+template <typename Float>
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST inline Float host_from_parts(Parts parts) noexcept {
+  using Bits = BitsOf<Float>;
+  constexpr int DIGITS = std::numeric_limits<Float>::digits;
+  constexpr int FRACTION_BITS = DIGITS - 1;
+  constexpr int MIN_EXP = std::numeric_limits<Float>::min_exponent;
+  constexpr int MAX_EXP = std::numeric_limits<Float>::max_exponent;
+  constexpr Bits INF_BITS = static_cast<Bits>(2 * MAX_EXP - 1) << FRACTION_BITS;
+
+  static_assert(std::numeric_limits<Float>::radix == 2);
+  static_assert(std::numeric_limits<Float>::is_iec559);
+  static_assert(sizeof(Float) == sizeof(Bits));
+
+  const Bits sign = static_cast<Bits>(parts.negative) << (std::numeric_limits<Bits>::digits - 1);
+  if (parts.significand == 0)
+    return bit_cast<Float>(sign);
+
+  const int e = parts.exponent + log2_floor(parts.significand);
+  Bits magnitude = 0;
+  if (e < MIN_EXP - 1) {
+    magnitude =
+        static_cast<Bits>(round_to_scale(parts.significand, parts.exponent, MIN_EXP - DIGITS));
+  } else if (e >= MAX_EXP) {
+    magnitude = INF_BITS;
+  } else {
+    const auto rounded =
+        static_cast<Bits>(round_to_scale(parts.significand, parts.exponent, e - FRACTION_BITS));
+    magnitude = (static_cast<Bits>(e - MIN_EXP + 1) << FRACTION_BITS) + rounded;
+    magnitude = std::min(magnitude, INF_BITS);
+  }
+  return bit_cast<Float>(static_cast<Bits>(sign | magnitude));
 }
 
 //! Widest exponent gap an aligned sum spans
@@ -743,6 +778,41 @@ private:
     return bit_cast<Float>(static_cast<Bits>(sign_bit | (shifted + bias)));
   }
 
+  //! Rounded host reconstruction for a shape that is not exact in `Float`
+  template <typename Float>
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE Float to_inexact() const noexcept {
+    using Bits = detail::BitsOf<Float>;
+    constexpr int FRACTION_BITS = std::numeric_limits<Float>::digits - 1;
+    constexpr Bits INF_BITS = static_cast<Bits>(2 * std::numeric_limits<Float>::max_exponent - 1)
+                              << FRACTION_BITS;
+    constexpr Bits NAN_BITS = INF_BITS | Bits{1} << (FRACTION_BITS - 1);
+    const auto sign = static_cast<Bits>(Bits{signbit()} << (std::numeric_limits<Bits>::digits - 1));
+    const auto magnitude = static_cast<Storage>(bits_ & ABS_MASK);
+
+    if constexpr (Format::HAS_NAN)
+      if (Format::is_nan(bits_))
+        return bit_cast<Float>(static_cast<Bits>(sign | NAN_BITS));
+
+    if constexpr (Format::HAS_INF)
+      if (magnitude == Format::INF_MAG)
+        return bit_cast<Float>(static_cast<Bits>(sign | INF_BITS));
+
+    if (magnitude == 0)
+      return bit_cast<Float>(sign);
+
+    // Wide formats spend most of their code space beyond the host's range.
+    // Normal source rows can settle those two cases without normalization.
+    if (magnitude >= Storage{1} << M) {
+      const int e = static_cast<int>(magnitude >> M) - B;
+      if (e < std::numeric_limits<Float>::min_exponent - std::numeric_limits<Float>::digits - 1)
+        return bit_cast<Float>(sign);
+      if (e >= std::numeric_limits<Float>::max_exponent)
+        return bit_cast<Float>(static_cast<Bits>(sign | INF_BITS));
+    }
+
+    return detail::host_from_parts<Float>(detail::to_parts<Format>(bits_));
+  }
+
 public:
   Minifloat() = default;
 
@@ -903,9 +973,8 @@ public:
 
   //! Explicit conversion to float
   //!
-  //! The lossy branch goes through double.  Conversion to double is lossy only
-  //! when the exponent range is too wide, and in that case a second conversion
-  //! to float is safe.
+  //! The lossy branch rounds directly into `float`'s integer fields, so it does
+  //! not inherit the caller's rounding mode or flush-to-zero setting.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE float to_float() const noexcept {
     if constexpr (detail::shares_host_exponent<Format, float>())
       return bit_cast<float>(
@@ -915,7 +984,7 @@ public:
     if constexpr (HAS_EXACT_F32_CONVERSION)
       return to_exact<float>();
 
-    return static_cast<float>(to_double());
+    return to_inexact<float>();
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE explicit operator float() const noexcept {
@@ -924,8 +993,9 @@ public:
 
   //! Conversion to double
   //!
-  //! When `HAS_EXACT_F64_CONVERSION` holds, the result is exact; otherwise the
-  //! exponent range overflows to `HUGE_VAL` or underflows toward zero.
+  //! When `HAS_EXACT_F64_CONVERSION` holds, the result is exact.  Otherwise its
+  //! integer fields are rounded once, overflowing to infinity or underflowing
+  //! toward zero without host floating-point arithmetic.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE double to_double() const noexcept {
     if constexpr (detail::shares_host_exponent<Format, double>())
       return bit_cast<double>(
@@ -935,38 +1005,7 @@ public:
     if constexpr (HAS_EXACT_F64_CONVERSION)
       return to_exact<double>();
 
-    const double sign = signbit() ? -1.0 : 1.0;
-    const auto magnitude = static_cast<std::uint32_t>(bits_ & ABS_MASK);
-
-    if constexpr (Format::HAS_NAN)
-      if (Format::is_nan(bits_))
-        return std::copysign(NAN, sign);
-
-    if constexpr (Format::HAS_INF)
-      if (magnitude == Format::INF_MAG)
-        return std::copysign(HUGE_VAL, sign);
-
-    if (magnitude == 0)
-      return std::copysign(0.0, sign);
-
-    const bool subnormal = magnitude < 1U << M;
-    const auto significand =
-        subnormal ? magnitude
-                  : static_cast<std::uint32_t>((magnitude & ((1U << M) - 1U)) | 1U << M);
-    const int exponent =
-        subnormal ? MIN_EXP - MANTISSA_DIGITS : static_cast<int>(magnitude >> M) - B - M;
-
-    // Splitting the scale keeps either factor inside `double`'s exponent range,
-    // so the first product is exact wherever the value is representable at all
-    // and the second rounds at most once.  A single factor would flush to zero
-    // or to infinity long before the product does, which is the whole reason
-    // this branch exists.  These two multiplies are one of the two places a
-    // caller's rounding mode can still reach a result; `arithmetic.md` names
-    // both, and both are conversions this shape cannot make exactly.
-    const int head = exponent < DBL_MIN_EXP - 1   ? DBL_MIN_EXP - 1
-                     : exponent > DBL_MAX_EXP - 1 ? DBL_MAX_EXP - 1
-                                                  : exponent;
-    return sign * significand * detail::exp2i(head) * detail::exp2i(exponent - head);
+    return to_inexact<double>();
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE explicit operator double() const noexcept {
