@@ -7,12 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 with Cargo-style compatibility before 1.0: `0.y.z` releases may break
 compatibility when `y` changes, while changes to `z` remain compatible.
 
-## [Unreleased]
+## [0.3.0] - 2026-09-21
 
 ### Added
 
 - `IS_BFLOAT` and explicit, exact widening between BF precisions.
 - `bench --bf` to compare integer and hardware kernels at all BF widths.
+- Benchmarks for construction from `double` and for storing minifloat arrays
+  from both host types, including the cost of BF storage alignment.
+- Focused GCC/C++17 and Clang/C++20 CI checks with strict floating-point
+  rounding enabled, including BF encoding under directed rounding and FTZ/DAZ.
 
 ### Changed
 
@@ -21,10 +25,20 @@ compatibility when `y` changes, while changes to `z` remain compatible.
   results remain ties-to-even under directed rounding and FTZ/DAZ; constant
   expressions continue to use the integer engine. Hardware operations may set
   floating-point exception flags.
-- The next package version is 0.3.0 because BF10–15 and BF17–31 object layouts
-  change. BF16 remains two bytes and BF17–32 remain four. Packed `from_bits()` /
+- BF10–15 and BF17–31 object layouts change. BF16 remains two bytes and
+  BF17–32 remain four. Packed `from_bits()` /
   `to_bits()` encodings and `BF<N> == IEEE<8, N - 9>` remain unchanged. Rebuild
   consumers together rather than mixing old and new object layouts.
+- Float construction rounds directly into aligned BF storage. Array construction
+  takes 0.924x under GCC and 0.911x under Clang across BF16, BF20, BF24 and BF32;
+  packed-code construction has mixed results. `docs/arithmetic.md` records the
+  measurements, controls, and workload limits.
+
+### Fixed
+
+- Decimal exponent limits now remain correct at extreme legal biases. Bounded
+  integer fractions replace double logarithms that could round across an
+  integer and make `min_exponent10` or `max_exponent10` off by one.
 
 ## [0.2.1] - 2026-08-25
 
@@ -255,7 +269,7 @@ Initial public release.
 - Host `float` and `double` types must use IEEE 754 binary32 and binary64
   representations.
 
-[Unreleased]: https://github.com/skymizer/minifloat/compare/0.2.1...HEAD
+[0.3.0]: https://github.com/skymizer/minifloat/compare/0.2.1...0.3.0
 [0.2.1]: https://github.com/skymizer/minifloat/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/skymizer/minifloat/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/skymizer/minifloat/commits/0.1.0
