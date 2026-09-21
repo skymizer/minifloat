@@ -116,13 +116,13 @@ TEST(Convert, ExplicitCastsMatchNamedConversions) { test_all_types<CheckExplicit
 namespace {
 struct CheckBfStorage {
   template <typename T> static bool check() {
-    constexpr int N = T::MANTISSA_BITS + 9;
-    using Word = std::conditional_t<(N <= 16), std::uint16_t, std::uint32_t>;
+    using Word = std::conditional_t<(T::MANTISSA_BITS <= 7), std::uint16_t, std::uint32_t>;
     static_assert(sizeof(T) == sizeof(Word));
     static_assert(std::is_trivially_copyable_v<T>);
     static_assert(std::is_standard_layout_v<T>);
-    // MSVC requires an explicit capture even for this constexpr width (C3493).
-    return for_all<T>([N](T x) {
+    return for_all<T>([](T x) {
+      // A captured width is not a constant expression for MSVC's if constexpr.
+      constexpr int N = T::MANTISSA_BITS + 9;
       const auto packed = x.to_bits();
       const auto stored = bit_cast<Word>(x);
       if (stored != static_cast<Word>(packed << (sizeof(Word) * 8 - N)))
