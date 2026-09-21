@@ -1550,16 +1550,79 @@ private:
     return T::from_bits(0);
   }
 
-  // Decimal digits per bit, to more places than 30103 / 100000 gives. The two
-  // exponent10 members below are the only ones that need it.
-  static constexpr double LOG10_2 = 0.30102999566398119521373889472449;
+  // A fraction with 96 binary places. Decimal exponent limits reach roughly
+  // +/- 10^9, where even a correctly rounded double logarithm can cross an
+  // integer. Use integer intervals instead; long double is only double on MSVC.
+  struct LogFraction {
+    std::uint32_t high;
+    std::uint64_t low;
+  };
 
-  // constexpr floor, which `std::floor` is not in C++17 and which truncation
-  // is not: both signs occur here, since a large bias puts `max()` under 1 and
-  // a bias at or below zero puts `min()` above it.
-  static constexpr int floored(double x) noexcept {
-    const auto truncated = static_cast<int>(x);
-    return truncated - (truncated > x);
+  // floor(exponent * logarithm - correction), with both fractions scaled by
+  // 2^96. Three 32-bit products avoid a nonstandard 128-bit integer dependency.
+  static constexpr int log_floor(int exponent, LogFraction logarithm, LogFraction correction) {
+    const auto n =
+        static_cast<std::uint64_t>(exponent < 0 ? -static_cast<std::int64_t>(exponent) : exponent);
+    const auto bottom = static_cast<std::uint32_t>(logarithm.low) * n;
+    const auto middle = (logarithm.low >> 32) * n + (bottom >> 32);
+    auto high = static_cast<std::int64_t>(logarithm.high * n + (middle >> 32));
+    auto low = (middle << 32) | static_cast<std::uint32_t>(bottom);
+    if (exponent < 0) {
+      high = -high - (low != 0);
+      low = std::uint64_t{0} - low;
+    }
+    high -= static_cast<std::int64_t>(correction.high) + (low < correction.low);
+    constexpr auto RADIX = INT64_C(1) << 32;
+    return static_cast<int>(high / RADIX - (high % RADIX < 0));
+  }
+
+  // floor(log10(2^Exponent * (1 - 2^-Precision))). Precision zero omits
+  // the significand correction, and precision one reduces to 2^(Exponent-1).
+  // Constants are lower bounds; adding one unit gives the upper bound.
+  // docs/decimal-limits.md records their generation and whole-domain check.
+  template <int Exponent, int Precision> static constexpr int decimal_exponent() {
+    constexpr LogFraction LOG10_2{UINT32_C(0x4d104d42), UINT64_C(0x7de7fbcc47c4acd6)};
+    // -log10(1 - 2^-p), indexed by p. The first two cases need no correction.
+    constexpr LogFraction CORRECTIONS[31] = {
+        {UINT32_C(0x00000000), UINT64_C(0x0000000000000000)},
+        {UINT32_C(0x00000000), UINT64_C(0x0000000000000000)},
+        {UINT32_C(0x1ffbfc2b), UINT64_C(0xbc780375837c4b0b)},
+        {UINT32_C(0x0ed88f6b), UINT64_C(0xb355fa196e1e0dda)},
+        {UINT32_C(0x072ce3f3), UINT64_C(0x362ff6da5aca518d)},
+        {UINT32_C(0x0387a106), UINT64_C(0xef09881397f0ba9b)},
+        {UINT32_C(0x01c03a80), UINT64_C(0xae5e05382d51f71b)},
+        {UINT32_C(0x00df3b5e), UINT64_C(0xbbda7e186b65af39)},
+        {UINT32_C(0x006f65a8), UINT64_C(0x75f672f0a347b623)},
+        {UINT32_C(0x0037a4e0), UINT64_C(0x8b7fa04961d6b4d2)},
+        {UINT32_C(0x001bcef5), UINT64_C(0x18e29611a506bc65)},
+        {UINT32_C(0x000de69b), UINT64_C(0xf8f58005dfc20fa8)},
+        {UINT32_C(0x0006f316), UINT64_C(0x5e90f44aa39c5303)},
+        {UINT32_C(0x0003797d), UINT64_C(0x48ac878f8968ca07)},
+        {UINT32_C(0x0001bcbb), UINT64_C(0x2acb14e53d57da94)},
+        {UINT32_C(0x0000de5c), UINT64_C(0xb706384ddbaf140a)},
+        {UINT32_C(0x00006f2e), UINT64_C(0x23ebb6cdf12726eb)},
+        {UINT32_C(0x00003797), UINT64_C(0x04100ff69b6d68a4)},
+        {UINT32_C(0x00001bcb), UINT64_C(0x7e8e96dbf0662f6c)},
+        {UINT32_C(0x00000de5), UINT64_C(0xbe68ef5db7f99bee)},
+        {UINT32_C(0x000006f2), UINT64_C(0xdefce0b1becf7c00)},
+        {UINT32_C(0x00000379), UINT64_C(0x6f708a9a767866a6)},
+        {UINT32_C(0x000001bc), UINT64_C(0xb7b4cbddbccbdada)},
+        {UINT32_C(0x000000de), UINT64_C(0x5bd98793024346d5)},
+        {UINT32_C(0x0000006f), UINT64_C(0x2dec8c328a8827b3)},
+        {UINT32_C(0x00000037), UINT64_C(0x96f6383387ab9aa9)},
+        {UINT32_C(0x0000001b), UINT64_C(0xcb7b18a054716bc0)},
+        {UINT32_C(0x0000000d), UINT64_C(0xe5bd8b71ce5fd512)},
+        {UINT32_C(0x00000006), UINT64_C(0xf2dec5815039b948)},
+        {UINT32_C(0x00000003), UINT64_C(0x796f62b2c25f5132)},
+        {UINT32_C(0x00000001), UINT64_C(0xbcb7b155e7c045d8)},
+    };
+    constexpr int E = Exponent - (Precision == 1);
+    constexpr auto C = CORRECTIONS[Precision];
+    constexpr int LOWER =
+        log_floor(E, {LOG10_2.high, LOG10_2.low + (E < 0)}, {C.high, C.low + (Precision > 1)});
+    constexpr int UPPER = log_floor(E, {LOG10_2.high, LOG10_2.low + (E >= 0)}, C);
+    static_assert(LOWER == UPPER, "decimal exponent interval crosses an integer");
+    return LOWER;
   }
 
   // floor(log10(max())), read off the maximal finite code rather than off
@@ -1569,45 +1632,6 @@ private:
   // `FN<E, 0>` loses its whole top row to the one NaN. Reading the code also
   // makes the bias fall out for free, wherever a caller supplies an odd one.
   static constexpr int exact_max_exponent10() noexcept {
-    // log2(1 - 2^-p) indexed by precision p, so that a maximal finite
-    // magnitude is 2^BINADE * (1 - 2^-PRECISION). Index 0 is unreachable —
-    // a maximum's precision is at least 1 — and its entry is a leftover.
-    // `E + M < 32` bounds the precision at 30. Shared with the minifloat-rs
-    // sibling, which spells the same table `detail::LOG2_SIGNIFICAND`.
-    constexpr double LOG2_SIGNIFICAND[31] = {
-        -2.0,
-        -1.0,
-        -4.15037499278843813e-1,
-        -1.92645077942395881e-1,
-        -9.31094043914814651e-2,
-        -4.58036896131247886e-2,
-        -2.27200765000835289e-2,
-        -1.13153132278341461e-2,
-        -5.64656314114206272e-3,
-        -2.82051906237866263e-3,
-        -1.40957025467135363e-3,
-        -7.04612976589372706e-4,
-        -3.52263471629021385e-4,
-        -1.76120984274024062e-4,
-        -8.80578045800263834e-5,
-        -4.40282304417772115e-5,
-        -2.20139472639555020e-5,
-        -1.10069316433851864e-5,
-        -5.50345532462453928e-6,
-        -2.75172503805526697e-6,
-        -1.37586186296463416e-6,
-        -6.87930767466723669e-7,
-        -3.43965342729483034e-7,
-        -1.71982661113774261e-7,
-        -8.59913279941456218e-8,
-        -4.29956633563874719e-8,
-        -2.14978315180224060e-8,
-        -1.07489157189683711e-8,
-        -5.37445784947347765e-9,
-        -2.68722892223406186e-9,
-        -1.34361446049136169e-9,
-    };
-
     constexpr unsigned MAG = Format::MAX_FINITE_MAG;
     constexpr unsigned MAN_MASK = (1U << T::MANTISSA_BITS) - 1U;
     // The significand is one bit shorter wherever the all-ones magnitude is
@@ -1617,7 +1641,7 @@ private:
     // is always the binade of a normal value.
     constexpr int BINADE = static_cast<int>(MAG >> T::MANTISSA_BITS) - T::BIAS + 1;
 
-    return floored((BINADE + LOG2_SIGNIFICAND[PRECISION]) * LOG10_2);
+    return decimal_exponent<BINADE, PRECISION>();
   }
 
   // ceil(log10(min())) in the `FLT_MIN_10_EXP` sense: the least power of ten
@@ -1626,7 +1650,7 @@ private:
   // `MIN_EXP` is `2 - BIAS`, so a bias at or below zero lifts the dividend
   // above zero and turns that same truncation into a floor.
   static constexpr int exact_min_exponent10() noexcept {
-    return -floored(-(T::MIN_EXP - 1) * LOG10_2);
+    return -decimal_exponent<1 - T::MIN_EXP, 0>();
   }
 
 public:

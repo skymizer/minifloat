@@ -243,6 +243,23 @@ TEST(Spec, NumericLimits) {
   static_assert(std::numeric_limits<Finite<4, 3, -10>>::min_exponent10 == 4);
 }
 
+TEST(Spec, ExtremeDecimalExponents) {
+  // These products of log10(2) lie within a double ULP of an integer.
+  // Expected floors/ceilings were computed with 100 decimal digits; see
+  // docs/decimal-limits.md. Both exponent signs and the significand correction
+  // matter: adding a tiny log2(significand) to a large binade can erase it.
+  static_assert(std::numeric_limits<Finite<4, 3, -198096464>>::min_exponent10 == 59632979);
+  static_assert(std::numeric_limits<IEEE<4, 3, 146964309>>::min_exponent10 == -44240664);
+  static_assert(std::numeric_limits<FN<4, 3, 345060774>>::min_exponent10 == -103873642);
+  static_assert(std::numeric_limits<FNUZ<4, 3, -198096464>>::min_exponent10 == 59632979);
+  static_assert(std::numeric_limits<Finite<2, 0, -146964305>>::max_exponent10 == 44240664);
+  static_assert(std::numeric_limits<Finite<2, 0, 198096468>>::max_exponent10 == -59632979);
+  static_assert(std::numeric_limits<Finite<2, 29, -345060769>>::max_exponent10 == 103873642);
+  static_assert(std::numeric_limits<Finite<2, 29, 198096469>>::max_exponent10 == -59632979);
+  static_assert(std::numeric_limits<Finite<2, 0, 3>>::max_exponent10 == 0);
+  static_assert(std::numeric_limits<Finite<2, 1, 1>>::min_exponent10 == 0);
+}
+
 TEST(Spec, DefaultConstructionIsZero) {
   E3M4 x;
   EXPECT_EQ(x.to_bits(), 0u);
