@@ -11,8 +11,10 @@ engine selects `BfStorage<Format>` instead of `PackedStorage<Format>`. Both own
 private bits; construction enforces the representation invariant. BF storage
 aligns the sign at the MSB of a 16- or 32-bit word and keeps unused low bits zero.
 Widening within a word size is a copy; crossing from 16 to 32 bits shifts by 16.
-The public bit APIs still exchange packed codes. This changes the object ABI
-for BF10–15 and BF17–31, so consumers must rebuild together.
+The public bit APIs still exchange packed codes. Float construction rounds
+directly into the aligned word and clears its unused low bits. The aligned
+representation changes the object ABI for BF10–15 and BF17–31, so consumers
+must rebuild together.
 
 The representation is adapted from et-toolchain's BF, with the precision and
 format carried in the storage type. There is no separately maintained BF value
@@ -98,13 +100,16 @@ aggregates: instruction placement was not independently calibrated for each
 individual row.
 
 Against the previous public operators at `dfeee78`, the new public operators
-took **0.570x under GCC and 0.572x under Clang**, geometric means over BF16,
+with packed-code sinks took **0.570x under GCC and 0.572x under Clang**, geometric means over BF16,
 BF20, BF24 and BF32's four operators. The 52 general-format software control
 rows centered at 1.002x and 1.001x, with ranges 0.958–1.057 and 0.963–1.035.
 They are source-insulated controls; these ranges are not asserted to be a
 byte-identical code-placement calibration. BF's software route alone changed
 to 1.014x and 1.021x after alignment, which is why its packing cost must stay
-in the comparison. The public hardware route wins with that cost included.
+in the comparison. These sinks do not measure storing a result object; the
+`store_f32` and `store_f64` conversion rows added later cover actual array
+storage. The public hardware route wins for the packed-code workload measured
+here.
 
 Build each compiler into a separate binary and follow the interleaving protocol
 in [benchmarking.md](benchmarking.md); add `--bf --json` for the complete BF

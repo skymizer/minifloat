@@ -637,6 +637,20 @@ public:
     return result;
   }
 
+  //! Round directly into the aligned word, without a packed-code intermediate.
+  static BfStorage from_float(float x) noexcept {
+    constexpr int DROP = 23 - Format::MANTISSA_BITS;
+    auto bits = bit_cast<std::uint32_t>(x);
+    if ((bits & UINT32_C(0x7fffffff)) > UINT32_C(0x7f800000)) {
+      bits = (bits & UINT32_C(0x80000000)) | UINT32_C(0x7fc00000);
+    } else if constexpr (DROP != 0) {
+      bits += (UINT32_C(1) << (DROP - 1)) - 1U + ((bits >> DROP) & 1U);
+    }
+    BfStorage result;
+    result.bits_ = static_cast<Bits>((bits >> (32 - WIDTH)) & (UINT32_MAX << SHIFT));
+    return result;
+  }
+
   constexpr Bits to_bits() const noexcept { return static_cast<Bits>(bits_ >> SHIFT); }
   constexpr std::uint32_t float_bits() const noexcept {
     return static_cast<std::uint32_t>(bits_) << (32 - WIDTH);
@@ -902,7 +916,11 @@ private:
 public:
   Minifloat() = default;
 
-  explicit Minifloat(float x) noexcept : storage_(Representation::from_bits(bits_from(x))) {
+  explicit Minifloat(float x) noexcept {
+    if constexpr (IS_BFLOAT)
+      storage_ = Representation::from_float(x);
+    else
+      storage_ = Representation::from_bits(bits_from(x));
     assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
   }
 

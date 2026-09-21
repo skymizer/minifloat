@@ -82,6 +82,53 @@ struct CheckBfDoubleEncoding {
   }
 };
 
+struct CheckBfFloatEncoding {
+  template <typename T> static bool check() {
+    using Word = typename T::Storage;
+    constexpr int DROP = 23 - T::MANTISSA_BITS;
+    constexpr int PADDING = std::numeric_limits<Word>::digits - 9 - T::MANTISSA_BITS;
+    std::vector<std::pair<std::uint32_t, Word>> cases;
+    const auto add = [&cases](std::uint32_t bits) {
+      // Form expectations before enabling DAZ: the independent oracle widens
+      // its float input to double and would otherwise lose host subnormals.
+      cases.emplace_back(bits, reference_encode<T>(bit_cast<float>(bits)).to_bits());
+    };
+    for (auto bits :
+         {0U, 0x80000000U, 1U, 0x80000001U, 0x007fffffU, 0x00800000U, 0x7f7fffffU, 0xff7fffffU,
+          0x7f800000U, 0xff800000U, 0x7f800001U, 0xff800001U, 0x7fffffffU, 0xffffffffU})
+      add(bits);
+    Lcg random{UINT64_C(0xA63F940D5E2187BC)};
+    for (unsigned i = 0; i < 1U << 12; ++i) {
+      const auto bits = random.next();
+      add(bits);
+      if constexpr (DROP != 0) {
+        const auto tie = (bits & (UINT32_MAX << DROP)) | (UINT32_C(1) << (DROP - 1));
+        add(tie - 1);
+        add(tie);
+        add(tie + 1);
+      }
+    }
+    const auto check = [&cases, PADDING] {
+      for (const auto &sample : cases) {
+        volatile std::uint32_t cell = sample.first;
+        const T value{bit_cast<float>(static_cast<std::uint32_t>(cell))};
+        if (value.to_bits() != sample.second ||
+            bit_cast<Word>(value) != static_cast<Word>(sample.second << PADDING))
+          return false;
+      }
+      return true;
+    };
+    for (int mode : {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO}) {
+      const HostEnvironment saved;
+      if (std::fesetround(mode) != 0 || !check())
+        return false;
+      if (set_flush_to_zero() && !check())
+        return false;
+    }
+    return true;
+  }
+};
+
 template <int N> void expect_float_path_matches_generic(std::uint64_t stride) {
   constexpr std::uint64_t END = UINT64_C(1) << 32;
 
@@ -116,6 +163,8 @@ TEST(Encode, RoundsEveryBoundaryCorrectly) { test_all_types<CheckRoundingBoundar
 TEST(Encode, RandomFloatSweep) { test_all_types<CheckRandomFloatPatterns>(); }
 
 TEST(Encode, BfDoubleEncodingMatchesIndependentOracle) { test_bf_types<CheckBfDoubleEncoding>(); }
+
+TEST(Encode, BfFloatEncodingIgnoresHostEnvironment) { test_bf_types<CheckBfFloatEncoding>(); }
 
 TEST(Encode, BFFloatFastPathMatchesGenericPath) {
   constexpr std::uint64_t END = UINT64_C(1) << 32;
