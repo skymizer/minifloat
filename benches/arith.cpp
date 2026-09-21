@@ -54,6 +54,17 @@ template <typename T> void black_box(T x) noexcept {
 #endif
 }
 
+//! Make completed array stores observable without converting back to packed bits.
+template <typename T> void observe_buffer(const std::vector<T> &values) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+  asm volatile("" : : "r"(values.data()) : "memory"); // NOLINT(hicpp-no-assembler)
+#else
+  const auto *bytes = reinterpret_cast<const volatile unsigned char *>(values.data());
+  for (std::size_t i = 0; i < values.size() * sizeof(T); ++i)
+    black_box(bytes[i]);
+#endif
+}
+
 //! Deterministic pseudo-random source using Knuth's MMIX constants
 class Lcg {
   std::uint64_t state_;
@@ -246,9 +257,13 @@ template <typename T> void bench_unary_shape(const char *shape) {
   // has none to hand back, so `T{...}` below is always a value the format can
   // represent.
   std::vector<float> floats;
+  std::vector<double> doubles;
   floats.reserve(pairs.size());
-  for (const auto &pair : pairs)
+  doubles.reserve(pairs.size());
+  for (const auto &pair : pairs) {
     floats.push_back(pair.first.to_float());
+    doubles.push_back(pair.first.to_double());
+  }
 
   bench_unary(shape, "neg", [&pairs] {
     for (const auto &pair : pairs)
@@ -269,6 +284,25 @@ template <typename T> void bench_unary_shape(const char *shape) {
   bench_unary(shape, "from", [&floats] {
     for (const float x : floats)
       black_box(T{x}.to_bits());
+  });
+  bench_unary(shape, "from_f64", [&doubles] {
+    for (const double x : doubles)
+      black_box(T{x}.to_bits());
+  });
+
+  // The packed sinks above can cancel BF's final alignment. These rows keep
+  // the actual object representation and allow the compiler to vectorize the
+  // array conversion. Allocate outside timing and observe every completed pass.
+  std::vector<T> output(pairs.size());
+  bench_unary(shape, "store_f32", [&floats, &output] {
+    for (std::size_t i = 0; i < output.size(); ++i)
+      output[i] = T{floats[i]};
+    observe_buffer(output);
+  });
+  bench_unary(shape, "store_f64", [&doubles, &output] {
+    for (std::size_t i = 0; i < output.size(); ++i)
+      output[i] = T{doubles[i]};
+    observe_buffer(output);
   });
 }
 

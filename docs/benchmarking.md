@@ -225,10 +225,25 @@ operand array, so a ratio here is self-contained: it survives a slow box, and it
 is the only figure in this repository that can be quoted without a second run.
 
 The **unary table** times negation, `abs`, `to_float`, `to_double`, and
-construction from a `float`.  None of them has a second route — `to_float` *is*
+construction from `float` and `double`. None of them has a second route — `to_float` *is*
 the host route — so each row is an absolute nanoseconds-per-element figure, and
 absolute figures mean nothing on their own.  A row from this table is quoted
 only as a ratio between two builds measured under the interleaving above.
+
+`from` retains the original float-to-packed-code measurement; `from_f64` adds
+the corresponding double input. Both immediately consume `to_bits()`, allowing
+the compiler to cancel the final storage alignment. `store_f32` and `store_f64`
+instead write an array of actual minifloat objects. They allocate the output
+before timing and make its contents observable after every sweep. GCC and
+Clang use a pointer operand and memory clobber; the portable fallback reads
+the bytes through volatile accesses and therefore includes that extra cost.
+These array rows allow vectorization and include stores, so compare them to
+the same row in another build, not directly to the scalar packed rows.
+
+Construction inputs come from the operand array's host conversions, preserving
+the existing distribution and avoiding NaN inputs to formats without NaN.
+They primarily measure exact inputs; they are not a random-host-bit quantization
+workload. The arithmetic and scalar unary sinks still consume packed results.
 
 The unary table also runs the one shape the ratio table skips.  `route` in
 `benches/arith.cpp` refuses a shape no host float rounds like, which is right
