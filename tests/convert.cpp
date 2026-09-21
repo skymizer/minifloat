@@ -121,7 +121,8 @@ struct CheckBfStorage {
     static_assert(sizeof(T) == sizeof(Word));
     static_assert(std::is_trivially_copyable_v<T>);
     static_assert(std::is_standard_layout_v<T>);
-    return for_all<T>([](T x) {
+    // MSVC requires an explicit capture even for this constexpr width (C3493).
+    return for_all<T>([N](T x) {
       const auto packed = x.to_bits();
       const auto stored = bit_cast<Word>(x);
       if (stored != static_cast<Word>(packed << (sizeof(Word) * 8 - N)))
