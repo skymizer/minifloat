@@ -57,6 +57,38 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
+  strict-rounding:
+    name: Strict rounding / ${{ matrix.compiler }} / C++${{ matrix.standard }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: g++
+            standard: 17
+          - compiler: clang++
+            standard: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          -DCMAKE_CXX_STANDARD=${{ matrix.standard }}
+          -DCMAKE_CXX_EXTENSIONS=OFF
+          -DCMAKE_CXX_FLAGS=-frounding-math
+          -DSKYMIZER_MINIFLOAT_BUILD_TESTS=ON
+          -DSKYMIZER_MINIFLOAT_FETCH_GTEST=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test floating-point environments
+        # Exercise both the C++17 builtin and C++20 constant-evaluation routes.
+        # The full compiler matrix covers the exhaustive sweeps separately.
+        env:
+          GTEST_FILTER: Arith.IgnoresHostEnvironment:Arith.Bf*:Arith.ConstantEvaluation:Convert.*Ignore*:Convert.Bf*:Encode.Bf*
+        run: ctest --test-dir build --output-on-failure
+
   sanitizers:
     runs-on: ubuntu-latest
     steps:
@@ -73,14 +105,14 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
       - name: Test
-        # The two exhaustive 2**32 pair sweeps are skipped here and nowhere
-        # else. ASan and UBSan put them past any sensible gate time: this job
+        # This sanitizer run skips the two exhaustive 2**32 pair sweeps.
+        # ASan and UBSan put them past any sensible gate time: this job
         # took 2583 s on run 32524201635 with them and 98 s on run 32527263942
         # without, against 250 s for the same suite unsanitised on the GCC leg
         # beside it. A gate nobody waits for is not a gate.
         #
         # Little is given up. The sweeps are deterministic and exhaustive, so
-        # the other six legs see every pair they would have seen; and the
+        # the full compiler matrix sees every pair they would have seen; and the
         # threading they run on -- `find_failing_pair` in `tests/support.hpp`,
         # which is the only part of them a sanitiser has an opinion about --
         # stays under both sanitisers through `Ops.SweepDriverReportsFailures`,
