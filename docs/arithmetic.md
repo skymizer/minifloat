@@ -124,6 +124,41 @@ passed 43 tests, excluding the two exhaustive arithmetic/comparison sweeps and
 the generic exhaustive float-encoding sweep. The installed CMake consumer
 passed with the new 0.3 package version. MSVC and Apple Clang remain CI checks.
 
+### Direct float construction
+
+The direct BF storage encoder is measured against `29cb91e` at `e2c1e2f`,
+using the same benchmark source in both builds. On an Intel Core i9-14900K,
+GCC 15.2.0 and Clang 21.1.8, 2026-09-21, with
+`-std=c++17 -O3 -DNDEBUG -march=native`: minimum of 15 alternating before/after
+passes per compiler, pinned to CPU 4, with no concurrent builds or tests.
+The harness retains its minimum of 30 passes over 1024 operands repeated 200
+times. Inputs are the existing exact host conversions of packed operand codes;
+array conversion permits vectorization and includes the actual object stores.
+
+After / before, geometric mean over BF16, BF20, BF24 and BF32:
+
+| Workload | GCC | Clang |
+| --- | ---: | ---: |
+| Float to stored BF array | **0.924** | **0.911** |
+| Float to packed code | 1.037 | 0.980 |
+| Double to stored BF array, control | 0.984 | 1.000 |
+| Double to packed code, control | 0.992 | 0.995 |
+
+The 52 general-format software controls center at 1.000x under both compilers,
+with ranges 0.993–1.005 and 0.991–1.006. The 18 double-array controls center at
+1.002x and 1.000x, with ranges 0.951–1.083 and 0.999–1.004. These are controls
+whose source paths are unaffected; no byte-identical calibration was made for
+each row. The claim is the aggregate array improvement, with mixed results for
+the packed-code workload. No per-width speedup is inferred from these short
+rows. [All 560 before/after minima](bf-storage-benchmark.csv) retain the controls
+and the less favorable measurements as well.
+
+The before and after header SHA-256 values are
+`931924590d69dc8a40cf50d6d56c3263785d1547136865c16370e04a3a695c49` and
+`ab9320a9fae5ded5865776871a000acdac6f0c170a716dfdaa8927ae2b51fe4d`;
+the shared benchmark source is
+`e54ddc554f37467a77e1bc2e3aec54624fce068789c90ff53fa01eaa2c4374c8`.
+
 The measurements below are retained as history of the older implementations;
 the BF specialization supersedes their routing choices.
 
