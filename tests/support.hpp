@@ -231,6 +231,14 @@ template <typename Checker> void test_all_types() {
   test_wide_types<Checker>();
 }
 
+template <typename Checker, std::size_t... I> void test_bf_types(std::index_sequence<I...>) {
+  check_each<Checker, BF<static_cast<int>(I) + 10>...>();
+}
+
+template <typename Checker> void test_bf_types() {
+  test_bf_types<Checker>(std::make_index_sequence<23>{});
+}
+
 //! Quadratic checks retain the old 11-bit stress shapes
 template <typename Checker> void test_paired_types() {
   test_small_types<Checker>();

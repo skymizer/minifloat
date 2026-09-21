@@ -16,6 +16,10 @@ using namespace skymizer::minifloat; // NOLINT(google-build-using-namespace)
 namespace {
 using NoexceptCheck = IEEE<3, 4>;
 static_assert(std::is_same_v<BF<16>, E8M7>);
+static_assert(BF<16>::IS_BFLOAT && BF<32>::IS_BFLOAT);
+static_assert(!E5M10::IS_BFLOAT);
+static_assert(!Finite<8, 7>::IS_BFLOAT && !FN<8, 7>::IS_BFLOAT && !FNUZ<8, 7>::IS_BFLOAT);
+static_assert(!IEEE<8, 7, 128>::IS_BFLOAT);
 static_assert(std::is_nothrow_default_constructible_v<NoexceptCheck>);
 static_assert(std::is_nothrow_constructible_v<NoexceptCheck, float>);
 static_assert(std::is_nothrow_constructible_v<NoexceptCheck, double>);

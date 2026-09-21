@@ -85,8 +85,8 @@ the sweeps below.  Three gates live in there and it is worth not conflating them
   `benches/arith.cpp` to time the two routes against each other;
 - **the 16-bit pair sweeps** (`Arith.EveryPairMatchesFloatRoundTrip`,
   `Ops.EveryPairComparesLikeHost`) — `E5M10` and `E8M7` only, because those are
-  the two shapes `route` puts on the *float* route, and the float route is
-  otherwise unrefereed.  They run on `std::thread` through
+  the two shapes historically compared through float. BF16 now uses a double
+  intermediate, and its exhaustive float comparison remains a separate check.  They run on `std::thread` through
   `find_failing_pair`, and share the wall-time lead with the strided wide
   rounding-boundary check; the remaining tests finish in a few seconds.
 

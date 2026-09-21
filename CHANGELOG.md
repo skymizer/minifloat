@@ -7,6 +7,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 with Cargo-style compatibility before 1.0: `0.y.z` releases may break
 compatibility when `y` changes, while changes to `z` remain compatible.
 
+## [Unreleased]
+
+### Added
+
+- `IS_BFLOAT` and explicit, exact widening between BF precisions.
+- `bench --bf` to compare integer and hardware kernels at all BF widths.
+
+### Changed
+
+- BF uses format-typed, MSB-aligned storage and hardware double intermediates
+  at runtime, with integer rounding and exact conversion boundaries. Numeric
+  results remain ties-to-even under directed rounding and FTZ/DAZ; constant
+  expressions continue to use the integer engine. Hardware operations may set
+  floating-point exception flags.
+- The next package version is 0.3.0 because BF10–15 and BF17–31 object layouts
+  change. BF16 remains two bytes and BF17–32 remain four. Packed `from_bits()` /
+  `to_bits()` encodings and `BF<N> == IEEE<8, N - 9>` remain unchanged. Rebuild
+  consumers together rather than mixing old and new object layouts.
+
 ## [0.2.1] - 2026-08-25
 
 ### Changed
@@ -236,6 +255,7 @@ Initial public release.
 - Host `float` and `double` types must use IEEE 754 binary32 and binary64
   representations.
 
+[Unreleased]: https://github.com/skymizer/minifloat/compare/0.2.1...HEAD
 [0.2.1]: https://github.com/skymizer/minifloat/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/skymizer/minifloat/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/skymizer/minifloat/commits/0.1.0

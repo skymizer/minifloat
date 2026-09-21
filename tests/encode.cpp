@@ -57,6 +57,31 @@ struct CheckRandomFloatPatterns {
   }
 };
 
+struct CheckBfDoubleEncoding {
+  template <typename T> static bool check() {
+    Lcg random{UINT64_C(0xC371A8045FDF602B)};
+    for (unsigned i = 0; i < 1U << 12; ++i) {
+      // Raw doubles cover overflow and underflow; adjacent BF codes put the
+      // normal shortcut and the subnormal fallback on their rounding ties.
+      const auto raw = (static_cast<std::uint64_t>(random.next()) << 32) | random.next();
+      const double x = bit_cast<double>(raw);
+      if (T{x}.to_bits() != reference_encode<T>(x).to_bits())
+        return false;
+      const auto code = random.next() % static_cast<std::uint32_t>(T::max().to_bits());
+      const double lo = from_code<T>(code).to_double();
+      const double hi = from_code<T>(code + 1).to_double();
+      const double tie = (lo + hi) * 0.5;
+      for (double candidate : {std::nextafter(tie, 0.0), tie, std::nextafter(tie, HUGE_VAL)})
+        for (double sign : {-1.0, 1.0}) {
+          const double value = sign * candidate;
+          if (T{value}.to_bits() != reference_encode<T>(value).to_bits())
+            return false;
+        }
+    }
+    return true;
+  }
+};
+
 template <int N> void expect_float_path_matches_generic(std::uint64_t stride) {
   constexpr std::uint64_t END = UINT64_C(1) << 32;
 
@@ -89,6 +114,8 @@ template <typename T> bool float_encoder_matches_reference(float x) {
 TEST(Encode, RoundsEveryBoundaryCorrectly) { test_all_types<CheckRoundingBoundaries>(); }
 
 TEST(Encode, RandomFloatSweep) { test_all_types<CheckRandomFloatPatterns>(); }
+
+TEST(Encode, BfDoubleEncodingMatchesIndependentOracle) { test_bf_types<CheckBfDoubleEncoding>(); }
 
 TEST(Encode, BFFloatFastPathMatchesGenericPath) {
   constexpr std::uint64_t END = UINT64_C(1) << 32;

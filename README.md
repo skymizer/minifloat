@@ -119,65 +119,48 @@ once; conversion to an integer truncates, maps NaN to zero, and saturates values
 outside the destination range (to zero for a negative value converted to an
 unsigned type).
 
-Rounding is to nearest, ties to even. Arithmetic is correctly rounded: every
-operator works out a result exact enough to round, on integer significands, and
-rounds it once. Multiplication of two significands is exact; addition aligns
-both addends and sums them in an `int64_t`; division normalizes the dividend to
-bit 62 and folds the remainder into a sticky bit. No host float takes part, so a
-shape whose exponent range outruns `double`'s is served like any other —
-`IEEE<12, 3>` squares 2⁻¹⁰⁰⁰ to 2⁻²⁰⁰⁰ rather than to zero — an invalid
-operation yields the format's own NaN, or its maximum finite value where it has
-none, instead of whatever sign the host's default NaN happened to carry, and no
-operator's answer moves because a caller left a rounding mode or a
-flush-to-zero bit set.
+Rounding is to nearest, ties to even, independent of the caller's rounding
+mode and flush-to-zero settings. General formats use integer significands:
+multiplication is exact, addition aligns and sums in `int64_t`, and division
+retains a sticky remainder before rounding. This serves formats beyond the
+host's range: `IEEE<12, 3>` squares 2⁻¹⁰⁰⁰ to 2⁻²⁰⁰⁰.
 
-No shape is exempt, including the one that *is* a `float`. `IEEE<8, 23>` —
-`BF<32>` — has `float`'s precision, exponent range and non-finite semantics, so
-`IS_HOST_FLOAT` holds. Its `to_float()` is a `bit_cast`, while construction from
-a `float` preserves non-NaN bits and canonicalizes NaN payloads. Its four
-operators are not, though for one round they were.
-An FPU rounds each operator once, but it rounds the way the caller's rounding
-mode says, flushes subnormals the way the caller's `MXCSR` says, and — under
-the default floating-point model, attribute or no attribute — may answer a
-second call from the first across a change of either. On this box the same
-`BF<32>` sum answered `0x3F800001` wherever the operands were opaque and
-`0x3F800000` wherever a constant fold could reach them, under both compilers:
-the first breaks ties to even, the second ignores the caller, and which one you
-get is the optimizer's business. Correctly rounded is the promise, so the shape
-stays on the integer engine and pays about five times a native `float` for
-addition. `Arith.IgnoresHostEnvironment` is the referee, and
-[docs/arithmetic.md](docs/arithmetic.md) has the readings.
+`BF<N>` is a specialized case, identified by `IS_BFLOAT`. Its format semantics
+remain `IEEE<8, N - 9>`, with a storage type that aligns the value at the most
+significant bit. BF10 through BF16 occupy two bytes; BF17 through BF32 occupy
+four. `to_float()` shifts the two-byte representation by 16 and bit-casts the
+four-byte representation directly. `from_bits()` and `to_bits()` always use the
+packed N-bit encoding. Raw object layouts for BF10–15 and BF17–31 have changed;
+rebuild consumers together and use the bit APIs for serialization.
 
-The speed is still there for whoever can vouch for their own floating-point
-environment, which is the caller and not this header:
+BF widening is explicit and exact, including subnormals and NaN payloads:
 
 ```cpp
-if constexpr (T::IS_HOST_FLOAT)
-  out[i] = T{a[i].to_float() + b[i].to_float()};  // no conversion rounding
-else
-  out[i] = a[i] + b[i];
+BF<16> narrow{1.5F};
+BF<20> wider{narrow};
+BF<32> widest{wider};
 ```
 
-A `BF<32>` instantiation of that compiles to SSE float adds under GCC and
-Clang, vectorized under Clang, while a `BF<16>` instantiation of the same
-template emits no float instruction at all. That is what `IS_HOST_FLOAT` is
-for.
+At runtime, BF arithmetic uses a hardware `double` intermediate with exact
+integer conversions on both sides. Binary64 has enough precision and exponent
+range to give the same final BF rounding under every host rounding mode.
+Subnormal BF operands become normal doubles without native float widening, so
+DAZ cannot erase them. The library fixes the sign of exact zero sums and
+canonicalizes invalid results. Constant evaluation uses the integer engine.
+Hardware operations may set floating-point exception flags; the guarantee is
+about numeric results, not preserving those flags.
 
-Correctness, not speed, is why the host route is gone everywhere else, and the
-speed would not have argued for keeping it: which route leads depends on the
-operator, shape, and compiler. For `BF<20>` and `BF<24>`, both compilers give
-addition and subtraction to the host route and multiplication to the integer
-one, while division and the aggregate split by compiler.
-`benches/arith.cpp` times both routes over the same operands, and
-[docs/arithmetic.md](docs/arithmetic.md) has the numbers and what they do and do
-not license.
+`benches/arith.cpp` compares the software kernels directly against the hardware
+paths, even when the public operators already select hardware. `./bench --bf`
+covers every BF width from 10 through 32. [docs/arithmetic.md](docs/arithmetic.md)
+records the rounding argument, measurements, and environment tests.
 
 ## Design notes
 
 Standing decisions, with the measurements and the rejected alternatives behind
 them, for anyone working on the library rather than using it:
 
-- [docs/arithmetic.md](docs/arithmetic.md) — the integer route, the two
+- [docs/arithmetic.md](docs/arithmetic.md) — the BF specialization, the integer route, the two
   deliberately inexact tails and why neither can change a rounding, the
   independent oracle, and the open questions.
 - [docs/benchmarking.md](docs/benchmarking.md) — what a number from this
@@ -219,11 +202,11 @@ cmake --build build
 cmake --install build
 ```
 
-An installed package supports Cargo-style pre-1.0 compatibility: `0.2.x`
-releases are compatible, while breaking changes advance to `0.3.0`. Consume it
+An installed package supports Cargo-style pre-1.0 compatibility: `0.3.x`
+releases are compatible, while breaking changes advance to `0.4.0`. Consume it
 from CMake with:
 
 ```cmake
-find_package(skymizer-minifloat 0.2 CONFIG REQUIRED)
+find_package(skymizer-minifloat 0.3 CONFIG REQUIRED)
 target_link_libraries(your-target PRIVATE skymizer::minifloat)
 ```

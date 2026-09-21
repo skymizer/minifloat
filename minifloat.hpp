@@ -521,8 +521,8 @@ template <int E, int M, int B> struct FnuzFormat {
 //! decodes to significand `1 << M`, and multiplication and division use
 //! `significand == 0` as their zero test after decoding unconditionally.
 template <class Format>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts to_parts(typename Format::Storage bits
-) noexcept {
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts
+to_parts(typename Format::Storage bits) noexcept {
   constexpr int M = Format::MANTISSA_BITS;
   const auto magnitude = static_cast<std::uint64_t>(bits & Format::MAG_MASK);
   const auto field = static_cast<int>(magnitude >> M);
@@ -540,8 +540,8 @@ template <class Format>
 //! exact number, or one whose lowest bit is sticky, so it can come from a
 //! `double` or from arithmetic of its own.
 template <class Format>
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage from_parts(Parts parts
-) noexcept {
+[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage
+from_parts(Parts parts) noexcept {
   using Storage = typename Format::Storage;
   constexpr int M = Format::MANTISSA_BITS;
   const auto sign_bit = static_cast<Storage>(parts.negative ? Format::SIGN_MASK : Storage{0});
@@ -592,6 +592,75 @@ template <class Format> constexpr bool is_host_float() noexcept {
   return shares_host_exponent<Format, float>() && Format::MANTISSA_BITS + 1 == FLT_MANT_DIG;
 }
 
+//! Packed format codes, with unused high bits cleared at the boundary.
+template <class Format> class PackedStorage {
+  using Bits = typename Format::Storage;
+  Bits bits_{};
+
+public:
+  constexpr PackedStorage() = default;
+
+  static constexpr PackedStorage from_bits(Bits bits) noexcept {
+    PackedStorage result;
+    result.bits_ = static_cast<Bits>(bits & (Format::MAG_MASK | Format::SIGN_MASK));
+    return result;
+  }
+
+  constexpr Bits to_bits() const noexcept { return bits_; }
+};
+
+//! BF codes aligned with the most significant bit of their storage word.
+//!
+//! The format is part of the type, so padding and precision cannot disagree.
+//! Only factories and exact widening can create a value; low padding bits
+//! always stay zero. BF16 occupies two bytes, BF17 through BF32 four.
+template <class Format> class BfStorage {
+  static_assert(shares_host_exponent<Format, float>());
+  template <class> friend class BfStorage;
+  using Bits = typename Format::Storage;
+  static constexpr int WIDTH = std::numeric_limits<Bits>::digits;
+  static constexpr int SHIFT = WIDTH - 9 - Format::MANTISSA_BITS;
+  Bits bits_{};
+
+public:
+  constexpr BfStorage() = default;
+
+  template <class Other, std::enable_if_t<(Other::MANTISSA_BITS < Format::MANTISSA_BITS), int> = 0>
+  explicit constexpr BfStorage(BfStorage<Other> other) noexcept
+      : bits_(
+            static_cast<Bits>(static_cast<Bits>(other.bits_) << (WIDTH - BfStorage<Other>::WIDTH))
+        ) {}
+
+  static constexpr BfStorage from_bits(Bits bits) noexcept {
+    BfStorage result;
+    result.bits_ = static_cast<Bits>(bits << SHIFT);
+    return result;
+  }
+
+  constexpr Bits to_bits() const noexcept { return static_cast<Bits>(bits_ >> SHIFT); }
+  constexpr std::uint32_t float_bits() const noexcept {
+    return static_cast<std::uint32_t>(bits_) << (32 - WIDTH);
+  }
+};
+
+//! Keep constant expressions on the integer engine in every supported dialect.
+constexpr bool is_constant_evaluated() noexcept {
+#if __cplusplus >= 202002L
+  return std::is_constant_evaluated();
+#elif (defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 9) ||                               \
+    (defined(_MSC_VER) && _MSC_VER >= 1925)
+  return __builtin_is_constant_evaluated();
+#elif defined(__clang__)
+#if __has_builtin(__builtin_is_constant_evaluated)
+  return __builtin_is_constant_evaluated();
+#else
+  return true;
+#endif
+#else
+  return true;
+#endif
+}
+
 } // namespace detail
 
 //! Configurable signed floating-point type up to 32 bits
@@ -623,6 +692,9 @@ public:
   //! Does this format distinguish &minus;0.0 from +0.0?
   static constexpr bool HAS_NEG_ZERO = Format::HAS_NEG_ZERO;
 
+  //! IEEE binary32's exponent field and a reduced (or equal) precision.
+  static constexpr bool IS_BFLOAT = detail::shares_host_exponent<Format, float>();
+
   static constexpr bool HAS_EXACT_F32_CONVERSION =
       FLT_MANT_DIG >= MANTISSA_DIGITS && FLT_MAX_EXP >= MAX_EXP && FLT_MIN_EXP <= MIN_EXP &&
       std::numeric_limits<float>::radix == 2 && std::numeric_limits<float>::is_iec559;
@@ -630,13 +702,9 @@ public:
   //! Is this type `float`, bit for bit?
   //!
   //! Where it holds, `to_float` is the identity, while construction from a
-  //! `float` preserves non-NaN bits and canonicalizes NaN payloads.  Arithmetic
-  //! is *not*: the operators stay on the integer engine, because a shape that
-  //! is a `float` is also a shape whose FPU answer moves with the caller's
-  //! rounding mode and MXCSR, and this library rounds to nearest either way.
-  //! `detail::is_host_float` is the predicate and says which shapes miss it and
-  //! why; `benches/arith.cpp` reads this to pick the host type it compares the
-  //! shape against, so the two cannot drift apart.
+  //! `float` preserves non-NaN bits and canonicalizes NaN payloads. Arithmetic
+  //! uses the BF family's wider double intermediate and integer rounding;
+  //! doing the operation directly in float would inherit the host environment.
   static constexpr bool IS_HOST_FLOAT = detail::is_host_float<Format>();
 
   static constexpr bool HAS_EXACT_F64_CONVERSION =
@@ -644,7 +712,10 @@ public:
       std::numeric_limits<double>::radix == 2 && std::numeric_limits<double>::is_iec559;
 
 private:
-  Storage bits_{};
+  template <class> friend class Minifloat;
+  using Representation =
+      std::conditional_t<IS_BFLOAT, detail::BfStorage<Format>, detail::PackedStorage<Format>>;
+  Representation storage_{};
 
   //! Encode a host float, rounding to nearest with ties to even
   //!
@@ -655,6 +726,21 @@ private:
   //! `detail::from_parts`.
   template <typename Float>
   [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
+    if constexpr (IS_BFLOAT && std::is_same_v<Float, double>) {
+      // Normal BF values need only mantissa rounding and an exponent rebase.
+      // Subnormals, overflow and special values use the general integer path.
+      constexpr std::uint64_t MIN = UINT64_C(0x3810000000000000);
+      constexpr std::uint64_t END = UINT64_C(0x47f0000000000000);
+      constexpr int SHIFT = 52 - M;
+      const auto bits = bit_cast<std::uint64_t>(x);
+      const auto magnitude = bits & UINT64_C(0x7fffffffffffffff);
+      if (magnitude - MIN < END - MIN) {
+        const auto bias = (UINT64_C(1) << (SHIFT - 1)) - 1U + ((magnitude >> SHIFT) & 1U);
+        const auto code = ((magnitude + bias) >> SHIFT) - (UINT64_C(896) << M);
+        return static_cast<Storage>(code | ((bits >> 63) << (M + 8)));
+      }
+    }
+
     if constexpr (detail::shares_host_exponent<Format, Float>()) {
       using Bits = detail::BitsOf<Float>;
       constexpr int SHIFT = std::numeric_limits<Float>::digits - 1 - M;
@@ -742,10 +828,10 @@ private:
     constexpr int DST_MIN_EXP = std::numeric_limits<Float>::min_exponent;
 
     const Float sign = signbit() ? Float{-1} : Float{1};
-    const auto magnitude = static_cast<Bits>(bits_ & ABS_MASK);
+    const auto magnitude = static_cast<Bits>(to_bits() & ABS_MASK);
 
     if constexpr (Format::HAS_NAN)
-      if (Format::is_nan(bits_))
+      if (Format::is_nan(to_bits()))
         return std::copysign(std::numeric_limits<Float>::quiet_NaN(), sign);
 
     if constexpr (Format::HAS_INF)
@@ -787,10 +873,10 @@ private:
                               << FRACTION_BITS;
     constexpr Bits NAN_BITS = INF_BITS | Bits{1} << (FRACTION_BITS - 1);
     const auto sign = static_cast<Bits>(Bits{signbit()} << (std::numeric_limits<Bits>::digits - 1));
-    const auto magnitude = static_cast<Storage>(bits_ & ABS_MASK);
+    const auto magnitude = static_cast<Storage>(to_bits() & ABS_MASK);
 
     if constexpr (Format::HAS_NAN)
-      if (Format::is_nan(bits_))
+      if (Format::is_nan(to_bits()))
         return bit_cast<Float>(static_cast<Bits>(sign | NAN_BITS));
 
     if constexpr (Format::HAS_INF)
@@ -810,25 +896,35 @@ private:
         return bit_cast<Float>(static_cast<Bits>(sign | INF_BITS));
     }
 
-    return detail::host_from_parts<Float>(detail::to_parts<Format>(bits_));
+    return detail::host_from_parts<Float>(detail::to_parts<Format>(to_bits()));
   }
 
 public:
   Minifloat() = default;
 
-  explicit Minifloat(float x) noexcept : bits_(bits_from(x)) {
+  explicit Minifloat(float x) noexcept : storage_(Representation::from_bits(bits_from(x))) {
     assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
   }
 
-  explicit Minifloat(double x) noexcept : bits_(bits_from(x)) {
+  explicit Minifloat(double x) noexcept : storage_(Representation::from_bits(bits_from(x))) {
     assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
   }
+
+  //! Exact BF widening, with no conversion through a host numeric type.
+  template <
+      class Other,
+      std::enable_if_t<
+          IS_BFLOAT && detail::shares_host_exponent<Other, float>() && (Other::MANTISSA_BITS < M),
+          int> = 0>
+  explicit constexpr Minifloat(Minifloat<Other> other) noexcept : storage_(other.storage_) {}
 
   //! Construct from any integer type, rounding once.
   template <typename Int, std::enable_if_t<std::is_integral_v<Int>, int> = 0>
   explicit constexpr Minifloat(Int x) noexcept {
     if constexpr (std::is_same_v<std::remove_cv_t<Int>, bool>) {
-      bits_ = detail::from_parts<Format>({false, static_cast<std::uint64_t>(x), 0});
+      storage_ = Representation::from_bits(
+          detail::from_parts<Format>({false, static_cast<std::uint64_t>(x), 0})
+      );
     } else {
       using Unsigned = std::make_unsigned_t<Int>;
       bool negative = false;
@@ -854,13 +950,14 @@ public:
         significand = static_cast<std::uint64_t>(magnitude) | static_cast<std::uint64_t>(sticky);
       }
 
-      bits_ = detail::from_parts<Format>({negative, significand, exponent});
+      storage_ =
+          Representation::from_bits(detail::from_parts<Format>({negative, significand, exponent}));
     }
   }
 
   static constexpr Minifloat from_bits(Storage bits) noexcept {
     Minifloat result;
-    result.bits_ = static_cast<Storage>(bits & (Format::MAG_MASK | Format::SIGN_MASK));
+    result.storage_ = Representation::from_bits(bits);
     return result;
   }
 
@@ -903,7 +1000,9 @@ public:
       return from_bits(0);
   }
 
-  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr Storage to_bits() const noexcept { return bits_; }
+  [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr Storage to_bits() const noexcept {
+    return storage_.to_bits();
+  }
 
   //! Sign bit
   //!
@@ -912,24 +1011,24 @@ public:
   //! negative-zero counterpart to compare it to. Callers that filter by
   //! `signbit()` should test `is_nan()` first when working with FNUZ.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool signbit() const noexcept {
-    return (bits_ & Format::SIGN_MASK) != 0;
+    return (to_bits() & Format::SIGN_MASK) != 0;
   }
 
   //! Check if the number is nonzero
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr explicit operator bool() const noexcept {
     if constexpr (!Format::HAS_NEG_ZERO)
-      return bits_ != 0;
+      return to_bits() != 0;
 
-    return (bits_ & ABS_MASK) != 0;
+    return (to_bits() & ABS_MASK) != 0;
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_nan() const noexcept {
-    return Format::is_nan(bits_);
+    return Format::is_nan(to_bits());
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_infinite() const noexcept {
     if constexpr (Format::HAS_INF)
-      return (bits_ & ABS_MASK) == Format::INF_MAG;
+      return (to_bits() & ABS_MASK) == Format::INF_MAG;
 
     return false;
   }
@@ -939,17 +1038,17 @@ public:
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_normal() const noexcept {
-    return is_finite() && (bits_ & ABS_MASK) >= (1U << M);
+    return is_finite() && (to_bits() & ABS_MASK) >= (1U << M);
   }
 
   //! Check if the number is nonzero subnormal
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_subnormal() const noexcept {
-    const Storage magnitude = bits_ & ABS_MASK;
+    const Storage magnitude = to_bits() & ABS_MASK;
     return 0 < magnitude && magnitude < (1U << M);
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr int classify() const noexcept {
-    const detail::Kind kind = Format::kind(bits_);
+    const detail::Kind kind = Format::kind(to_bits());
     if (kind == detail::Kind::NaN)
       return FP_NAN;
     if (kind == detail::Kind::Infinite)
@@ -965,10 +1064,10 @@ public:
     // A FNUZ NaN is the would-be negative zero; clearing its sign would turn
     // it into a zero.
     if constexpr (!Format::HAS_NEG_ZERO)
-      if (!(bits_ & ABS_MASK))
+      if (!(to_bits() & ABS_MASK))
         return *this;
 
-    return from_bits(static_cast<Storage>(bits_ & ABS_MASK));
+    return from_bits(static_cast<Storage>(to_bits() & ABS_MASK));
   }
 
   //! Explicit conversion to float
@@ -976,10 +1075,8 @@ public:
   //! The lossy branch rounds directly into `float`'s integer fields, so it does
   //! not inherit the caller's rounding mode or flush-to-zero setting.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE float to_float() const noexcept {
-    if constexpr (detail::shares_host_exponent<Format, float>())
-      return bit_cast<float>(
-          static_cast<detail::BitsOf<float>>(bits_) << (FLT_MANT_DIG - 1 - M)
-      );
+    if constexpr (IS_BFLOAT)
+      return bit_cast<float>(storage_.float_bits());
 
     if constexpr (HAS_EXACT_F32_CONVERSION)
       return to_exact<float>();
@@ -997,9 +1094,20 @@ public:
   //! integer fields are rounded once, overflowing to infinity or underflowing
   //! toward zero without host floating-point arithmetic.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE double to_double() const noexcept {
+    if constexpr (IS_BFLOAT) {
+      const auto bits = storage_.float_bits();
+      const auto magnitude = bits & UINT32_C(0x7fffffff);
+      if (magnitude - UINT32_C(0x00800000) < UINT32_C(0x7f000000)) {
+        const auto sign = static_cast<std::uint64_t>(bits & UINT32_C(0x80000000)) << 32;
+        const auto rebased =
+            (static_cast<std::uint64_t>(magnitude) << 29) + UINT64_C(0x3800000000000000);
+        return bit_cast<double>(sign | rebased);
+      }
+    }
+
     if constexpr (detail::shares_host_exponent<Format, double>())
       return bit_cast<double>(
-          static_cast<detail::BitsOf<double>>(bits_) << (DBL_MANT_DIG - 1 - M)
+          static_cast<detail::BitsOf<double>>(to_bits()) << (DBL_MANT_DIG - 1 - M)
       );
 
     if constexpr (HAS_EXACT_F64_CONVERSION)
@@ -1183,23 +1291,9 @@ add_impl(Minifloat<Format> x, Minifloat<Format> y, bool flip) noexcept {
   const Parts sum = add_parts(to_parts<Format>(x.to_bits()), rhs);
   return Minifloat<Format>::from_bits(from_parts<Format>(sum));
 }
-} // namespace detail
-
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
-operator+(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  return detail::add_impl(x, y, false);
-}
-
-template <class Format>
-SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
-operator-(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  return detail::add_impl(x, y, true);
-}
-
-template <class Format>
-SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
-operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+mul_impl(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   if (x.is_nan() || y.is_nan())
     return detail::invalid<Format>();
 
@@ -1216,13 +1310,14 @@ operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   }
   // Two significands of at most 30 bits multiply exactly.
   const detail::Parts product{
-      negative, lhs.significand * rhs.significand, lhs.exponent + rhs.exponent};
+      negative, lhs.significand * rhs.significand, lhs.exponent + rhs.exponent
+  };
   return Minifloat<Format>::from_bits(detail::from_parts<Format>(product));
 }
 
 template <class Format>
 SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
-operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+div_impl(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   if (x.is_nan() || y.is_nan())
     return detail::invalid<Format>();
 
@@ -1247,6 +1342,82 @@ operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   const detail::Parts quotient =
       detail::div_parts(negative, lhs.significand, lhs.exponent, rhs.significand, rhs.exponent);
   return Minifloat<Format>::from_bits(detail::from_parts<Format>(quotient));
+}
+
+//! A BF intermediate has at most 24-bit operands and exponents in [-149, 127].
+//! Binary64 can carry every product exactly and has ample exponent range for
+//! every nonzero result. Addition and division retain enough guard digits for
+//! one final integer rounding, even under directed host rounding. Exact zero
+//! sums and invalid results get the library's own signs and NaN code.
+enum class BfOp { Add, Sub, Mul, Div };
+
+template <BfOp Op, class Format>
+SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  using T = Minifloat<Format>;
+  static_assert(T::IS_BFLOAT);
+  static_assert(DBL_MANT_DIG >= 2 * T::MANTISSA_DIGITS + 3);
+  static_assert(DBL_MIN_EXP <= 2 * (FLT_MIN_EXP - FLT_MANT_DIG));
+  static_assert(DBL_MAX_EXP >= FLT_MAX_EXP - FLT_MIN_EXP + FLT_MANT_DIG);
+  const double a = x.to_double();
+  const double b = y.to_double();
+  double value = 0;
+  if constexpr (Op == BfOp::Add)
+    value = a + b;
+  if constexpr (Op == BfOp::Sub)
+    value = a - b;
+  if constexpr (Op == BfOp::Mul)
+    value = a * b;
+  if constexpr (Op == BfOp::Div)
+    value = a / b;
+
+  const auto bits = bit_cast<std::uint64_t>(value);
+  if ((bits & UINT64_C(0x7fffffffffffffff)) > UINT64_C(0x7ff0000000000000))
+    return T::quiet_NaN();
+  if constexpr (Op == BfOp::Add || Op == BfOp::Sub) {
+    if ((bits << 1) == 0) {
+      const bool negative = x.signbit() && (y.signbit() != (Op == BfOp::Sub));
+      return T::from_bits(negative ? Format::SIGN_MASK : 0);
+    }
+  }
+  return T{value};
+}
+} // namespace detail
+
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
+operator+(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (Minifloat<Format>::IS_BFLOAT)
+    if (!detail::is_constant_evaluated())
+      return detail::bf_arithmetic<detail::BfOp::Add>(x, y);
+  return detail::add_impl(x, y, false);
+}
+
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
+operator-(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (Minifloat<Format>::IS_BFLOAT)
+    if (!detail::is_constant_evaluated())
+      return detail::bf_arithmetic<detail::BfOp::Sub>(x, y);
+  return detail::add_impl(x, y, true);
+}
+
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
+operator*(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (Minifloat<Format>::IS_BFLOAT)
+    if (!detail::is_constant_evaluated())
+      return detail::bf_arithmetic<detail::BfOp::Mul>(x, y);
+  return detail::mul_impl(x, y);
+}
+
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr Minifloat<Format>
+operator/(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  if constexpr (Minifloat<Format>::IS_BFLOAT)
+    if (!detail::is_constant_evaluated())
+      return detail::bf_arithmetic<detail::BfOp::Div>(x, y);
+  return detail::div_impl(x, y);
 }
 
 //! Mantissa, base 2 exponent, and sign as integer

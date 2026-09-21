@@ -215,9 +215,12 @@ only safe reading is one that clears the widest band ever measured here.
 
 `benches/arith.cpp` prints two.
 
-The **ratio table** times each operator twice over the same operands, once as
-the library computes it and once the way a caller would fake it through a host
-float, and reports `host / soft`.  Both routes are timed in one binary over one
+The **ratio table** times each operator twice over the same operands: the
+integer kernel and the hardware route, and reports `host / soft`. For BF, it
+calls both implementations directly because the public operators already use
+hardware. Its double arm includes zero-sign and canonical-NaN handling. Other
+formats retain their eligible host round trip. `--bf` restricts both tables to
+all 23 BF widths (10 through 32), and combines with `--json`.  Both routes are timed in one binary over one
 operand array, so a ratio here is self-contained: it survives a slow box, and it
 is the only figure in this repository that can be quoted without a second run.
 
@@ -231,10 +234,9 @@ The unary table also runs the one shape the ratio table skips.  `route` in
 `benches/arith.cpp` refuses a shape no host float rounds like, which is right
 for an operator comparison and wrong for a conversion: `IEEE<12, 3>` has no
 opinion about which float should referee it, but it certainly has a `to_double`.
-It is the only shape the ratio table skips.  `BF<32>` was skipped from the other
-side for one round, while the library computed it on the FPU and both arms ran
-the same instructions; [arithmetic.md](arithmetic.md) says why that route was
-withdrawn, and the shape's four rows measure something again.
+It is the only shape the ratio table skips. BF32 is measured through double
+against the explicit integer kernels; using its public operators for both
+columns would incorrectly measure the hardware route against itself.
 
 ## An operator is timed only against a float that rounds like it
 
@@ -290,9 +292,10 @@ reason and this repository matches it, which is also what makes the two pages
 readable side by side.
 
 Both arms of the ratio table are published, and the ratio itself is not.  A row
-is named `{shape}/{op}/{soft|f32|f64}`, so a cliff in the library shows up in
-the `soft` series and a cliff in the host route shows up in the other, which a
-single ratio cannot tell apart.  The unary bodies, having no second route, are
+is named `{shape}/{op}/{soft|f32|f64}`. The `soft` series is always the integer
+kernel; for BF the public operators follow `f64`, and other shapes follow
+`soft`. A single ratio cannot tell which route changed. The BF16 (`E8M7`) and
+BF32 host series changed from `f32` to `f64` with the BF specialization.  The unary bodies, having no second route, are
 `{shape}/{op}`.  That layout is the sibling's, a group per shape and a
 benchmark per operator; the ids themselves are not interchangeable, because the
 two repositories spell most shapes differently — `E5M10` and `E8M7` here

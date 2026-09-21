@@ -113,6 +113,44 @@ TEST(Convert, ExactnessConstants) {
 
 TEST(Convert, ExplicitCastsMatchNamedConversions) { test_all_types<CheckExplicitCasts>(); }
 
+namespace {
+struct CheckBfStorage {
+  template <typename T> static bool check() {
+    constexpr int N = T::MANTISSA_BITS + 9;
+    using Word = std::conditional_t<(N <= 16), std::uint16_t, std::uint32_t>;
+    static_assert(sizeof(T) == sizeof(Word));
+    static_assert(std::is_trivially_copyable_v<T>);
+    static_assert(std::is_standard_layout_v<T>);
+    return for_all<T>([](T x) {
+      const auto packed = x.to_bits();
+      const auto stored = bit_cast<Word>(x);
+      if (stored != static_cast<Word>(packed << (sizeof(Word) * 8 - N)))
+        return false;
+      const BF<32> wide{x};
+      if (wide.to_bits() != static_cast<std::uint32_t>(packed) << (32 - N))
+        return false;
+      if constexpr (N < 16)
+        if (BF<16>{x}.to_bits() != static_cast<std::uint16_t>(packed << (16 - N)))
+          return false;
+      return same_float(x.to_float(), wide.to_float()) &&
+             same_double(x.to_double(), wide.to_double());
+    });
+  }
+};
+} // namespace
+
+TEST(Convert, BfAlignedStorageAndExactWidening) {
+  static_assert(std::is_same_v<BF<16>, E8M7>);
+  static_assert(!std::is_convertible_v<BF<16>, BF<20>>);
+  static_assert(!std::is_constructible_v<BF<16>, BF<20>>);
+  static_assert(!std::is_constructible_v<BF<20>, E5M10>);
+  static_assert(std::is_nothrow_constructible_v<BF<20>, BF<16>>);
+  static_assert(BF<32>{BF<20>{BF<16>{BF<10>{1}}}}.to_bits() == 0x3f800000U);
+  static_assert(BF<12>::from_bits(0xffffU).to_bits() == 0xfffU);
+  static_assert(BF<20>::from_bits(0xffffffffU).to_bits() == 0xfffffU);
+  test_bf_types<CheckBfStorage>();
+}
+
 TEST(Convert, IntegerDecodeReconstruction) { test_all_types<CheckIntegerDecodeReconstruction>(); }
 
 //! `BF<32>` matches every non-NaN bit; NaN payloads canonicalize but class and

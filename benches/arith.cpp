@@ -6,27 +6,15 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! Integer arithmetic against a round trip through a host float
+//! Software kernels against hardware arithmetic over identical operands.
 //!
-//! Each operator is timed twice on the same operands: once as the library
-//! computes it, on integer significands, and once the way a caller would fake
-//! it — widen both operands, let the FPU work, round the result back.  `route`
-//! decides which host float a shape is entitled to; a shape no host float can
-//! round for is skipped rather than compared against a different answer.
+//! BF compares the integer implementation with its specialized double route,
+//! including zero-sign and NaN handling. Other formats compare software with
+//! an eligible host round trip. The public operator is deliberately not the
+//! software baseline: BF operators already select the hardware implementation.
 //!
-//! The two routes do not agree on every input, which is the reason the integer
-//! one exists: a host float cannot referee a shape it cannot hold, and its NaN
-//! carries a sign that means nothing.  Speed is the bonus this file measures.
-//!
-//! A second table follows with the unary bodies — negation, `abs`, both
-//! conversions out, and construction back in — which have no second route and
-//! so report an absolute time, comparable only against another build of this
-//! same file.
-//!
-//! Both routes are timed in one binary, alternating within every pass, and the
-//! reported figure is the minimum across passes.  Noise on a benchmark is
-//! one-sided: nothing makes a loop run faster than it can.  Pin the run to one
-//! core (`taskset -c 2`) on an idle box, or the numbers mean nothing.
+//! The unary table covers conversions and signs. Use --bf for every BF width,
+//! --json for machine-readable rows, and docs/benchmarking.md for the protocol.
 
 #include "minifloat.hpp"
 
@@ -38,6 +26,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -111,17 +100,14 @@ enum struct Route { None, Float, Double };
 //! once (Figueroa 1995).  Exactness alone is not enough — `IEEE<2, 13>` is
 //! exact in `float`, yet a product of two of its significands is 28 digits.
 //!
-//! The 2p + 2 rule is about *narrowing*, and `IS_HOST_FLOAT` is the case where
-//! nothing narrows.  Applying the rule there charged `BF<32>` a `double` and a
-//! software re-encode to emulate arithmetic a `float` performs exactly, which
-//! flattered the integer route on every `BF<32>` row measured before the first
-//! disjunct existed.  The shape is back on the integer engine and back in the
-//! table, so the disjunct is load-bearing again: without it `2 * 24 + 2` fits
-//! in a `double` and the shape is charged that emulation a second time.
+//! BF uses its actual double implementation, including BF32. The wider
+//! intermediate is what makes its final rounding independent of the host mode.
 template <typename T> constexpr Route route() {
   constexpr int DIGITS = 2 * T::MANTISSA_DIGITS + 2;
 
-  if (T::IS_HOST_FLOAT || (T::HAS_EXACT_F32_CONVERSION && DIGITS <= FLT_MANT_DIG))
+  if (T::IS_BFLOAT)
+    return Route::Double;
+  if (T::HAS_EXACT_F32_CONVERSION && DIGITS <= FLT_MANT_DIG)
     return Route::Float;
   if (T::HAS_EXACT_F64_CONVERSION && DIGITS <= DBL_MANT_DIG)
     return Route::Double;
@@ -149,6 +135,7 @@ template <typename Body> double measure(Body body) {
 //! person reads, and no header, footer or skip notice belongs in a dataset.
 bool emit_json = false;
 bool json_started = false;
+bool bf_only = false;
 
 //! One `customSmallerIsBetter` row
 //!
@@ -173,6 +160,28 @@ double total_log_ratio = 0.0;
 int comparisons = 0;
 int wins = 0;
 
+template <typename Op, typename T> T software(Op, T x, T y) {
+  if constexpr (std::is_same_v<Op, std::plus<>>)
+    return detail::add_impl(x, y, false);
+  if constexpr (std::is_same_v<Op, std::minus<>>)
+    return detail::add_impl(x, y, true);
+  if constexpr (std::is_same_v<Op, std::multiplies<>>)
+    return detail::mul_impl(x, y);
+  if constexpr (std::is_same_v<Op, std::divides<>>)
+    return detail::div_impl(x, y);
+}
+
+template <typename Op, typename T> T hardware_bf(Op, T x, T y) {
+  if constexpr (std::is_same_v<Op, std::plus<>>)
+    return detail::bf_arithmetic<detail::BfOp::Add>(x, y);
+  if constexpr (std::is_same_v<Op, std::minus<>>)
+    return detail::bf_arithmetic<detail::BfOp::Sub>(x, y);
+  if constexpr (std::is_same_v<Op, std::multiplies<>>)
+    return detail::bf_arithmetic<detail::BfOp::Mul>(x, y);
+  if constexpr (std::is_same_v<Op, std::divides<>>)
+    return detail::bf_arithmetic<detail::BfOp::Div>(x, y);
+}
+
 //! Time one operator both ways and report the ratio in the integer route's
 //! favour
 template <typename Op, Route R, typename T>
@@ -181,12 +190,14 @@ void bench_op(const char *shape, const char *name, const std::vector<std::pair<T
 
   const double soft = measure([&pairs, op] {
     for (const auto &pair : pairs)
-      black_box(op(pair.first, pair.second).to_bits());
+      black_box(software(op, pair.first, pair.second).to_bits());
   });
 
   const double hard = measure([&pairs, op] {
     for (const auto &pair : pairs) {
-      if constexpr (R == Route::Float)
+      if constexpr (T::IS_BFLOAT)
+        black_box(hardware_bf(op, pair.first, pair.second).to_bits());
+      else if constexpr (R == Route::Float)
         black_box(T{op(pair.first.to_float(), pair.second.to_float())}.to_bits());
       else
         black_box(T{op(pair.first.to_double(), pair.second.to_double())}.to_bits());
@@ -263,12 +274,8 @@ template <typename T> void bench_unary_shape(const char *shape) {
 
 //! One line per operator for a shape, or one line saying why it has none
 //!
-//! One shape has no ratio to report: `IEEE<12, 3>` outruns every host float, so
-//! there is nothing to compare against.  `BF<32>` had none either for as long
-//! as the library computed it on the FPU, both arms running the same
-//! instructions; the integer engine took the shape back when the FPU route
-//! turned out to read the caller's rounding mode, and the row measures
-//! something again.
+//! IEEE<12, 3> exceeds every host float's range and has no hardware route.
+//! BF retains a meaningful comparison by calling the integer kernels directly.
 template <typename T> void bench_shape(const char *shape) {
   constexpr Route R = route<T>();
 
@@ -289,7 +296,16 @@ template <typename T> void bench_shape(const char *shape) {
 //! The visitor takes a value rather than an explicit template argument, which
 //! a C++17 lambda cannot: `tests/support.hpp` spells its type lists the same
 //! way.
+template <typename Visit, std::size_t... I>
+void for_each_bf(Visit visit, std::index_sequence<I...>) {
+  (visit(BF<static_cast<int>(I) + 10>{}, ("BF" + std::to_string(I + 10)).c_str()), ...);
+}
+
 template <typename Visit> void for_each_shape(Visit visit) {
+  if (bf_only) {
+    for_each_bf(visit, std::make_index_sequence<23>{});
+    return;
+  }
   visit(E2M1FN{}, "E2M1FN");
   visit(E2M3FN{}, "E2M3FN");
   visit(E3M2FN{}, "E3M2FN");
@@ -313,8 +329,10 @@ template <typename Visit> void for_each_shape(Visit visit) {
 } // namespace
 
 int main(int argc, char **argv) {
-  for (int i = 1; i < argc; ++i)
+  for (int i = 1; i < argc; ++i) {
     emit_json |= std::strcmp(argv[i], "--json") == 0;
+    bf_only |= std::strcmp(argv[i], "--bf") == 0;
+  }
 
   if (!emit_json)
     std::printf("%-14s %-3s %8s %8s  %7s %s\n", "shape", "op", "soft", "host", "ratio", "route");

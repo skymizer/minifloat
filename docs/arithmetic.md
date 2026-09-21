@@ -1,10 +1,128 @@
 # The arithmetic
 
-*Every operator works out a result exact enough to round correctly, on integer
-significands, and rounds it once.  Nothing else in this document is as
-important as that sentence.*
+Every operator produces a correctly rounded result, with ties to even. General
+formats use integer significands. BF has a specialized hardware route at
+runtime and uses the integer engine during constant evaluation.
 
-## Integers, not a hardware float
+## BF: aligned storage and a double intermediate
+
+`BF<N>` remains `IEEE<8, N - 9>`. `IS_BFLOAT` recognizes that family, and the
+engine selects `BfStorage<Format>` instead of `PackedStorage<Format>`. Both own
+private bits; construction enforces the representation invariant. BF storage
+aligns the sign at the MSB of a 16- or 32-bit word and keeps unused low bits zero.
+Widening within a word size is a copy; crossing from 16 to 32 bits shifts by 16.
+The public bit APIs still exchange packed codes. This changes the object ABI
+for BF10–15 and BF17–31, so consumers must rebuild together.
+
+The representation is adapted from et-toolchain's BF, with the precision and
+format carried in the storage type. There is no separately maintained BF value
+class, no implicit conversion, and no approximate subnormal mode.
+
+Arithmetic follows `to_double` → hardware operation → integer BF rounding.
+Normal conversions use a mantissa shift and exponent rebase; subnormals and
+special values use the existing integer conversion logic. In particular,
+`to_double()` does not widen a native float: that would let DAZ turn a BF
+subnormal into zero. Float conversion itself is a bit-cast for the four-byte
+storage and a shift by 16 followed by a bit-cast for the two-byte storage.
+
+### Why every host rounding mode gives the same BF result
+
+Let p = N − 8 be the precision, including the hidden bit. Here 2 ≤ p ≤ 24.
+Every finite BF value is exact and normal in binary64, except zero. The smallest
+possible nonzero product is 2⁻²⁹⁸, and every finite product or quotient has
+magnitude below 2²⁷⁷. Thus no finite intermediate encounters binary64 overflow
+or subnormal arithmetic, including when the host enables FTZ and DAZ.
+
+- **Multiplication:** two p-bit significands need at most 48 bits, so binary64
+  computes the product exactly in all rounding modes.
+- **Addition/subtraction:** for normalized operand exponents at most p + 2
+  apart, the exact sum needs at most 2p + 3 ≤ 51 bits. At larger separations,
+  the smaller operand is too small to move the larger operand across a BF
+  midpoint, even accounting for one binary64 ulp of directed rounding and the
+  smaller spacing immediately below a power of two.
+- **Division:** after normalization, write the quotient as A/B, with at most
+  p-bit significands (and at most one factor of two to choose the binade).
+  A nonzero distance from a BF midpoint exceeds 2⁻⁽²ᵖ⁺¹⁾ in normalized units.
+  At p = 24 this exceeds 2⁻⁴⁹, while one binary64 ulp is 2⁻⁵². Directed
+  rounding cannot reach or cross a midpoint. An exact midpoint is representable
+  in binary64 and reaches the final ties-to-even encoder unchanged. BF
+  subnormal results have coarser spacing, so the bound only improves.
+
+The final conversion performs integer ties-to-even rounding. Exact zero sums
+need a separate rule: downward rounding can produce −0 for cancellation, while
+this library requires +0 unless both effective addends are −0. Invalid results
+use the format's positive canonical NaN. `bf_arithmetic` enforces both rules.
+These properties also make constant folding and reuse across an environment
+change valid: every allowed intermediate gives the same final BF value.
+Hardware operations may set exception flags; enabled floating-point traps and
+preserving exception flags are not part of the numeric-result guarantee.
+
+`Arith.BfHardwareMatchesExactOracleInEveryEnvironment` runs the independent
+integer/rational oracle at every width, under all four standard rounding modes,
+with and without FTZ/DAZ. It includes cancellation, signed zeros, subnormals,
+extrema, special values, and sampled operands. The existing exhaustive BF16
+pair sweep and BF32 environment test remain. Encoding is checked independently
+at random double patterns and on both sides of BF midpoints at every width.
+Storage and widening checks cover every code through 20 bits and sampled codes
+above that. BF24 division of packed codes `0x3fc6cc / 0x3f8f47` pins a normal
+result that rounds incorrectly through float but correctly through double.
+
+### Performance
+
+The benchmark calls the software kernels directly; measuring the public BF
+operator as the software baseline would compare the hardware route with itself.
+Its BF hardware arm includes the same conversion and special-value handling as
+the public operators. `--bf` runs all 23 widths; the default roster also carries
+general-format controls.
+
+On an Intel Core i9-14900K, GCC 15.2.0 and Clang 21.1.8, 2026-09-21,
+`-std=c++17 -O3 -DNDEBUG -march=native`, pinned to CPU 4, with no concurrent
+builds or tests: minimum of 15 interleaved passes of each compiler's before and
+after binaries, plus `--bf` runs. Each binary also takes its usual minimum of
+30 passes over 1024 pairs repeated 200 times. Operands are uniform packed bit
+patterns, including special values; these are arithmetic microbenchmarks.
+
+Hardware time / software time, geometric mean across all 23 BF widths:
+
+| Operation | GCC | Clang |
+| --- | ---: | ---: |
+| Add | 0.469 | 0.369 |
+| Subtract | 0.472 | 0.467 |
+| Multiply | 0.750 | 0.861 |
+| Divide | 0.521 | 0.669 |
+| All four | **0.542** | **0.561** |
+
+[The per-width minima](bf-benchmark.csv) contain all 184 compiler/width/operator
+comparisons. Every measured row favored hardware. The decision uses the
+aggregates: instruction placement was not independently calibrated for each
+individual row.
+
+Against the previous public operators at `dfeee78`, the new public operators
+took **0.570x under GCC and 0.572x under Clang**, geometric means over BF16,
+BF20, BF24 and BF32's four operators. The 52 general-format software control
+rows centered at 1.002x and 1.001x, with ranges 0.958–1.057 and 0.963–1.035.
+They are source-insulated controls; these ranges are not asserted to be a
+byte-identical code-placement calibration. BF's software route alone changed
+to 1.014x and 1.021x after alignment, which is why its packing cost must stay
+in the comparison. The public hardware route wins with that cost included.
+
+Build each compiler into a separate binary and follow the interleaving protocol
+in [benchmarking.md](benchmarking.md); add `--bf --json` for the complete BF
+roster. The measured header SHA-256 is
+`a292adc67e78d3d095698d12e500b3666199c826541fb9382eee98fac0faae9e`,
+and the benchmark source SHA-256 is
+`6510bd757cf930f55fce7520401220a28e5eb6b7cb373d893d8f2ecb67b199b5`.
+
+Validation: all 46 tests passed under GCC/C++17 and Clang/C++17, including all
+exhaustive sweeps. GCC/C++20 with `-frounding-math` and Clang ASan/UBSan each
+passed 43 tests, excluding the two exhaustive arithmetic/comparison sweeps and
+the generic exhaustive float-encoding sweep. The installed CMake consumer
+passed with the new 0.3 package version. MSVC and Apple Clang remain CI checks.
+
+The measurements below are retained as history of the older implementations;
+the BF specialization supersedes their routing choices.
+
+## Integer engine and earlier measurements
 
 0.1.0 evaluated `+`, `-`, `*`, `/` by widening both operands to a host float,
 letting the FPU work, and rounding the answer back.  That is only ever as good
@@ -12,7 +130,7 @@ as the host float's reach, and a declared shape can outrun it: `IEEE<12, 3>`
 squares 2<sup>&minus;1000</sup> to zero and 2<sup>1000</sup> to infinity through
 a `double`, though it represents both answers exactly.
 
-The route now is `to_parts` → an exact integer computation → `from_parts`:
+The general route is `to_parts` → an exact integer computation → `from_parts`:
 
 - **multiply** — two significands of at most 30 bits multiply exactly in a
   `std::uint64_t`, exponents add.  Genuinely exact.
@@ -41,7 +159,7 @@ band (0.963x–1.002x and 0.982x–1.008x).  The fixed-width divider is incorrec
 rounded for admitted wide significands, so correctness buys that measured
 regression.
 
-`detail::from_parts` is the only place *arithmetic* rounds, ties to even, by
+`detail::from_parts` is where the integer engine rounds, ties to even, by
 way of `detail::round_to_scale`.  One rounding, so no intermediate can lose
 what the format is able to hold, and a shape whose exponent range overruns
 `double`'s is served as exactly as any other.  Outbound lossy conversion rounds
@@ -60,9 +178,9 @@ the scalar FP-multiply count falls from 32 to 17 under GCC and 24 to 15 under
 Clang, and the four and seven `cvtsd2ss` instructions both fall to zero.  Ryzen
 9 7950X3D, 2026-08-24, minimum of 15 alternating passes pinned to core 2.
 
-No caller floating-point environment reaches the library now.  The four
-operators, comparisons, integral construction, and every inbound and outbound
-floating conversion contain no host arithmetic.  `Arith.IgnoresHostEnvironment`
+Numeric results are independent of the caller’s floating-point environment.
+The general-format operators, comparisons, integral construction, and every
+inbound and outbound floating conversion contain no host arithmetic.  `Arith.IgnoresHostEnvironment`
 pins the operators, `Convert.ExactConversionsIgnoreFlushToZero` pins exact decoding, and
 `Convert.InexactConversionsIgnoreHostEnvironment` covers directed rounding and
 FTZ at both widths.  The `BF<32>` section below is what happens when this is
@@ -123,7 +241,7 @@ binary's `.text` by 4684 and 2476 bytes.  With no unaffected operator control,
 the 68 `soft` rows aggregate to 1.004x and 0.913x after over before.  Ryzen 9
 7950X3D, 2026-08-24, minimum of 15 alternating passes pinned to core 2.
 
-## Why there is no hardware route left to choose but one
+## Earlier comparison before the BF specialization
 
 The speed is a bonus.  The reason is correctness: a host float cannot referee a
 shape it cannot hold, so keeping it would have meant keeping a route that is
@@ -264,7 +382,7 @@ Rewriting the ladder as one `is_finite` guard was measured and rejected; the
 before-and-after is on the `scratch/add-nonfinite-guard` ref, along with the
 stage harness these numbers come from.
 
-## `BF<32>` is `float`, and takes the integer engine anyway
+## The withdrawn direct-float route for BF32
 
 *The one shape where a host route costs no rounding error — withdrawn, because
 rounding error is not all a host route costs.*
@@ -482,7 +600,7 @@ against the generic path, while the existing code sweeps referee decoding.
 A host float may stand in for a shape only if both operands are exact in it
 **and** it carries at least 2*p* + 2 digits, where *p* is the shape's own
 precision.  Below that, rounding to the intermediate and then to the shape can
-differ from rounding to the shape once (Figueroa 1995).  This is the whole of
+differ from rounding to the shape once (Figueroa 1995).  This governs the general formats in
 `route` in `benches/arith.cpp`, and it is why `HAS_EXACT_F32_CONVERSION` alone
 does not license a comparison.
 
@@ -492,12 +610,9 @@ through `double`.  `IEEE<11, 4>` is not exact in `float` at all and falls back
 the same way.  `IEEE<12, 3>` reaches past `double` altogether and is skipped
 rather than timed against a different answer.
 
-`BF<32>` is not skipped, though for one round it was, on the opposite grounds:
-not that no host float rounds like it, but that it *is* one, so both arms of the
-comparison ran the same instructions.  The library computes it on the integer
-engine again, and `route`'s `IS_HOST_FLOAT` disjunct is what keeps the shape
-timed against a `float` — its 2*p* + 2 is 50 digits, which a `double` would
-otherwise be asked for.
+BF now always compares its specialized double route against explicit integer
+kernels, including BF32. This preserves a meaningful comparison after the
+public operators switched to hardware.
 
 `route` compares `MANTISSA_DIGITS`, the *normal-range* precision, and that is
 the conservative side of the comparison rather than the loose one: a subnormal

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(skymizer-minifloat
-  # 0.2.1-dev until the release is tagged; CMake versions carry no suffix.
-  VERSION 0.2.1
+  # 0.3.0-dev until the release is tagged; BF object layout changes the ABI.
+  VERSION 0.3.0
   DESCRIPTION "Header-only C++ template library for minifloats"
   LANGUAGES CXX)
 

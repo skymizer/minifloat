@@ -27,11 +27,9 @@ template <typename Operation, typename T> bool matches_host(T x, T y) {
 
 //! `matches_host`'s twin through `float`
 //!
-//! `float` deliberately, not `double`: this is the referee for the route
-//! `route` in `benches/arith.cpp` grants `E5M10` and `E8M7`, and nothing else
-//! in the suite covers it.  Below 2p + 2 digits in the intermediate, rounding
-//! twice can differ from rounding once, so a shape gets this treatment only
-//! where the bench would grant it a `float`.
+//! Retain a float reference for BF16 and binary16 under the default host
+//! environment. BF's implementation now uses double, so this also compares
+//! against a different intermediate width rather than repeating its route.
 template <typename Operation, typename T> bool matches_float(T x, T y) {
   const Operation op;
   const float reference = op(x.to_float(), y.to_float());
@@ -373,32 +371,19 @@ inline Sweep sweep(const std::vector<std::pair<std::uint32_t, std::uint32_t>> &p
 
 TEST(Arith, MatchesHostRoundTrip) { test_paired_types<CheckHostArithmetic>(); }
 
-//! Every ordered pair of `E5M10` and `E8M7`, against the float route
+//! Every ordered pair of binary16 and BF16 against a float reference.
 //!
-//! `CheckHostArithmetic` stops at 11 bits because the check is quadratic; this
-//! carries the same idea to the two shapes `route` puts on the float route,
-//! all 2**32 pairs of each.
-//!
-//! No other 16-bit shape belongs here, because none of them is on that route.
-//! `IEEE<2, 13>` is exact in a `float` and still not entitled to one -- a
-//! product of two of its significands is 28 digits -- so `route` times it
-//! against a `double`, as it does `IEEE<11, 4>`; `IEEE<12, 3>` is the one
-//! shape `route` skips outright.  The double route is already covered by
-//! `CheckWideHostArithmetic` and refereed by the exact oracle.
+//! These formats have enough guard bits in binary32 for the comparison under
+//! the default environment. The other 16-bit formats either need more precision
+//! or exceed its range. BF16's double implementation keeps this exhaustive
+//! comparison against an independent intermediate width.
 TEST(Arith, EveryPairMatchesFloatRoundTrip) {
   expect_all_pairs<E5M10>(float_arithmetic_matches<E5M10>);
   expect_all_pairs<E8M7>(float_arithmetic_matches<E8M7>);
 }
 
-//! `BF<32>` against the float route, sampled where every pair is out of reach
-//!
-//! `route` grants this shape a `float` because the shape *is* one, not because
-//! 2p + 2 fits in one: `IEEE<8, 23>` has `float`'s precision, exponent range and
-//! non-finite semantics, so the round trip is the identity and IEEE 754 already
-//! rounds each operator once, to exactly the digits the shape stores.  Nothing
-//! else in the suite covers that, and it is what licenses `benches/arith.cpp`
-//! to time `BF<32>` against `float` rather than against a `double` and a
-//! software re-encode.
+//! BF32 agrees with native float in the default environment. Its double
+//! implementation must still give the same answer after integer rounding.
 TEST(Arith, BF32MatchesFloatArithmetic) {
   Lcg random{UINT64_C(0x0FF32EE24DD16CC0)};
 
@@ -409,17 +394,11 @@ TEST(Arith, BF32MatchesFloatArithmetic) {
   }
 }
 
-//! Arithmetic does not read the caller's floating-point environment
+//! Numeric results ignore the caller's rounding and subnormal modes.
 //!
-//! Rounding is to nearest with ties to even whatever the caller left in the
-//! rounding mode or in MXCSR, because every shape computes on integer
-//! significands.  `BF<32>` is the shape with something to lose: it is `float`
-//! bit for bit, and an FPU route for it inherits both the host's rounding mode
-//! and its flush-to-zero bit -- and, being `[[gnu::const]]`, lets a compiler
-//! answer the second call from the first across the change, so the answer is
-//! neither this contract nor a faithful `float`.  The native `float` computed
-//! beside it is the control: where the control does not move either, the
-//! platform ignored the request and a pass here would be vacuous.
+//! BF32's double intermediate and integer rounding must retain ties-to-even
+//! where a direct float operation follows the host. Native float is the control:
+//! if it does not move, the platform ignored the request and a pass is vacuous.
 TEST(Arith, IgnoresHostEnvironment) {
   const HostEnvironment saved;
   const auto pairs = environment_pairs();
@@ -473,6 +452,52 @@ TEST(Arith, WideFormatsMatchHostRoundTrip) { test_wide_types<CheckWideHostArithm
 TEST(Arith, CorrectlyRoundedSmallFormats) { test_small_types<CheckExactSmallArithmetic>(); }
 
 TEST(Arith, CorrectlyRoundedWideFormats) { test_wide_types<CheckExactWideArithmetic>(); }
+
+namespace {
+struct CheckBfHardware {
+  template <typename T> static bool check() {
+    static_assert(T::IS_BFLOAT);
+    constexpr T ONE{1};
+    constexpr T TWO{2};
+    static_assert((ONE + ONE).to_bits() == TWO.to_bits());
+    static_assert((TWO - ONE).to_bits() == ONE.to_bits());
+    static_assert((TWO * TWO).to_bits() == T{4}.to_bits());
+    static_assert((TWO / TWO).to_bits() == ONE.to_bits());
+
+    Lcg random{UINT64_C(0x97401953AC1DF035)};
+    for (unsigned i = 0; i < 1U << 12; ++i) {
+      const T x = opaque<T>(random.next());
+      const T y = opaque<T>(random.next());
+      if (!check_exact_pair(x, y))
+        return false;
+    }
+    const T edge[] = {T{},      -T{},      ONE,      -ONE,     T::true_min(), -T::true_min(),
+                      T::min(), -T::min(), T::max(), -T::max()};
+    for (T x : edge)
+      for (T y : edge)
+        if (!check_exact_pair(x, y))
+          return false;
+    return CheckSpecialLadder::check<T>();
+  }
+};
+} // namespace
+
+TEST(Arith, BfHardwareMatchesExactOracleInEveryEnvironment) {
+  const HostEnvironment saved;
+  for (int mode : {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO}) {
+    const HostEnvironment before_mode;
+    ASSERT_EQ(std::fesetround(mode), 0);
+    test_bf_types<CheckBfHardware>();
+    if (set_flush_to_zero())
+      test_bf_types<CheckBfHardware>();
+  }
+}
+
+TEST(Arith, BfNormalDivisionAvoidsFloatDoubleRounding) {
+  const auto x = opaque<BF<24>>(0x3fc6cc);
+  const auto y = opaque<BF<24>>(0x3f8f47);
+  EXPECT_EQ((x / y).to_bits(), 0x3fb199U);
+}
 
 TEST(Arith, SpecialValueLadder) {
   check_each<CheckSpecialLadder, Finite<4, 3>, IEEE<4, 3>, FN<4, 3>, FNUZ<4, 3>>();
