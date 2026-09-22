@@ -23,6 +23,15 @@ compatibility when `y` changes, while changes to `z` remain compatible.
   product, GCC 15.2 takes 0.70–0.80x the time; Clang 21.1 already shared the
   comparison and stays within 1.00 ± 0.01x (i9-14900K, min of 15 interleaved
   passes against a byte-identical control within 0.99–1.02x).
+- BF arithmetic on operands with a nonzero exponent field (normal, infinite or
+  NaN) rounds the host's binary64 result in integer fields. Zero and subnormal
+  operands keep the previous route, out of line. Results are unchanged. In
+  et-toolchain's BF arithmetic benchmark, BF20 and BF24 take 0.78–0.82x the
+  time under GCC 15.2 and 0.86–0.97x under Clang 21.1; BF16 takes 0.68–0.85x
+  and BF32 0.72–0.94x. et-toolchain's bit-true PE workloads, whose accumulators
+  are BF20, take 0.92–1.00x under GCC but 1.01–1.07x under Clang, which spills
+  a loop variable once the new path is inlined beside it (i9-14900K, min of 15
+  interleaved passes against a byte-identical control within 0.99–1.01x).
 
 ## [0.3.0] - 2026-09-21
 
