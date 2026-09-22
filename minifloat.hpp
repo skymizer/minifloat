@@ -1115,12 +1115,17 @@ public:
     if constexpr (IS_BFLOAT) {
       const auto bits = storage_.float_bits();
       const auto magnitude = bits & UINT32_C(0x7fffffff);
-      if (magnitude - UINT32_C(0x00800000) < UINT32_C(0x7f000000)) {
-        const auto sign = static_cast<std::uint64_t>(bits & UINT32_C(0x80000000)) << 32;
-        const auto rebased =
-            (static_cast<std::uint64_t>(magnitude) << 29) + UINT64_C(0x3800000000000000);
-        return bit_cast<double>(sign | rebased);
+      // Normal floats and infinities widen exactly in any host environment.
+      if (magnitude - UINT32_C(0x00800000) <= UINT32_C(0x7f000000))
+        return static_cast<double>(bit_cast<float>(bits));
+      if (magnitude < UINT32_C(0x00800000)) {
+        // Never feed a subnormal float to the FPU: DAZ could erase it.
+        // Both the integer significand and the scaled double are exact;
+        // the signed scale also preserves negative zero in every mode.
+        const double scale = bits >> 31 ? -0x1p-149 : 0x1p-149;
+        return static_cast<double>(static_cast<std::int32_t>(magnitude)) * scale;
       }
+      return std::copysign(std::numeric_limits<double>::quiet_NaN(), signbit() ? -1.0 : 1.0);
     }
 
     if constexpr (detail::shares_host_exponent<Format, double>())

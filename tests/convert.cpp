@@ -152,6 +152,68 @@ TEST(Convert, BfAlignedStorageAndExactWidening) {
   test_bf_types<CheckBfStorage>();
 }
 
+namespace {
+struct CheckBfToDoubleEnvironment {
+  template <typename T> static bool check() {
+    constexpr int N = T::MANTISSA_BITS + 9;
+    constexpr std::size_t COUNT = N <= 16 ? UINT64_C(1) << N : UINT64_C(1) << 12;
+    std::vector<T> input(COUNT);
+    std::vector<double> output(COUNT);
+    Lcg random{UINT64_C(0x724F9A305E1BC86D)};
+    for (std::size_t i = 0; i < COUNT; ++i)
+      input[i] = opaque<T>(N <= 16 ? static_cast<std::uint32_t>(i) : random.next());
+
+    if constexpr (N > 16) {
+      constexpr std::uint32_t NORMAL = UINT32_C(1) << T::MANTISSA_BITS;
+      constexpr std::uint32_t INF = UINT32_C(255) << T::MANTISSA_BITS;
+      constexpr std::uint32_t SIGN = UINT32_C(1) << (N - 1);
+      std::size_t i = 0;
+      for (auto bits : {0U, 1U, NORMAL - 1, NORMAL, INF - 1, INF, INF + 1, SIGN - 1}) {
+        input[i++] = opaque<T>(bits);
+        input[i++] = opaque<T>(bits | SIGN);
+      }
+    }
+
+    // Keep this loop free of assertions/volatile loads so it can vectorize,
+    // just like a consumer's BF array conversion.
+    for (std::size_t i = 0; i < COUNT; ++i)
+      output[i] = input[i].to_double();
+
+    for (std::size_t i = 0; i < COUNT; ++i) {
+      const T x = input[i];
+      double magnitude;
+      if (x.is_nan())
+        magnitude = std::numeric_limits<double>::quiet_NaN();
+      else if (x.is_infinite())
+        magnitude = std::numeric_limits<double>::infinity();
+      else {
+        const auto parts = integer_decode(x);
+        magnitude = std::ldexp(static_cast<double>(parts.mantissa), parts.exponent);
+      }
+      const double expected = std::copysign(magnitude, x.signbit() ? -1.0 : 1.0);
+      const auto expected_bits = bit_cast<std::uint64_t>(expected);
+      if (bit_cast<std::uint64_t>(output[i]) != expected_bits ||
+          bit_cast<std::uint64_t>(opaque<T>(x.to_bits()).to_double()) != expected_bits) {
+        ADD_FAILURE() << describe<T>() << " code " << x.to_bits();
+        return false;
+      }
+    }
+    return true;
+  }
+};
+} // namespace
+
+TEST(Convert, BfToDoubleIgnoresHostEnvironment) {
+  const HostEnvironment saved;
+  for (int mode : {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO}) {
+    const HostEnvironment before_mode;
+    ASSERT_EQ(std::fesetround(mode), 0);
+    test_bf_types<CheckBfToDoubleEnvironment>();
+    if (set_flush_to_zero())
+      test_bf_types<CheckBfToDoubleEnvironment>();
+  }
+}
+
 TEST(Convert, IntegerDecodeReconstruction) { test_all_types<CheckIntegerDecodeReconstruction>(); }
 
 //! `BF<32>` matches every non-NaN bit; NaN payloads canonicalize but class and

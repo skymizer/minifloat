@@ -290,6 +290,14 @@ template <typename T> void bench_unary_shape(const char *shape) {
       black_box(T{x}.to_bits());
   });
 
+  // A buffer sink exposes vectorized widening costs hidden by scalar f64.
+  std::vector<double> decoded(pairs.size());
+  bench_unary(shape, "load_f64", [&pairs, &decoded] {
+    for (std::size_t i = 0; i < decoded.size(); ++i)
+      decoded[i] = pairs[i].first.to_double();
+    observe_buffer(decoded);
+  });
+
   // The packed sinks above can cancel BF's final alignment. These rows keep
   // the actual object representation and allow the compiler to vectorize the
   // array conversion. Allocate outside timing and observe every completed pass.

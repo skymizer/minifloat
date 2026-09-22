@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 with Cargo-style compatibility before 1.0: `0.y.z` releases may break
 compatibility when `y` changes, while changes to `z` remain compatible.
 
+## [Unreleased]
+
+### Changed
+
+- BF-to-double conversion widens normal values and infinities with the host FPU.
+  Subnormals are decoded from their integer significand with exact double
+  scaling, preserving signed zero, canonical NaNs and independence from host
+  rounding and FTZ/DAZ settings.
+- Added `load_f64` array-conversion benchmarks and BF-to-double environment
+  tests, including every encoding through BF16 and samples at all wider widths.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added
@@ -269,6 +280,7 @@ Initial public release.
 - Host `float` and `double` types must use IEEE 754 binary32 and binary64
   representations.
 
+[Unreleased]: https://github.com/skymizer/minifloat/compare/0.3.0...HEAD
 [0.3.0]: https://github.com/skymizer/minifloat/compare/0.2.1...0.3.0
 [0.2.1]: https://github.com/skymizer/minifloat/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/skymizer/minifloat/compare/0.1.0...0.2.0

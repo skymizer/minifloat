@@ -21,11 +21,42 @@ format carried in the storage type. There is no separately maintained BF value
 class, no implicit conversion, and no approximate subnormal mode.
 
 Arithmetic follows `to_double` → hardware operation → integer BF rounding.
-Normal conversions use a mantissa shift and exponent rebase; subnormals and
-special values use the existing integer conversion logic. In particular,
-`to_double()` does not widen a native float: that would let DAZ turn a BF
-subnormal into zero. Float conversion itself is a bit-cast for the four-byte
-storage and a shift by 16 followed by a bit-cast for the two-byte storage.
+Normal values and infinities widen through native float-to-double conversion.
+A BF subnormal cannot take that route because DAZ could turn it into zero.
+Instead, its aligned integer significand is converted to double and multiplied
+by signed 2⁻¹⁴⁹. The significand fits exactly, the nonzero result is normal in
+double, and the multiplication is exact in every rounding mode. The same path
+preserves both signs of zero. NaNs retain their sign and map to the host's
+canonical quiet NaN.
+
+Normal results round back to BF with a mantissa shift and exponent rebase;
+subnormal results and special values use the general integer encoder. Float
+conversion itself is a bit-cast for the four-byte storage and a shift by 16
+followed by a bit-cast for the two-byte storage.
+
+### BF widening measurements (2026-09-22)
+
+The native widening path with exact subnormal handling was compared with the
+0.3.0 implementation on an Intel Core i9-14900K, pinned to CPU 4 with ASLR
+disabled. GCC 15.2 and Clang 21.1 used C++17 and
+`-O3 -march=native -funroll-loops -ffp-contract=off`, with assertions enabled.
+Each row uses the median CPU time of five interleaved process runs, with a
+0.05-second minimum measurement interval. Ratios are new time / 0.3.0 time.
+
+| Workload | GCC | Clang |
+|---|---:|---:|
+| BF20-to-double array, normal inputs | 0.816 | 0.298 |
+| BF20-to-double array, random codes | 0.964 | 0.299 |
+| BF20 public addition, random pairs | 0.859 | 0.696 |
+| BF20 public multiplication, random pairs | 0.865 | 0.643 |
+
+Array rows store 4,096 doubles, allowing vectorization. Normal inputs are
+finite, weight-like values; random codes include zeros, subnormals, infinities
+and NaNs. Arithmetic rows use 1,024 packed-code pairs. The arithmetic rows call
+minifloat directly; the conversion rows use an inlined forwarding method in
+et-toolchain's BF adapter. These measurements do not imply parity with ET's
+original, host-environment-dependent conversion. The `load_f64` benchmark
+tracks array widening in this repository using the existing operand-pair data.
 
 ### Why every host rounding mode gives the same BF result
 

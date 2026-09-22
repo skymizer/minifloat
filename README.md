@@ -142,11 +142,12 @@ BF<32> widest{wider};
 ```
 
 At runtime, BF arithmetic uses a hardware `double` intermediate with exact
-integer conversions on both sides. Binary64 has enough precision and exponent
-range to give the same final BF rounding under every host rounding mode.
-Subnormal BF operands become normal doubles without native float widening, so
-DAZ cannot erase them. The library fixes the sign of exact zero sums and
-canonicalizes invalid results. Constant evaluation uses the integer engine.
+widening and integer rounding back to BF. Normal values widen through the host
+FPU; subnormals use their integer significand and exact double scaling, so DAZ
+cannot erase them. Binary64 has enough precision and exponent range to give
+the same final BF rounding under every host rounding mode. The library fixes
+the sign of exact zero sums and canonicalizes invalid results. Constant
+evaluation uses the integer engine.
 Hardware operations may set floating-point exception flags; the guarantee is
 about numeric results, not preserving those flags.
 
