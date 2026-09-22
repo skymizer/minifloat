@@ -17,6 +17,12 @@ compatibility when `y` changes, while changes to `z` remain compatible.
   rounding and FTZ/DAZ settings.
 - Added `load_f64` array-conversion benchmarks and BF-to-double environment
   tests, including every encoding through BF16 and samples at all wider widths.
+- BF `is_nan()` and `is_infinite()` test the aligned storage word instead of the
+  packed code, so GCC can share one comparison between them. Results are
+  unchanged. In et-toolchain's Aggressive PE workloads, which classify every
+  product, GCC 15.2 takes 0.70–0.80x the time; Clang 21.1 already shared the
+  comparison and stays within 1.00 ± 0.01x (i9-14900K, min of 15 interleaved
+  passes against a byte-identical control within 0.99–1.02x).
 
 ## [0.3.0] - 2026-09-21
 
