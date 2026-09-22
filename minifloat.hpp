@@ -35,6 +35,16 @@
 #define SKYMIZER_MINIFLOAT_PURE
 #endif
 
+// Keeps a rarely taken path from counting against its caller's inlining
+// budget; see `bf_arithmetic`.
+#if defined(__GNUC__) || defined(__clang__)
+#define SKYMIZER_MINIFLOAT_NOINLINE [[gnu::noinline]]
+#elif defined(_MSC_VER)
+#define SKYMIZER_MINIFLOAT_NOINLINE __declspec(noinline)
+#else
+#define SKYMIZER_MINIFLOAT_NOINLINE
+#endif
+
 // `log2_floor` reaches for MSVC's 64-bit bit scan below. The intrinsic is
 // declared here rather than by including <intrin.h>: it is the compiler's own,
 // exactly as `__builtin_clzll` is, and the header is not part of the C++17
@@ -1383,26 +1393,82 @@ div_impl(Minifloat<Format> x, Minifloat<Format> y) noexcept {
 //! sums and invalid results get the library's own signs and NaN code.
 enum class BfOp { Add, Sub, Mul, Div };
 
-template <BfOp Op, class Format>
-SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
-bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
-  using T = Minifloat<Format>;
-  static_assert(T::IS_BFLOAT);
-  static_assert(DBL_MANT_DIG >= 2 * T::MANTISSA_DIGITS + 3);
-  static_assert(DBL_MIN_EXP <= 2 * (FLT_MIN_EXP - FLT_MANT_DIG));
-  static_assert(DBL_MAX_EXP >= FLT_MAX_EXP - FLT_MIN_EXP + FLT_MANT_DIG);
-  const double a = x.to_double();
-  const double b = y.to_double();
-  double value = 0;
+template <BfOp Op> SKYMIZER_MINIFLOAT_CONST double bf_apply(double a, double b) noexcept {
   if constexpr (Op == BfOp::Add)
-    value = a + b;
+    return a + b;
   if constexpr (Op == BfOp::Sub)
-    value = a - b;
+    return a - b;
   if constexpr (Op == BfOp::Mul)
-    value = a * b;
-  if constexpr (Op == BfOp::Div)
-    value = a / b;
+    return a * b;
+  return a / b;
+}
 
+//! Round a binary64 magnitude of at least FLT_MIN to a BF code
+//!
+//! A mantissa rounding and an exponent rebase, ties to even.  The carry out
+//! of the largest finite value lands on infinity's code, and so does every
+//! larger magnitude, infinity's included; a NaN's must not come here.
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage
+bf_round_normal(std::uint64_t magnitude) noexcept {
+  constexpr int M = Format::MANTISSA_BITS;
+  constexpr int SHIFT = DBL_MANT_DIG - 1 - M;
+  const auto bias = (UINT64_C(1) << (SHIFT - 1)) - 1U + ((magnitude >> SHIFT) & 1U);
+  const auto code = ((magnitude + bias) >> SHIFT) - (UINT64_C(896) << M);
+  // Overflow starts at the tie above the largest finite value, whose odd
+  // significand rounds it up: half a BF unit below 2**FLT_MAX_EXP.  Deciding
+  // on the magnitude keeps this a select.  As min(code, INF_MAG) it became a
+  // minimum, which Clang turned back into a branch inside loops, where random
+  // operands mispredict it.
+  constexpr auto OVERFLOW =
+      (static_cast<std::uint64_t>(DBL_MAX_EXP - 1 + FLT_MAX_EXP) << (DBL_MANT_DIG - 1)) -
+      (UINT64_C(1) << (SHIFT - 1));
+  return static_cast<typename Format::Storage>(magnitude >= OVERFLOW ? Format::INF_MAG : code);
+}
+
+//! Round a binary64 magnitude below FLT_MIN to a BF code, ties to even
+//!
+//! Counts in units of the least subnormal, 2**(FLT_MIN_EXP - 1 - M), by
+//! shifting the significand as far as the exponent says.  A carry out of the
+//! subnormals lands on the least normal code.
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage
+bf_round_subnormal(std::uint64_t magnitude) noexcept {
+  constexpr int M = Format::MANTISSA_BITS;
+  // The value is significand * 2**(exponent - DOUBLE_BIAS), where the bias
+  // also scales the significand to an integer.
+  constexpr int DOUBLE_BIAS = DBL_MAX_EXP - 1 + DBL_MANT_DIG - 1;
+  constexpr int UNIT = DOUBLE_BIAS + (FLT_MIN_EXP - 1) - M;
+  // A binade shifted by 63 lies below half a unit, and so does everything
+  // under it, zero and binary64 subnormals included.  Giving those that
+  // binade's exponent keeps the shift in range with a select on the
+  // magnitude; clamping the shift itself compiled to a branch that random
+  // operands mispredict.
+  constexpr auto FLOOR = static_cast<std::uint64_t>(UNIT - 63) << (DBL_MANT_DIG - 1);
+  const int exponent =
+      magnitude < FLOOR ? UNIT - 63 : static_cast<int>(magnitude >> (DBL_MANT_DIG - 1));
+  const auto significand =
+      (magnitude & ((UINT64_C(1) << (DBL_MANT_DIG - 1)) - 1U)) | UINT64_C(1) << (DBL_MANT_DIG - 1);
+  const int shift = UNIT - exponent;
+  const auto bias = (UINT64_C(1) << (shift - 1)) - 1U + ((significand >> shift) & 1U);
+  return static_cast<typename Format::Storage>((significand + bias) >> shift);
+}
+
+//! Round a binary64 magnitude, short of NaN, to a BF code
+template <class Format>
+SKYMIZER_MINIFLOAT_CONST constexpr typename Format::Storage
+bf_round_magnitude(std::uint64_t magnitude) noexcept {
+  if (magnitude >= UINT64_C(0x3810000000000000))
+    return bf_round_normal<Format>(magnitude);
+  return bf_round_subnormal<Format>(magnitude);
+}
+
+//! BF arithmetic with a zero, subnormal, infinite or NaN operand
+template <BfOp Op, class Format>
+SKYMIZER_MINIFLOAT_NOINLINE SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+bf_arithmetic_special(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  using T = Minifloat<Format>;
+  const double value = bf_apply<Op>(x.to_double(), y.to_double());
   const auto bits = bit_cast<std::uint64_t>(value);
   if ((bits & UINT64_C(0x7fffffffffffffff)) > UINT64_C(0x7ff0000000000000))
     return T::quiet_NaN();
@@ -1413,6 +1479,49 @@ bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
     }
   }
   return T{value};
+}
+
+template <BfOp Op, class Format>
+SKYMIZER_MINIFLOAT_CONST Minifloat<Format>
+bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
+  using T = Minifloat<Format>;
+  static_assert(T::IS_BFLOAT);
+  static_assert(DBL_MANT_DIG >= 2 * T::MANTISSA_DIGITS + 3);
+  static_assert(DBL_MIN_EXP <= 2 * (FLT_MIN_EXP - FLT_MANT_DIG));
+  static_assert(DBL_MAX_EXP >= FLT_MAX_EXP - FLT_MIN_EXP + FLT_MANT_DIG);
+
+  // A zero or subnormal operand goes out of line: DAZ could erase the
+  // latter, and zeros bring the signed-zero rules.  Every other operand --
+  // normal, infinite or NaN -- widens exactly on any host, and the argument
+  // above `BfOp` leaves a binary64 result that is a NaN, an infinity, or
+  // normal unless it is zero.  Keeping the rest out of line lets callers
+  // still inline this.
+  const auto fx = bit_cast<std::uint32_t>(x.to_float());
+  const auto fy = bit_cast<std::uint32_t>(y.to_float());
+  if (!(fx & UINT32_C(0x7f800000)) || !(fy & UINT32_C(0x7f800000)))
+    return bf_arithmetic_special<Op>(x, y);
+
+  const auto bits = bit_cast<std::uint64_t>(bf_apply<Op>(
+      static_cast<double>(bit_cast<float>(fx)), static_cast<double>(bit_cast<float>(fy))
+  ));
+  const auto magnitude = bits & UINT64_C(0x7fffffffffffffff);
+  const auto sign = static_cast<typename Format::Storage>(bits >> 63 ? Format::SIGN_MASK : 0U);
+  constexpr auto MIN = UINT64_C(0x3810000000000000);
+  constexpr auto INF = UINT64_C(0x7ff0000000000000);
+  if (magnitude - MIN <= INF - MIN)
+    return T::from_bits(
+        static_cast<typename Format::Storage>(bf_round_normal<Format>(magnitude) | sign)
+    );
+  if (magnitude > INF)
+    return T::quiet_NaN();
+  // Nonzero addends cancel exactly to +0.  A quotient over infinity is the
+  // other zero, and it takes the host's sign, which no rounding mode affects.
+  if constexpr (Op == BfOp::Add || Op == BfOp::Sub)
+    if (magnitude == 0)
+      return T::from_bits(0);
+  return T::from_bits(
+      static_cast<typename Format::Storage>(bf_round_subnormal<Format>(magnitude) | sign)
+  );
 }
 } // namespace detail
 

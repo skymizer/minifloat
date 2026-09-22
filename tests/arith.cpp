@@ -493,6 +493,62 @@ TEST(Arith, BfHardwareMatchesExactOracleInEveryEnvironment) {
   }
 }
 
+namespace {
+template <class> struct FormatOf;
+template <class Format> struct FormatOf<Minifloat<Format>> {
+  using type = Format;
+};
+
+//! The integer rounding behind BF arithmetic on normal operands
+//!
+//! Its whole domain is the positive normal binary64 range such a result can
+//! reach, so it is checked there directly against the independent encoder:
+//! random magnitudes from well below half the least subnormal to past
+//! overflow, and both sides of the tie above sampled codes -- subnormal,
+//! normal, the seam between them, and the carry into infinity.
+struct CheckBfRoundMagnitude {
+  template <typename T> static bool check() {
+    using Format = typename FormatOf<T>::type;
+    const auto matches = [](double x) {
+      const auto actual = detail::bf_round_magnitude<Format>(bit_cast<std::uint64_t>(x));
+      if (actual == reference_encode<T>(x).to_bits())
+        return true;
+      ADD_FAILURE() << describe<T>() << " magnitude " << x;
+      return false;
+    };
+    const auto max = static_cast<std::uint32_t>(T::max().to_bits());
+    const auto tie_above = [max](std::uint32_t code) {
+      const double lo = from_code<T>(code).to_double();
+      const double hi = code < max ? from_code<T>(code + 1).to_double()
+                                   : 2 * lo - from_code<T>(code - 1).to_double();
+      return (lo + hi) * 0.5;
+    };
+    const auto around = [&matches](double tie) {
+      return matches(std::nextafter(tie, 0.0)) && matches(tie) &&
+             matches(std::nextafter(tie, HUGE_VAL));
+    };
+
+    Lcg random{UINT64_C(0x5B0E6A2D98C4F173)};
+    for (unsigned i = 0; i < 1U << 12; ++i) {
+      const auto fraction = ((static_cast<std::uint64_t>(random.next()) << 32) | random.next()) &
+                            ((UINT64_C(1) << 52) - 1U);
+      const auto exponent = static_cast<std::uint64_t>(1023 - 310 + random.next() % 600);
+      if (!matches(bit_cast<double>(exponent << 52 | fraction)))
+        return false;
+    }
+    for (std::uint32_t code : {0U, 1U, (1U << T::MANTISSA_BITS) - 1U, 1U << T::MANTISSA_BITS, max})
+      if (!around(tie_above(code)))
+        return false;
+    for (unsigned i = 0; i < 1U << 12; ++i)
+      if (!around(tie_above(random.next() % (max + 1U))))
+        return false;
+    return true;
+  }
+};
+} // namespace
+
+TEST(Arith, BfRoundMagnitudeMatchesIndependentOracle) { test_bf_types<CheckBfRoundMagnitude>(); }
+
 TEST(Arith, BfNormalDivisionAvoidsFloatDoubleRounding) {
   const auto x = opaque<BF<24>>(0x3fc6cc);
   const auto y = opaque<BF<24>>(0x3f8f47);
