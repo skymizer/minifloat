@@ -1040,11 +1040,20 @@ public:
     return (to_bits() & ABS_MASK) != 0;
   }
 
+  //! BF tests its aligned word, as a host float would.  Packing it first costs
+  //! a shift per test, after which GCC no longer shares one comparison between
+  //! `is_nan` and `is_infinite` in a classification loop.
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_nan() const noexcept {
+    if constexpr (IS_BFLOAT)
+      return (storage_.float_bits() & UINT32_C(0x7fffffff)) > UINT32_C(0x7f800000);
+
     return Format::is_nan(to_bits());
   }
 
   [[nodiscard]] SKYMIZER_MINIFLOAT_PURE constexpr bool is_infinite() const noexcept {
+    if constexpr (IS_BFLOAT)
+      return (storage_.float_bits() & UINT32_C(0x7fffffff)) == UINT32_C(0x7f800000);
+
     if constexpr (Format::HAS_INF)
       return (to_bits() & ABS_MASK) == Format::INF_MAG;
 
