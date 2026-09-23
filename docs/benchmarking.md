@@ -7,17 +7,19 @@ The box these numbers come from: AMD Ryzen 7 8700F (8 cores, 16 threads),
 Fedora 44, GCC 16.1.1 and Clang 22.1.8.  A ratio from a different machine, or
 from one compiler where the claim is about the library, is a different claim.
 
-## Stop the poker solver first
+## Start from an idle box
 
-The development box runs a poker solver that will happily take every core.  A
-measurement taken beside it is worthless, and killing it unasked is worse.
+A measurement taken beside another workload is worthless, and killing that
+workload unasked is worse.
 
 ```sh
-pgrep -af poker
 uptime          # the one-minute average should be near zero
+top -o %CPU     # and nothing else should be on the core you pin
 ```
 
-If it is running, ask before touching it.  Proceed only once the box is idle.
+If something is running, ask before touching it.  Proceed only once the box is
+idle.  What usually runs on a given machine is a fact about that machine, and
+it lives in the untracked `CLAUDE.local.md` rather than here.
 
 ## Two compilers, or it did not happen
 
@@ -65,7 +67,9 @@ fifteen minutes will hand you whichever answer the drift had at the time.
 Interleaving cancels the drift instead of hoping it is not there.  `taskset`
 pins both sides to the same core so neither can win by landing on a better one;
 core 2 is an arbitrary choice, held constant, and it is the core the `run-bench`
-target in the `Makefile` already uses.
+target in the `Makefile` uses by default.  On a machine without a core 2, or
+with cores that are not alike, substitute one that exists and hold that
+constant instead; `make run-bench BENCH_CPU=4` does the same for the target.
 
 ## Take the minimum, not the mean
 
