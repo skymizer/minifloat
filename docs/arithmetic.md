@@ -1002,13 +1002,22 @@ experiment on a scratch ref either way.
 
 **GCC does not vectorize `store_f32` or `load_f64` for the narrow shapes.**
 `E4M3` `store_f32` reads 1.082 ns under GCC against 0.675 under Clang, and
-`E2M1FN` 1.078 against 0.569; GCC's loop is 97 instructions with 3 vector
-ones, Clang's 187 with 92.  The early returns in the rebased-field tier of
-`bits_from` — the reserved field, row 0 — and the ladder in `to_exact` are what
-GCC declines to if-convert.  Spelling them as selects on constants is cheap on
-paper, and it is exactly the shape of change that the `to_exact` selects null
-above split by compiler, so it needs both compilers and the full protocol
-before it means anything.
+`E2M1FN` 1.078 against 0.569; GCC's loop is scalar, Clang's is 187
+instructions with 92 vector ones.  The orientation run blamed the early
+returns in the rebased-field tier of `bits_from` and the ladder in `to_exact`;
+`-fopt-info-vec-missed` on a probe loop at `f8dacb8` says the two directions
+fail for different reasons, and only one of them is that.  The store loop
+fails before any cost decision with *no vectype for stmt* on the `float`
+load, in every vector mode GCC 15.2.0 tries, and it says the same with the
+tier's returns spelled as selects and with the codes stored to 32-bit slots
+instead of bytes, so the tier is not the cause and the fix is not in it.  The
+load loop fails with *unsupported control flow*, which is the `to_exact`
+ladder; the null below on selecting every `to_exact` case is that fix
+measured on the scalar rows, 0.897x under GCC and 1.513x under Clang, and
+whether a vectorized GCC loop would tip it is open — on a core without
+AVX-512 there is no vector leading-zero count for the subnormal path to use.
+Neither half has been timed under the protocol; the store half needs a
+different diagnosis first.
 
 **A 32-bit divider on 32-bit hosts.**  A narrow shape could normalize its
 dividend to bit 30 instead of bit 62, fitting the numerator in 32 bits and
