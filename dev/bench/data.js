@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790115053675,
+  "lastUpdate": 1790159609976,
   "repoUrl": "https://github.com/skymizer/minifloat",
   "entries": {
     "Benchmark": [
@@ -13069,6 +13069,1520 @@ window.BENCHMARK_DATA = {
           {
             "name": "E12M3/store_f64",
             "value": 1.822393,
+            "unit": "ns/element"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "9946c20c721e4de0c1917c65fb507857d9590c5b",
+          "message": "Fold the add_parts shift and BF store_f64 barrier into 0.3.0\n\n0.3.0 is still untagged, so the two changes recorded under Unreleased ship\nwith it rather than waiting for 0.3.1.\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-09-23T10:32:52Z",
+          "tree_id": "79b2d69498a044b8c663f8ca65386bbf24f11ee3",
+          "url": "https://github.com/skymizer/minifloat/commit/9946c20c721e4de0c1917c65fb507857d9590c5b"
+        },
+        "date": 1790159609468,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "E2M1FN/add/soft",
+            "value": 5.403354,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/add/f32",
+            "value": 4.129395,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/sub/soft",
+            "value": 5.546494,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/sub/f32",
+            "value": 4.041343,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/mul/soft",
+            "value": 3.566963,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/mul/f32",
+            "value": 3.748359,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/div/soft",
+            "value": 4.734922,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/div/f32",
+            "value": 4.20106,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/add/soft",
+            "value": 5.441616,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/add/f32",
+            "value": 4.536895,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/sub/soft",
+            "value": 5.130337,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/sub/f32",
+            "value": 4.447813,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/mul/soft",
+            "value": 4.051909,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/mul/f32",
+            "value": 4.470659,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/div/soft",
+            "value": 5.146387,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/div/f32",
+            "value": 4.866855,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/add/soft",
+            "value": 5.834043,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/add/f32",
+            "value": 4.307461,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/sub/soft",
+            "value": 5.574771,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/sub/f32",
+            "value": 4.200962,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/mul/soft",
+            "value": 4.339697,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/mul/f32",
+            "value": 4.339404,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/div/soft",
+            "value": 5.463037,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/div/f32",
+            "value": 4.547168,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/add/soft",
+            "value": 4.67333,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/add/f32",
+            "value": 5.411426,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/sub/soft",
+            "value": 5.012734,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/sub/f32",
+            "value": 5.406929,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/mul/soft",
+            "value": 3.642549,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/mul/f32",
+            "value": 5.743833,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/div/soft",
+            "value": 4.511602,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/div/f32",
+            "value": 5.837324,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/add/soft",
+            "value": 5.301216,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/add/f32",
+            "value": 4.783447,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/sub/soft",
+            "value": 6.078789,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/sub/f32",
+            "value": 5.140464,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/mul/soft",
+            "value": 4.207471,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/mul/f32",
+            "value": 5.31853,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/div/soft",
+            "value": 5.503643,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/div/f32",
+            "value": 5.416465,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/add/soft",
+            "value": 5.751025,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/add/f32",
+            "value": 4.993853,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/sub/soft",
+            "value": 5.759785,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/sub/f32",
+            "value": 4.694561,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/mul/soft",
+            "value": 4.645151,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/mul/f32",
+            "value": 4.94958,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/div/soft",
+            "value": 5.607451,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/div/f32",
+            "value": 5.081855,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/add/soft",
+            "value": 5.291479,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/add/f32",
+            "value": 4.07123,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/sub/soft",
+            "value": 5.451641,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/sub/f32",
+            "value": 4.343662,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/mul/soft",
+            "value": 4.813975,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/mul/f32",
+            "value": 4.392822,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/div/soft",
+            "value": 5.250337,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/div/f32",
+            "value": 4.183062,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/add/soft",
+            "value": 5.291475,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/add/f32",
+            "value": 4.093779,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/sub/soft",
+            "value": 5.450757,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/sub/f32",
+            "value": 4.310303,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/mul/soft",
+            "value": 4.78707,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/mul/f32",
+            "value": 4.302031,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/div/soft",
+            "value": 5.433491,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/div/f32",
+            "value": 4.543887,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/add/soft",
+            "value": 7.041133,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/add/f32",
+            "value": 5.181313,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/sub/soft",
+            "value": 7.982642,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/sub/f32",
+            "value": 5.186104,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/mul/soft",
+            "value": 5.104902,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/mul/f32",
+            "value": 5.761494,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/div/soft",
+            "value": 5.61772,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/div/f32",
+            "value": 5.107441,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/add/soft",
+            "value": 5.43437,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/add/f32",
+            "value": 4.516543,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/sub/soft",
+            "value": 5.517095,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/sub/f32",
+            "value": 4.752871,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/mul/soft",
+            "value": 5.248574,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/mul/f32",
+            "value": 4.242397,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/div/soft",
+            "value": 5.215801,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/div/f32",
+            "value": 4.457939,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/add/soft",
+            "value": 6.657749,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/add/f32",
+            "value": 4.830171,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/sub/soft",
+            "value": 7.249043,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/sub/f32",
+            "value": 4.821606,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/mul/soft",
+            "value": 5.09937,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/mul/f32",
+            "value": 4.783306,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/div/soft",
+            "value": 6.000566,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/div/f32",
+            "value": 4.937056,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/add/soft",
+            "value": 7.648765,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/add/f64",
+            "value": 2.419165,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/sub/soft",
+            "value": 7.991392,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/sub/f64",
+            "value": 2.482715,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/mul/soft",
+            "value": 5.358789,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/mul/f64",
+            "value": 2.247656,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/div/soft",
+            "value": 6.811943,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/div/f64",
+            "value": 2.622036,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/add/soft",
+            "value": 7.41708,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/add/f64",
+            "value": 2.293003,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/sub/soft",
+            "value": 7.96938,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/sub/f64",
+            "value": 2.290654,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/mul/soft",
+            "value": 5.196621,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/mul/f64",
+            "value": 2.210381,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/div/soft",
+            "value": 6.507471,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/div/f64",
+            "value": 2.588818,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/add/soft",
+            "value": 7.558555,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/add/f64",
+            "value": 2.258076,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/sub/soft",
+            "value": 7.952944,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/sub/f64",
+            "value": 2.371274,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/mul/soft",
+            "value": 5.214282,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/mul/f64",
+            "value": 2.329741,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/div/soft",
+            "value": 6.52249,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/div/f64",
+            "value": 2.515537,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/add/soft",
+            "value": 6.86375,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/add/f64",
+            "value": 2.35748,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/sub/soft",
+            "value": 7.269097,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/sub/f64",
+            "value": 2.355625,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/mul/soft",
+            "value": 4.371499,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/mul/f64",
+            "value": 2.253477,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/div/soft",
+            "value": 6.15168,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/div/f64",
+            "value": 2.472734,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/add/soft",
+            "value": 7.714316,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/add/f64",
+            "value": 1.463037,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/sub/soft",
+            "value": 7.729971,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/sub/f64",
+            "value": 1.454961,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/mul/soft",
+            "value": 5.017041,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/mul/f64",
+            "value": 2.070615,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/div/soft",
+            "value": 6.449941,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/div/f64",
+            "value": 2.765713,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/add/soft",
+            "value": 3.581641,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/add/f64",
+            "value": 5.278022,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/sub/soft",
+            "value": 3.547495,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/sub/f64",
+            "value": 5.05916,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/mul/soft",
+            "value": 2.656431,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/mul/f64",
+            "value": 5.219175,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/div/soft",
+            "value": 3.252905,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/div/f64",
+            "value": 5.264424,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/neg",
+            "value": 0.313818,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/abs",
+            "value": 0.621763,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/f32",
+            "value": 0.882017,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/f64",
+            "value": 0.902271,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/from",
+            "value": 2.007168,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/from_f64",
+            "value": 1.976445,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/load_f64",
+            "value": 1.109351,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/store_f32",
+            "value": 2.068218,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M1FN/store_f64",
+            "value": 2.084951,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/neg",
+            "value": 0.621763,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/abs",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/f32",
+            "value": 0.998057,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/f64",
+            "value": 0.974521,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/from",
+            "value": 2.193799,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/from_f64",
+            "value": 2.126626,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/load_f64",
+            "value": 0.991504,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/store_f32",
+            "value": 2.232739,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M3FN/store_f64",
+            "value": 2.229165,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/neg",
+            "value": 0.313818,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/abs",
+            "value": 0.621768,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/f32",
+            "value": 0.946646,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/f64",
+            "value": 0.952563,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/from",
+            "value": 2.147173,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/from_f64",
+            "value": 2.119194,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/load_f64",
+            "value": 0.995366,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/store_f32",
+            "value": 2.178823,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M2FN/store_f64",
+            "value": 2.161411,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/neg",
+            "value": 0.342383,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/abs",
+            "value": 0.34209,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/f32",
+            "value": 2.146055,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/f64",
+            "value": 2.048257,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/from",
+            "value": 2.032168,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/from_f64",
+            "value": 2.031924,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/load_f64",
+            "value": 2.27583,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/store_f32",
+            "value": 2.145903,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E3M4/store_f64",
+            "value": 2.099922,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/neg",
+            "value": 0.34209,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/abs",
+            "value": 0.34209,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/f32",
+            "value": 1.997046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/f64",
+            "value": 2.254507,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/from",
+            "value": 2.090283,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/from_f64",
+            "value": 1.98437,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/load_f64",
+            "value": 2.150747,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/store_f32",
+            "value": 2.136021,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3/store_f64",
+            "value": 2.079077,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/neg",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/abs",
+            "value": 0.621719,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/f32",
+            "value": 1.556914,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/f64",
+            "value": 1.535293,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/from",
+            "value": 2.245698,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/from_f64",
+            "value": 2.145171,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/load_f64",
+            "value": 1.484805,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/store_f32",
+            "value": 2.26835,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FN/store_f64",
+            "value": 2.21498,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/neg",
+            "value": 0.545845,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/abs",
+            "value": 0.347915,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/f32",
+            "value": 1.085522,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/f64",
+            "value": 1.049521,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/from",
+            "value": 2.282046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/from_f64",
+            "value": 2.637007,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/load_f64",
+            "value": 1.201069,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/store_f32",
+            "value": 2.292319,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3FNUZ/store_f64",
+            "value": 2.838506,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/neg",
+            "value": 0.54584,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/abs",
+            "value": 0.347573,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/f32",
+            "value": 1.078926,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/f64",
+            "value": 1.052695,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/from",
+            "value": 2.281265,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/from_f64",
+            "value": 2.630552,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/load_f64",
+            "value": 1.208311,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/store_f32",
+            "value": 2.295107,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E4M3B11FNUZ/store_f64",
+            "value": 2.866294,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/neg",
+            "value": 0.338765,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/abs",
+            "value": 0.342095,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/f32",
+            "value": 2.272754,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/f64",
+            "value": 2.140571,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/from",
+            "value": 2.264287,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/from_f64",
+            "value": 2.402437,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/load_f64",
+            "value": 1.856201,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/store_f32",
+            "value": 2.37832,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2/store_f64",
+            "value": 2.280923,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/neg",
+            "value": 0.545747,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/abs",
+            "value": 0.65063,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/f32",
+            "value": 1.110718,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/f64",
+            "value": 1.000601,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/from",
+            "value": 2.220605,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/from_f64",
+            "value": 2.182012,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/load_f64",
+            "value": 1.039395,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/store_f32",
+            "value": 2.184116,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M2FNUZ/store_f64",
+            "value": 3.057476,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/neg",
+            "value": 0.34209,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/abs",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/f32",
+            "value": 1.806748,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/f64",
+            "value": 2.512607,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/from",
+            "value": 2.171831,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/from_f64",
+            "value": 2.111567,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/load_f64",
+            "value": 2.219678,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/store_f32",
+            "value": 2.251577,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E5M10/store_f64",
+            "value": 2.117681,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/neg",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/abs",
+            "value": 0.34209,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/f32",
+            "value": 0.339058,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/f64",
+            "value": 0.91959,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/from",
+            "value": 0.992285,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/from_f64",
+            "value": 1.291235,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/load_f64",
+            "value": 0.740449,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/store_f32",
+            "value": 0.149595,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E8M7/store_f64",
+            "value": 1.576729,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/neg",
+            "value": 0.621768,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/abs",
+            "value": 0.621768,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/f32",
+            "value": 0.313521,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/f64",
+            "value": 0.900513,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/from",
+            "value": 1.015181,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/from_f64",
+            "value": 1.247646,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/load_f64",
+            "value": 0.694707,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/store_f32",
+            "value": 0.124155,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF20/store_f64",
+            "value": 1.62061,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/neg",
+            "value": 0.537427,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/abs",
+            "value": 0.538018,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/f32",
+            "value": 0.313477,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/f64",
+            "value": 0.878398,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/from",
+            "value": 0.938765,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/from_f64",
+            "value": 1.219619,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/load_f64",
+            "value": 0.684092,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/store_f32",
+            "value": 0.113003,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF24/store_f64",
+            "value": 1.600649,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/neg",
+            "value": 0.34209,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/abs",
+            "value": 0.621768,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/f32",
+            "value": 0.313477,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/f64",
+            "value": 0.920962,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/from",
+            "value": 0.964302,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/from_f64",
+            "value": 1.240747,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/load_f64",
+            "value": 0.712021,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/store_f32",
+            "value": 0.084092,
+            "unit": "ns/element"
+          },
+          {
+            "name": "BF32/store_f64",
+            "value": 1.62751,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/neg",
+            "value": 0.342095,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/abs",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/f32",
+            "value": 1.608428,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/f64",
+            "value": 0.339106,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/from",
+            "value": 1.191875,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/from_f64",
+            "value": 0.622109,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/load_f64",
+            "value": 0.261426,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/store_f32",
+            "value": 1.286782,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E11M4/store_f64",
+            "value": 0.503921,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/neg",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/abs",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/f32",
+            "value": 1.877583,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/f64",
+            "value": 1.866138,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/from",
+            "value": 1.938828,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/from_f64",
+            "value": 1.923467,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/load_f64",
+            "value": 1.876113,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/store_f32",
+            "value": 1.995532,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E2M13/store_f64",
+            "value": 2.018672,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/neg",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/abs",
+            "value": 0.342046,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/f32",
+            "value": 1.630879,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/f64",
+            "value": 2.001104,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/from",
+            "value": 1.106709,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/from_f64",
+            "value": 1.722461,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/load_f64",
+            "value": 2.026494,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/store_f32",
+            "value": 1.152544,
+            "unit": "ns/element"
+          },
+          {
+            "name": "E12M3/store_f64",
+            "value": 2.107407,
             "unit": "ns/element"
           }
         ]
