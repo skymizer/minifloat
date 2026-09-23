@@ -16,6 +16,9 @@ compatibility when `y` changes, while changes to `z` remain compatible.
   i9-14900K soft `add` runs 8% faster under GCC and 17% under Clang as a
   geomean over the benchmark shapes, and the wide-exponent shapes gain the
   most.
+- Storing a BF array from `double` no longer evaluates the subnormal and
+  special-value path for every element under Clang: those rows halve on an
+  i9-14900K, and GCC's improve 6-26% from a likelihood hint on the same test.
 
 ## [0.3.0] - 2026-09-23
 
