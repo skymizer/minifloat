@@ -342,7 +342,7 @@ Addition and subtraction split two ways, and separating them is what makes the
 table usable.  `E8M7` and `E11M4` — the two widest exponent ranges benched —
 give both to the host route under *both* compilers, 0.56x to 0.86x.  That is
 the library's own shape rather than a back end's: a wide exponent range is the
-distance `align` has to shift across, and an FPU does that in its exponent
+distance `add_parts` has to shift across, and an FPU does that in its exponent
 field for free.  `E2M13` is the opposite corner and both compilers agree on it
 too, the other way: it wins every one of its four operators, 1.11x to 1.87x
 under GCC and 1.35x to 1.61x under Clang.  It is the one shape whose host route
@@ -513,6 +513,54 @@ And the addition-gap conclusion above now has a second half: on Zen 4 with
 AVX-512 the packing is Clang's win, on Raptor Cove with AVX2 it is Clang's
 loss, and the source is the same, so neither number is about the library.  The
 open questions below have the candidate fix.
+
+### One shift and no pair: the fix, measured
+
+*Aligning only the higher addend takes the pair away from Clang and hands GCC
+5–20% on top.  Of two spellings, the one that reads cheaper is the one that
+lost.*
+
+`add_parts` now picks the addend at the higher exponent, raises it by the gap
+capped at `ALIGN_CAP`, and keeps the other at its own scale or drops it where
+the cap says it cannot matter.  That is the arithmetic the two `align` calls
+did, with one shift instead of two, so there is no isomorphic pair for the SLP
+vectorizer to seed on, and `align` itself is gone.
+
+Two spellings were timed against the `25570c4` baseline on CPU 4 of the
+i9-14900K on 2026-09-23, GCC 15.2.0 and Clang 21.1.8, the three binaries of
+each compiler in rotation for 20 passes, min of 20 per row.  The `mul` and
+`div` soft rows are the controls, and they read 0.961x–1.013x under GCC and
+0.979x–1.023x under Clang, so that is the band a row has to clear.
+
+| soft rows, ratio to baseline | GCC `add` | GCC `sub` | Clang `add` | Clang `sub` |
+| --- | --- | --- | --- | --- |
+| select five fields by exponent (shipped) | 0.921x, 0.801x–1.020x | 0.948x, 0.799x–1.208x | 0.826x, 0.725x–0.900x | 1.033x, 0.931x–1.117x |
+| signs first, then select two values (`scratch/add-parts-signed-first`) | 1.066x, 0.992x–1.158x | 1.059x, 0.964x–1.146x | 0.781x, 0.689x–0.852x | 0.986x, 0.884x–1.029x |
+
+Geomean and range over the 17 shapes of the ratio table.  The shipped form
+wins `add` on every shape under Clang and on 15 of 17 under GCC, where the two
+that do not move are `E2M13` and `E4M3B11FNUZ`.  The wide shapes gain the most
+under both: `BF32`, `E11M4` and `E8M7` read 0.80x–0.83x on `add` and `sub`
+under GCC and 0.73x–0.81x on `add` under Clang.  Two rows go the other way
+and clear the band.  GCC's `E2M13` `sub` reads 1.208x, alone among the 34 `add` and `sub`
+rows, with its `add` at 1.020x; the signs-first spelling has it at 1.022x, so
+it is this form's codegen for that shape and not the idea.  Clang's `sub` rows
+on the narrow shapes read 1.03x–1.12x: `sub` was the row that escaped the
+packing, so it had nothing to gain, and the selection costs it a few percent.
+Neither reverses the call: GCC keeps every wide-shape win and 15 of 17 on
+`add`, and on every narrow shape Clang's `sub` loss is smaller than its `add`
+win.
+
+The signs-first spelling is the one the instruction counts favoured: under GCC
+the `E4M3` `add` loop is 144 instructions and 14 conditional branches against
+241 and 31 for the shipped form, which selects five fields and lets GCC branch
+on the comparison and duplicate the body.  The longer code is faster on every
+shape but `E2M13`, and on the wide shapes by a fifth, so the branch is
+predicted well enough and the duplicated arms are each shorter than the
+selects they replace.  Clang prefers the signs-first form by 5% on `add` and
+pays nothing on `sub`, which is the trade the open question ruled out in
+advance: a form that buys Clang time with GCC's.  The null is on its own ref with its numbers
+in the commit body.
 
 ## The withdrawn direct-float route for BF32
 
@@ -904,22 +952,13 @@ again rather than testing it.
 
 ## Open questions
 
-Three of these come from the i9-14900K orientation run of 2026-09-23 described
+Two of these come from the i9-14900K orientation run of 2026-09-23 described
 under the addition gap above: one run per compiler at `bd973c7`, same-binary
 rows only, and the disassembly read before the stopwatch.  Each names the
-shape of the fix; none has been measured under the protocol.  Whoever picks
-one up commits the experiment on a scratch ref either way.
-
-**An `add_parts` with nothing to pack.**  The two `align` calls are the pair
-Clang's SLP vectorizer finds, and on AVX2 the packing costs 16–25% of soft
-`add`.  Shifting only the smaller addend — one variable shift by
-`min(top - bottom, ALIGN_CAP)`, the larger addend left at its own scale, the
-smaller dropped where the gap exceeds the cap — has no pair of isomorphic
-lanes to offer, and does the same arithmetic.  GCC never packed the pair, so
-the expectation there is neutral; the question is whether Clang finds another
-seed, and whether the compare-and-swap that picks the larger addend costs
-what the second shift did.  The `sub` row says what the win is worth on this
-box, and a fix that buys Clang time with GCC's is not one.
+shape of the fix; neither has been measured under the protocol.  The third
+lead from that run, an `add_parts` with nothing to pack, is measured and
+shipped above.  Whoever picks one up commits the experiment on a scratch ref
+either way.
 
 **Clang if-converts the general fallback into BF's `store_f64` loop.**  `BF20`
 `store_f64` reads 1.138 ns under Clang against 0.718 under GCC, and against

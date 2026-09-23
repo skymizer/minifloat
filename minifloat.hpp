@@ -307,33 +307,35 @@ template <typename Float>
 //! 63-bit sum at worst.
 constexpr int ALIGN_CAP = 32;
 
-//! One addend at the common exponent, signed
-//!
-//! An addend below that exponent is one `ALIGN_CAP` has already ruled out.
-[[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr std::int64_t
-align(bool negative, std::uint64_t significand, int exponent, int base) noexcept {
-  const auto magnitude =
-      exponent >= base ? static_cast<std::int64_t>(significand << (exponent - base)) : 0;
-  return negative ? -magnitude : magnitude;
-}
-
 //! Sum of two signed magnitudes, exact enough to round
 //!
 //! The caller is responsible for the significands fitting in 30 bits, which
 //! every minifloat does.
+//!
+//! Only the addend at the higher exponent moves.  Raising it by the gap, capped
+//! at `ALIGN_CAP`, leaves the other at its own scale, or drops it where the
+//! cap says it cannot matter.  Aligning both addends to a common base was the
+//! same arithmetic as two identical shifts, and Clang packed the pair into
+//! vector lanes at a cost on cores without AVX-512; one shift offers no pair.
 [[nodiscard]] SKYMIZER_MINIFLOAT_CONST constexpr Parts add_parts(Parts x, Parts y) noexcept {
-  const int top = x.exponent > y.exponent ? x.exponent : y.exponent;
-  const int bottom = x.exponent < y.exponent ? x.exponent : y.exponent;
-  const int base = top - bottom > ALIGN_CAP ? top - ALIGN_CAP : bottom;
+  const bool x_high = x.exponent >= y.exponent;
+  const std::uint64_t high = x_high ? x.significand : y.significand;
+  const std::uint64_t low = x_high ? y.significand : x.significand;
+  const bool high_negative = x_high ? x.negative : y.negative;
+  const bool low_negative = x_high ? y.negative : x.negative;
+  const int gap = x_high ? x.exponent - y.exponent : y.exponent - x.exponent;
+  const bool dropped = gap > ALIGN_CAP;
+  const int shift = dropped ? ALIGN_CAP : gap;
 
-  const std::int64_t sum = align(x.negative, x.significand, x.exponent, base) +
-                           align(y.negative, y.significand, y.exponent, base);
+  const auto raised = static_cast<std::int64_t>(high << shift);
+  const auto kept = dropped ? std::int64_t{0} : static_cast<std::int64_t>(low);
+  const std::int64_t sum = (high_negative ? -raised : raised) + (low_negative ? -kept : kept);
 
   return {
       // Cancellation yields +0 unless both addends were negative.
       sum != 0 ? sum < 0 : (x.negative && y.negative),
       static_cast<std::uint64_t>(sum < 0 ? -sum : sum),
-      base,
+      (x_high ? x.exponent : y.exponent) - shift,
   };
 }
 

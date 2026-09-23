@@ -134,8 +134,8 @@ it.  Three worked examples:
   `decompose`, `exp2i`.  Every `soft` row is a control, since none of them calls
   any of that.  Its effect shows up in the `host` column and therefore in the
   ratio, which is why the ratio falling does not mean the library got slower.
-- **An addition or subtraction kernel change** — `align`, `add_parts`, the sign
-  flip in `add_impl`.  The `mul` and `div` `soft` rows are controls, since those
+- **An addition or subtraction kernel change** — `add_parts`, the sign flip in
+  `add_impl`.  The `mul` and `div` `soft` rows are controls, since those
   three are the only steps the other operators do not share.
 - **A change to `to_parts`, `from_parts`, or `invalid`.**  There is no operator
   control: all four operators call all three, and `from_parts` is on the inbound
@@ -404,4 +404,6 @@ packs `add_parts` into vector lanes and loses 16–25% by it, and `sub` escapes
 because the sign flip breaks the pattern.  The `sub` row is therefore the
 better reading of what the integer route costs on addition under Clang.
 [arithmetic.md](arithmetic.md) has the disassembly and the flag experiment
-that pins it.
+that pins it, and the single-shift `add_parts` that followed, which the table
+above predates: against this table's baseline it moves the Clang `add` rows by
+0.73x–0.90x and GCC's by 0.80x–1.02x.
