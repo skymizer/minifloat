@@ -3,9 +3,12 @@
 *A number from this repository means a min-of-N across interleaved builds on an
 idle box, under both compilers, or it means nothing.*
 
-The box these numbers come from: AMD Ryzen 7 8700F (8 cores, 16 threads),
-Fedora 44, GCC 16.1.1 and Clang 22.1.8.  A ratio from a different machine, or
-from one compiler where the claim is about the library, is a different claim.
+Unless a figure says otherwise, it comes from an AMD Ryzen 7 8700F (8 cores,
+16 threads), Fedora 44, GCC 16.1.1 and Clang 22.1.8.  The reference figures
+also carry a second box, one P-core of an Intel Core i9-14900K under GCC 15.2.0
+and Clang 21.1.8, and name it where they do.  A ratio from a different machine,
+or from one compiler where the claim is about the library, is a different
+claim.
 
 ## Start from an idle box
 
@@ -43,6 +46,18 @@ rm -f bench && make bench CXX=clang++ && taskset -c 2 ./bench
 Where they disagree in sign, say so and report both.  Where they agree, the
 claim is about the library rather than about one back end's heuristics, and
 that is the only kind of claim worth putting in a commit body.
+
+Intel's `icx` is a third opinion, never a stand-in for either of the two.  It
+defaults to `-fp-model=fast`, which lets it assume there is no NaN and no
+infinity, so the default build measures a different program from the one the
+other two compile.  Give it the precise model, which means spelling out
+`CXXFLAGS` in full, and run the correctness gate under the same flags before
+timing anything:
+
+```sh
+rm -f bench && make bench CXX=icpx \
+  CXXFLAGS='-std=c++17 -Wall -Wextra -Wpedantic -march=native -O3 -fp-model=precise'
+```
 
 ## Interleave the builds, never run A then B
 
@@ -329,8 +344,14 @@ are readable; levels are not.
 
 ## Reference figures
 
+Neither box's figures transfer to the other: the ISA that `-march=native`
+selects, the core, and both compiler versions all differ between them.
+
+### Ryzen 7 8700F, two compilers
+
 Ryzen 7 8700F, `taskset -c 2`, idle box, 2026-08-21, at commit `c045c04`.
-Ratio table geomeans over 56 comparisons; unary rows in nanoseconds per element.
+Ratio table geomeans over 56 comparisons, from before the BF rows existed;
+unary rows in nanoseconds per element.
 
 | | GCC 16.1.1 | Clang 22.1.8 |
 | --- | --- | --- |
@@ -343,3 +364,37 @@ so what fell was the numerator.  [arithmetic.md](arithmetic.md) has the
 accounting and the rest of the numbers; the short version is that a falling
 ratio here is not by itself evidence of a slower library, and the `soft` column
 is where to check.
+
+### Core i9-14900K, three compilers
+
+One Raptor Cove P-core of an i9-14900K in an LXC container, `taskset -c 4`,
+2026-09-23, at commit `fb8c96a`.  Min of 20 passes per compiler, interleaved
+GCC, Clang, `icx`; `icx` built with `-fp-model=precise`, under which the test
+suite passes.  Ratio table over 68 comparisons, 16 of them the BF shapes
+(`E8M7`, `BF20`, `BF24`, `BF32`) against the double route:
+
+| | GCC 15.2.0 | Clang 21.1.8 | icx 2026.1.1 |
+| --- | --- | --- | --- |
+| integer route wins | 16 of 68 | 17 of 68 | 19 of 68 |
+| geomean, all 68 | 0.716x | 0.683x | 0.695x |
+| geomean, 16 BF | 0.374x | 0.371x | 0.396x |
+| geomean, other 52 | 0.874x | 0.824x | 0.827x |
+
+All three put the BF double route 2.5–2.7x ahead of the integer kernel, so the
+BF fast path does not rest on one back end.  On the other 52, `icx` sits with
+Clang rather than GCC.
+
+The run is reproducible and not provably idle.  A second 20-pass run of the
+same three binaries agreed with it within 2% on 203 of the 204 per-compiler
+rows, the exception being `BF32` `mul` under `icx`, 0.601x against 0.529x.  No
+process inside the container passed 20% CPU at any of the 20 checkpoints, but
+the container sees 4 of the host's 32 CPUs, and other Proxmox guests are
+invisible from inside it.
+
+Between compilers, the absolute times are different binaries with no
+byte-identical row to calibrate on, so only aggregates are quoted.  `icx`'s
+`soft` column takes 1.068x GCC's time and 0.940x Clang's, geomean over 68.  Two
+unary aggregates stand out: `load_f64` takes 1.47x GCC's time and 1.39x
+Clang's, and `store_f32` 1.59x Clang's, each a geomean over 18 shapes.  Both
+exceed the widest per-row placement effect measured on the Ryzen,
+0.701x–1.245x, which is a different box's band; the cause is not investigated.
