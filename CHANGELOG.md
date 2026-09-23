@@ -9,31 +9,7 @@ compatibility when `y` changes, while changes to `z` remain compatible.
 
 ## [Unreleased]
 
-### Changed
-
-- BF-to-double conversion widens normal values and infinities with the host FPU.
-  Subnormals are decoded from their integer significand with exact double
-  scaling, preserving signed zero, canonical NaNs and independence from host
-  rounding and FTZ/DAZ settings.
-- Added `load_f64` array-conversion benchmarks and BF-to-double environment
-  tests, including every encoding through BF16 and samples at all wider widths.
-- BF `is_nan()` and `is_infinite()` test the aligned storage word instead of the
-  packed code, so GCC can share one comparison between them. Results are
-  unchanged. In et-toolchain's Aggressive PE workloads, which classify every
-  product, GCC 15.2 takes 0.70–0.80x the time; Clang 21.1 already shared the
-  comparison and stays within 1.00 ± 0.01x (i9-14900K, min of 15 interleaved
-  passes against a byte-identical control within 0.99–1.02x).
-- BF arithmetic on operands with a nonzero exponent field (normal, infinite or
-  NaN) rounds the host's binary64 result in integer fields. Zero and subnormal
-  operands keep the previous route, out of line. Results are unchanged. In
-  et-toolchain's BF arithmetic benchmark, BF20 and BF24 take 0.78–0.82x the
-  time under GCC 15.2 and 0.86–0.97x under Clang 21.1; BF16 takes 0.68–0.85x
-  and BF32 0.72–0.94x. et-toolchain's bit-true PE workloads, whose accumulators
-  are BF20, take 0.92–1.00x under GCC but 1.01–1.07x under Clang, which spills
-  a loop variable once the new path is inlined beside it (i9-14900K, min of 15
-  interleaved passes against a byte-identical control within 0.99–1.01x).
-
-## [0.3.0] - 2026-09-21
+## [0.3.0] - 2026-09-23
 
 ### Added
 
@@ -43,6 +19,8 @@ compatibility when `y` changes, while changes to `z` remain compatible.
   from both host types, including the cost of BF storage alignment.
 - Focused GCC/C++17 and Clang/C++20 CI checks with strict floating-point
   rounding enabled, including BF encoding under directed rounding and FTZ/DAZ.
+- `load_f64` array-conversion benchmarks and BF-to-double environment tests,
+  including every encoding through BF16 and samples at all wider widths.
 
 ### Changed
 
@@ -59,6 +37,25 @@ compatibility when `y` changes, while changes to `z` remain compatible.
   takes 0.924x under GCC and 0.911x under Clang across BF16, BF20, BF24 and BF32;
   packed-code construction has mixed results. `docs/arithmetic.md` records the
   measurements, controls, and workload limits.
+- BF-to-double conversion widens normal values and infinities with the host FPU.
+  Subnormals are decoded from their integer significand with exact double
+  scaling, preserving signed zero, canonical NaNs and independence from host
+  rounding and FTZ/DAZ settings.
+- BF `is_nan()` and `is_infinite()` test the aligned storage word instead of the
+  packed code, so GCC can share one comparison between them. Results are
+  unchanged. In et-toolchain's Aggressive PE workloads, which classify every
+  product, GCC 15.2 takes 0.70–0.80x the time; Clang 21.1 already shared the
+  comparison and stays within 1.00 ± 0.01x (i9-14900K, min of 15 interleaved
+  passes against a byte-identical control within 0.99–1.02x).
+- BF arithmetic on operands with a nonzero exponent field (normal, infinite or
+  NaN) rounds the host's binary64 result in integer fields. Zero and subnormal
+  operands take the general rounding path, out of line. Results are unchanged.
+  In et-toolchain's BF arithmetic benchmark, BF20 and BF24 take 0.78–0.82x the
+  time under GCC 15.2 and 0.86–0.97x under Clang 21.1; BF16 takes 0.68–0.85x
+  and BF32 0.72–0.94x. et-toolchain's bit-true PE workloads, whose accumulators
+  are BF20, take 0.92–1.00x under GCC but 1.01–1.07x under Clang, which spills
+  a loop variable once the new path is inlined beside it (i9-14900K, min of 15
+  interleaved passes against a byte-identical control within 0.99–1.01x).
 
 ### Fixed
 
