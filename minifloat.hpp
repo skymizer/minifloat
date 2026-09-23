@@ -1420,10 +1420,10 @@ bf_round_normal(std::uint64_t magnitude) noexcept {
   // on the magnitude keeps this a select.  As min(code, INF_MAG) it became a
   // minimum, which Clang turned back into a branch inside loops, where random
   // operands mispredict it.
-  constexpr auto OVERFLOW =
+  constexpr auto OVERFLOW_TIE =
       (static_cast<std::uint64_t>(DBL_MAX_EXP - 1 + FLT_MAX_EXP) << (DBL_MANT_DIG - 1)) -
       (UINT64_C(1) << (SHIFT - 1));
-  return static_cast<typename Format::Storage>(magnitude >= OVERFLOW ? Format::INF_MAG : code);
+  return static_cast<typename Format::Storage>(magnitude >= OVERFLOW_TIE ? Format::INF_MAG : code);
 }
 
 //! Round a binary64 magnitude below FLT_MIN to a BF code, ties to even
