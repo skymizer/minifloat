@@ -884,6 +884,46 @@ looks good; a caller doing anything else evicts it and pays a miss where the
 integer route pays a shift.  A benchmark that cannot represent the failure mode
 cannot be used to argue for the thing that fails that way.
 
+## The BF `store_f64` loop: a barrier where a call cost too much
+
+*Clang evaluated the whole general conversion path for every element of a BF
+array store.  Denying it the if-conversion halves the row, and the way to deny
+it is an empty `asm volatile`, because the obvious way, a call, is paid in the
+scalar path too.*
+
+`bits_from(double)` for a BF shape has a fast window for normal values and
+falls through to the general tiers for the two exponent fields in 256 that
+miss it.  Inlined into an array-conversion loop, Clang if-converts the fall
+through — the tiers are all speculatable — and vectorizes a body that computes
+both paths and blends, 316 instructions with `round_to_scale`'s variable
+shifts in it, for every element.  GCC's loop branches around the fall through
+instead.  `BF20` `store_f64` read 1.138 ns under Clang against 0.697 under GCC
+at `93ec843`.
+
+Three ways of taking the fall through out of the loop were timed on CPU 4 of
+the i9-14900K on 2026-09-23, 20 interleaved passes against `93ec843`, min of
+20, GCC 15.2.0 and Clang 21.1.8:
+
+| ratio to baseline | GCC `store_f64` | GCC `from_f64` | Clang `store_f64` | Clang `from_f64` |
+| --- | --- | --- | --- | --- |
+| tail behind a `noinline` call (`scratch/bits-from-tail-out-of-line`) | 0.98x–1.14x | 1.14x–1.20x | 0.48x–0.63x | 1.26x–1.42x |
+| `__builtin_expect` on the window test | 0.74x–0.94x | 0.94x–1.02x | 1.00x | 0.98x–1.04x |
+| the hint and an empty `asm volatile` in the tail (shipped) | 0.74x–0.94x | 0.95x–1.00x | 0.41x–0.51x | 0.99x–1.05x |
+
+Ranges over `BF20`, `BF24`, `BF32` and `E8M7`.  The call is the null the
+`bf_arithmetic_special` precedent suggested: it does stop the if-conversion,
+and Clang's loop lands at GCC's level, but the same call sits in the scalar
+constructor and every `from_f64` row pays for it under both compilers, GCC's
+own `store_f64` included.  The hint is a GCC result on its own — `BF32`
+`store_f64` 0.763 ns to 0.567 — and does nothing for Clang, whose vectorizer
+does not read branch weights.  The barrier is what Clang needs: a volatile
+asm cannot be speculated, so the block that holds it cannot be if-converted,
+the loop stays scalar with a branch, and `BF20` `store_f64` reads 0.544 ns,
+under GCC's 0.658.  The scalar rows do not move because nothing in their
+code did.  The controls: every soft row within 0.985x–1.012x under both
+compilers, and the unary rows the change does not touch within 5% except
+three `abs` and `from` rows at a tenth of a cycle, which is placement.
+
 ## Nulls from this round, recorded on purpose
 
 **Selecting every `to_exact` case: split by compiler, reverted.**  Computing
@@ -952,25 +992,13 @@ again rather than testing it.
 
 ## Open questions
 
-Two of these come from the i9-14900K orientation run of 2026-09-23 described
+One of these comes from the i9-14900K orientation run of 2026-09-23 described
 under the addition gap above: one run per compiler at `bd973c7`, same-binary
-rows only, and the disassembly read before the stopwatch.  Each names the
-shape of the fix; neither has been measured under the protocol.  The third
-lead from that run, an `add_parts` with nothing to pack, is measured and
-shipped above.  Whoever picks one up commits the experiment on a scratch ref
-either way.
-
-**Clang if-converts the general fallback into BF's `store_f64` loop.**  `BF20`
-`store_f64` reads 1.138 ns under Clang against 0.718 under GCC, and against
-0.511 for Clang's own scalar `from_f64` in the same binary.  The vector loop is
-316 instructions: the normal-value fast path of `bits_from(double)` and the
-`decompose` / `from_parts` fallback are both evaluated for every lane, the
-fallback's `round_to_scale` visible as `vpsllvq` and `vpsrlvq` in the body, and
-a blend picks.  GCC's loop is 88 scalar instructions that branch around the
-fallback, which under uniform BF20 codes is taken for one input in a hundred.
-Putting the fallback out of line, as `bf_arithmetic_special` is for the
-operators, denies the vectorizer the if-conversion; the expectation is Clang at
-GCC's level and GCC unchanged, since GCC did not vectorize either way.
+rows only, and the disassembly read before the stopwatch.  It names the shape
+of the fix and has not been measured under the protocol.  The other two leads
+from that run, an `add_parts` with nothing to pack and the BF `store_f64`
+tail, are measured and shipped above.  Whoever picks it up commits the
+experiment on a scratch ref either way.
 
 **GCC does not vectorize `store_f32` or `load_f64` for the narrow shapes.**
 `E4M3` `store_f32` reads 1.082 ns under GCC against 0.675 under Clang, and

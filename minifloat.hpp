@@ -755,16 +755,31 @@ private:
     if constexpr (IS_BFLOAT && std::is_same_v<Float, double>) {
       // Normal BF values need only mantissa rounding and an exponent rebase.
       // Subnormals, overflow and special values use the general integer path.
+      // The window test is marked likely -- uniform codes miss it for two
+      // exponent fields in 256 -- because GCC lays the array-conversion loop
+      // out better with the hint: BF32 store_f64 0.74x on an i9-14900K.
       constexpr std::uint64_t MIN = UINT64_C(0x3810000000000000);
       constexpr std::uint64_t END = UINT64_C(0x47f0000000000000);
       constexpr int SHIFT = 52 - M;
       const auto bits = bit_cast<std::uint64_t>(x);
       const auto magnitude = bits & UINT64_C(0x7fffffffffffffff);
+#if defined(__GNUC__) || defined(__clang__)
+      if (__builtin_expect(magnitude - MIN < END - MIN, 1)) {
+#else
       if (magnitude - MIN < END - MIN) {
+#endif
         const auto bias = (UINT64_C(1) << (SHIFT - 1)) - 1U + ((magnitude >> SHIFT) & 1U);
         const auto code = ((magnitude + bias) >> SHIFT) - (UINT64_C(896) << M);
         return static_cast<Storage>(code | ((bits >> 63) << (M + 8)));
       }
+#if defined(__GNUC__) || defined(__clang__)
+      // An empty volatile asm is not speculatable, which is what stops Clang
+      // if-converting the general path into its vectorized array-conversion
+      // loop and evaluating it for every element: BF store_f64 halves on an
+      // i9-14900K and nothing else moves.  A noinline call did the same and
+      // cost every scalar from_f64 row 14-42% -- see docs/arithmetic.md.
+      asm volatile("");
+#endif
     }
 
     if constexpr (detail::shares_host_exponent<Format, Float>()) {
