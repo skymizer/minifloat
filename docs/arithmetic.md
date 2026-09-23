@@ -37,11 +37,12 @@ followed by a bit-cast for the two-byte storage.
 ### BF widening measurements (2026-09-22)
 
 The native widening path with exact subnormal handling was compared with the
-0.3.0 implementation on an Intel Core i9-14900K, pinned to CPU 4 with ASLR
-disabled. GCC 15.2 and Clang 21.1 used C++17 and
-`-O3 -march=native -funroll-loops -ffp-contract=off`, with assertions enabled.
-Each row uses the median CPU time of five interleaved process runs, with a
-0.05-second minimum measurement interval. Ratios are new time / 0.3.0 time.
+implementation at `8da6bbb`, the first cut of the 0.3.0 release notes, on an
+Intel Core i9-14900K, pinned to CPU 4 with ASLR disabled. GCC 15.2 and Clang
+21.1 used C++17 and `-O3 -march=native -funroll-loops -ffp-contract=off`, with
+assertions enabled. Each row uses the median CPU time of five interleaved process
+runs, with a 0.05-second minimum measurement interval. Ratios are new time /
+`8da6bbb` time.
 
 | Workload | GCC | Clang |
 |---|---:|---:|
