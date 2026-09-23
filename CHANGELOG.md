@@ -9,6 +9,14 @@ compatibility when `y` changes, while changes to `z` remain compatible.
 
 ## [Unreleased]
 
+### Changed
+
+- Addition and subtraction align only the addend at the higher exponent, so
+  the integer kernel has one shift instead of two.  Same results; on an
+  i9-14900K soft `add` runs 8% faster under GCC and 17% under Clang as a
+  geomean over the benchmark shapes, and the wide-exponent shapes gain the
+  most.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added
