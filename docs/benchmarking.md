@@ -398,3 +398,10 @@ unary aggregates stand out: `load_f64` takes 1.47x GCC's time and 1.39x
 Clang's, and `store_f32` 1.59x Clang's, each a geomean over 18 shapes.  Both
 exceed the widest per-row placement effect measured on the Ryzen,
 0.701x–1.245x, which is a different box's band; the cause is not investigated.
+
+The Clang `add` rows carry a cost the `sub` rows do not: on this box Clang
+packs `add_parts` into vector lanes and loses 16–25% by it, and `sub` escapes
+because the sign flip breaks the pattern.  The `sub` row is therefore the
+better reading of what the integer route costs on addition under Clang.
+[arithmetic.md](arithmetic.md) has the disassembly and the flag experiment
+that pins it.

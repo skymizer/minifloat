@@ -454,6 +454,66 @@ Rewriting the ladder as one `is_finite` guard was measured and rejected; the
 before-and-after is on the `scratch/add-nonfinite-guard` ref, along with the
 stage harness these numbers come from.
 
+### On AVX2 the packing is a loss, and the `sub` row shows its size
+
+*Same kernel, one folded flag apart: Clang's soft `add` runs 16–25% slower than
+its soft `sub` on every shape, and GCC's two are equal.  The inversion the
+`x86-64-v2` column predicts has arrived on a box without AVX-512.*
+
+One Raptor Cove P-core of an i9-14900K, which has AVX2 and no AVX-512, at
+`bd973c7` on 2026-09-23, GCC 15.2.0 and Clang 21.1.8 with the `Makefile`'s
+flags.  One run of each binary pinned to CPU 4, the binary's own minimum of 30
+passes, no interleaving — an orientation run, not the protocol.  What licenses
+quoting it is that every claim below is a ratio between rows of *one* binary,
+which is the same standing the ratio table has, and that the run reproduced the
+recorded i9 ratios in [benchmarking.md](benchmarking.md) to two decimals.
+
+Soft `sub` over soft `add`, per shape, across the 17 shapes the ratio table
+runs:
+
+| | range over 17 shapes | `E4M3`, ns |
+| --- | --- | --- |
+| GCC 15.2.0 | 0.990x – 1.034x | 2.498 / 2.487 |
+| Clang 21.1.8 | 0.751x – 0.864x | 3.575 / 2.822 |
+
+The GCC row doubles as a same-binary calibration: two kernels that differ by
+one folded `bool` land within 3.4% of each other on every shape, so a
+same-binary gap wider than that is a codegen difference and not placement.
+
+The Clang gap is the SLP vectorization above, met on a core where it does not
+pay.  Clang's `E4M3` soft `add` loop is 150 instructions, 42 of them vector:
+the pair is loaded as one 16-bit word into an `xmm`, `vgf2p8affineqb` extracts
+the two exponent fields as a byte-wise affine transform, `vpsllvq` does both
+`align` shifts, `vpxor` and `vpsubq` the two sign negations, `vpshufd` plus
+`vpaddq` the fold — and the value crosses between the integer and vector
+register files four times on the way (`vmovd` in, `vmovd` and `vpextrd` out for
+the common exponent, `vmovd` and `vpbroadcastd` back in, `vmovq` out for the
+sum).  Each crossing is a few cycles of latency on the critical path, and that
+is where the nanosecond goes.  The soft `sub` loop is 145 instructions with no
+packing at all: two byte loads, `to_parts` and `align` as `shr` / `and` /
+`lea` / `cmove` / `shlx` / `neg` / `cmovs` chains, fourteen conditional moves
+and no register-file crossing.  The `rhs.negative != flip` in `add_impl`
+becomes a `setns` against the other lane's `sets`, the two lanes stop being
+isomorphic, and the SLP vectorizer declines the pair.  Subtraction escapes by
+accident.
+
+A second Clang binary built with `-fno-slp-vectorize` confirms the mechanism.
+Its soft `add` reads 0.747x–0.847x of the default build's across the 17 shapes,
+which is the `sub` level; its soft `sub`, `mul` and `div` rows stay at
+0.960x–1.075x and are the controls.  The flag is not the fix, because the same
+binary's BF double route slows by 9–23% — `E8M7` `add` from 1.318 ns to 1.624,
+`BF20` from 1.367 to 1.567 — so the packing that costs `add_parts` is paying
+its way in `bf_arithmetic`, and only the one pattern is wrong.  Headline for
+the flag build: the integer route's geomean goes from 0.685x to 0.757x.
+
+Two consequences.  The i9 ratios recorded in [benchmarking.md](benchmarking.md)
+carry this: under Clang the `add` rows read 0.58x–0.75x on the narrow shapes,
+and the `sub` rows, 0.73x–0.96x, are what `add` would read without the packing.
+And the addition-gap conclusion above now has a second half: on Zen 4 with
+AVX-512 the packing is Clang's win, on Raptor Cove with AVX2 it is Clang's
+loss, and the source is the same, so neither number is about the library.  The
+open questions below have the candidate fix.
+
 ## The withdrawn direct-float route for BF32
 
 *The one shape where a host route costs no rounding error — withdrawn, because
@@ -843,6 +903,45 @@ binaries, and layout is a property of the binary, so re-running measured it
 again rather than testing it.
 
 ## Open questions
+
+Three of these come from the i9-14900K orientation run of 2026-09-23 described
+under the addition gap above: one run per compiler at `bd973c7`, same-binary
+rows only, and the disassembly read before the stopwatch.  Each names the
+shape of the fix; none has been measured under the protocol.  Whoever picks
+one up commits the experiment on a scratch ref either way.
+
+**An `add_parts` with nothing to pack.**  The two `align` calls are the pair
+Clang's SLP vectorizer finds, and on AVX2 the packing costs 16–25% of soft
+`add`.  Shifting only the smaller addend — one variable shift by
+`min(top - bottom, ALIGN_CAP)`, the larger addend left at its own scale, the
+smaller dropped where the gap exceeds the cap — has no pair of isomorphic
+lanes to offer, and does the same arithmetic.  GCC never packed the pair, so
+the expectation there is neutral; the question is whether Clang finds another
+seed, and whether the compare-and-swap that picks the larger addend costs
+what the second shift did.  The `sub` row says what the win is worth on this
+box, and a fix that buys Clang time with GCC's is not one.
+
+**Clang if-converts the general fallback into BF's `store_f64` loop.**  `BF20`
+`store_f64` reads 1.138 ns under Clang against 0.718 under GCC, and against
+0.511 for Clang's own scalar `from_f64` in the same binary.  The vector loop is
+316 instructions: the normal-value fast path of `bits_from(double)` and the
+`decompose` / `from_parts` fallback are both evaluated for every lane, the
+fallback's `round_to_scale` visible as `vpsllvq` and `vpsrlvq` in the body, and
+a blend picks.  GCC's loop is 88 scalar instructions that branch around the
+fallback, which under uniform BF20 codes is taken for one input in a hundred.
+Putting the fallback out of line, as `bf_arithmetic_special` is for the
+operators, denies the vectorizer the if-conversion; the expectation is Clang at
+GCC's level and GCC unchanged, since GCC did not vectorize either way.
+
+**GCC does not vectorize `store_f32` or `load_f64` for the narrow shapes.**
+`E4M3` `store_f32` reads 1.082 ns under GCC against 0.675 under Clang, and
+`E2M1FN` 1.078 against 0.569; GCC's loop is 97 instructions with 3 vector
+ones, Clang's 187 with 92.  The early returns in the rebased-field tier of
+`bits_from` — the reserved field, row 0 — and the ladder in `to_exact` are what
+GCC declines to if-convert.  Spelling them as selects on constants is cheap on
+paper, and it is exactly the shape of change that the `to_exact` selects null
+above split by compiler, so it needs both compilers and the full protocol
+before it means anything.
 
 **A 32-bit divider on 32-bit hosts.**  A narrow shape could normalize its
 dividend to bit 30 instead of bit 62, fitting the numerator in 32 bits and
