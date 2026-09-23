@@ -9,17 +9,6 @@ compatibility when `y` changes, while changes to `z` remain compatible.
 
 ## [Unreleased]
 
-### Changed
-
-- Addition and subtraction align only the addend at the higher exponent, so
-  the integer kernel has one shift instead of two.  Same results; on an
-  i9-14900K soft `add` runs 8% faster under GCC and 17% under Clang as a
-  geomean over the benchmark shapes, and the wide-exponent shapes gain the
-  most.
-- Storing a BF array from `double` no longer evaluates the subnormal and
-  special-value path for every element under Clang: those rows halve on an
-  i9-14900K, and GCC's improve 6-26% from a likelihood hint on the same test.
-
 ## [0.3.0] - 2026-09-23
 
 ### Added
@@ -67,6 +56,14 @@ compatibility when `y` changes, while changes to `z` remain compatible.
   are BF20, take 0.92–1.00x under GCC but 1.01–1.07x under Clang, which spills
   a loop variable once the new path is inlined beside it (i9-14900K, min of 15
   interleaved passes against a byte-identical control within 0.99–1.01x).
+- Addition and subtraction align only the addend at the higher exponent, so
+  the integer kernel has one shift instead of two.  Same results; on an
+  i9-14900K soft `add` runs 8% faster under GCC and 17% under Clang as a
+  geomean over the benchmark shapes, and the wide-exponent shapes gain the
+  most.
+- Storing a BF array from `double` no longer evaluates the subnormal and
+  special-value path for every element under Clang: those rows halve on an
+  i9-14900K, and GCC's improve 6-26% from a likelihood hint on the same test.
 
 ### Fixed
 
