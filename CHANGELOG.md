@@ -9,6 +9,36 @@ compatibility when `y` changes, while changes to `z` remain compatible.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-24
+
+### Changed
+
+- Encoding from a host type rounds in the source's own width, so GCC can
+  vectorize array conversion to the narrow formats.  The NaN precondition of
+  formats without a NaN is asserted where the encoder finds the NaN rather
+  than in the constructors, so it no longer keeps those loops scalar.  Storing
+  a `float` array to the non-BF shapes takes 0.20x the time under GCC 11.4
+  and 0.18x under Clang 14 (geomean over 14 shapes), and et-toolchain's array
+  encode 0.38x and 0.41x.  Storing a `double` array to the three FNUZ shapes
+  takes 1.09-1.11x under GCC.
+- BF products and quotients examine their operands only after a zero,
+  infinite, NaN or subnormal result.  Sums still examine them first.
+- BF arithmetic hints its normal-result path, which GCC 11 otherwise lays
+  out behind a taken jump.  Under GCC, the subnormal rounding floor is a
+  conditional move rather than a branch that random operands mispredict,
+  and the rounded magnitude is masked to the format, so a caller's
+  `to_bits()` folds into the normal-result path.
+  Together with the previous entry, BF operators take 0.91x the time under
+  GCC 11.4 and 0.93x under Clang 14 (geomean over 16 rows), and
+  et-toolchain's BF arithmetic benchmark 0.86x and 0.97x.
+
+These figures are from a Ryzen 9 7950X3D, min of 15 interleaved passes on an
+idle box, against 0.3.0.  No row of et-toolchain's BF, PE and conversion
+suites read slower than 1.03x under either compiler.  Apart from the FNUZ
+stores above, the `benches/arith.cpp` rows that did, up to 1.35x under GCC
+and 1.18x under Clang, run code whose source this release does not change:
+decode, `abs`, `neg`, BF construction from `float`, and the integer kernel.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added
@@ -300,7 +330,8 @@ Initial public release.
 - Host `float` and `double` types must use IEEE 754 binary32 and binary64
   representations.
 
-[Unreleased]: https://github.com/skymizer/minifloat/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/skymizer/minifloat/compare/0.3.1...HEAD
+[0.3.1]: https://github.com/skymizer/minifloat/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/skymizer/minifloat/compare/0.2.1...0.3.0
 [0.2.1]: https://github.com/skymizer/minifloat/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/skymizer/minifloat/compare/0.1.0...0.2.0
