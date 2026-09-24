@@ -45,6 +45,16 @@
 #define SKYMIZER_MINIFLOAT_NOINLINE
 #endif
 
+// Branch hints for `bf_arithmetic`, whose normal arm GCC 11 otherwise lays
+// out behind a taken jump.
+#if defined(__GNUC__) || defined(__clang__)
+#define SKYMIZER_MINIFLOAT_LIKELY(x) __builtin_expect(!!(x), 1)
+#define SKYMIZER_MINIFLOAT_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define SKYMIZER_MINIFLOAT_LIKELY(x) (x)
+#define SKYMIZER_MINIFLOAT_UNLIKELY(x) (x)
+#endif
+
 // `log2_floor` reaches for MSVC's 64-bit bit scan below. The intrinsic is
 // declared here rather than by including <intrin.h>: it is the compiler's own,
 // exactly as `__builtin_clzll` is, and the header is not part of the C++17
@@ -1560,7 +1570,7 @@ bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   const auto fx = bit_cast<std::uint32_t>(x.to_float());
   const auto fy = bit_cast<std::uint32_t>(y.to_float());
   if constexpr (ADDITIVE)
-    if (!(fx & UINT32_C(0x7f800000)) || !(fy & UINT32_C(0x7f800000)))
+    if (SKYMIZER_MINIFLOAT_UNLIKELY(!(fx & UINT32_C(0x7f800000)) || !(fy & UINT32_C(0x7f800000))))
       return bf_arithmetic_special<Op>(x, y);
 
   const auto bits = bit_cast<std::uint64_t>(bf_apply<Op>(
@@ -1573,7 +1583,7 @@ bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   // A quotient over a divisor read as zero is infinite, so division keeps
   // infinity out of the normal arm.
   constexpr auto TOP = Op == BfOp::Div ? INF - 1U : INF;
-  if (magnitude - MIN <= TOP - MIN)
+  if (SKYMIZER_MINIFLOAT_LIKELY(magnitude - MIN <= TOP - MIN))
     return T::from_bits(
         static_cast<typename Format::Storage>(bf_round_normal<Format>(magnitude) | sign)
     );
