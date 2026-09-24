@@ -82,7 +82,8 @@ repository's scalar `from` row 1.13–1.35x under GCC.  A change that is interna
 to an operator and cannot be reached from an adapter, such as a branch hint or
 a mask, still has to clear this repository's bench before it lands.  The GCC 11
 mask on the rounded BF magnitude (`84d376a`) did not: Clang read every BF
-operator row 1.03–1.18x slower.
+operator row 1.03–1.18x slower.  It landed behind a GCC-only guard instead,
+under which this bench read it as neutral.
 
 Split such a branch into commits, and time them as a cumulative ladder through
 both benchmarks under both compilers.  Each commit then lands where its own rows

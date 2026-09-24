@@ -1583,10 +1583,20 @@ bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   // A quotient over a divisor read as zero is infinite, so division keeps
   // infinity out of the normal arm.
   constexpr auto TOP = Op == BfOp::Div ? INF - 1U : INF;
+  // Under GCC the mask changes nothing -- a rounded magnitude is at most
+  // infinity's -- but it tells GCC 11 the code fits the format, so a caller's
+  // `to_bits()` no longer shifts the aligned word up and back down.  Clang
+  // needs no such hint and ran every BF operator 3-18% slower with it.
   if (SKYMIZER_MINIFLOAT_LIKELY(magnitude - MIN <= TOP - MIN))
+#if defined(__GNUC__) && !defined(__clang__)
+    return T::from_bits(static_cast<typename Format::Storage>(
+        (bf_round_normal<Format>(magnitude) & Format::MAG_MASK) | sign
+    ));
+#else
     return T::from_bits(
         static_cast<typename Format::Storage>(bf_round_normal<Format>(magnitude) | sign)
     );
+#endif
   if constexpr (!ADDITIVE)
     if (!(fx & UINT32_C(0x7f800000)) || !(fy & UINT32_C(0x7f800000)))
       return bf_arithmetic_special<Op>(x, y);
