@@ -745,13 +745,14 @@ private:
 
   //! Encode a host float, rounding to nearest with ties to even
   //!
-  //! A NaN input needs `Format::HAS_NAN`; see the constructors.  A host input
-  //! with the same exponent field rounds by discarding mantissa bits directly.
-  //! Other exact, narrow shapes rebase the source field and round its integer
-  //! code; the remaining values are decomposed exactly and rounded once by
-  //! `detail::from_parts`.
+  //! A NaN input needs `Format::HAS_NAN`.  The precondition is asserted where
+  //! a tier already finds the NaN, so a live `assert` costs the array loop no
+  //! test of its own.  A host input with the same exponent field rounds by
+  //! discarding mantissa bits directly.  Other exact, narrow shapes rebase the
+  //! source field and round its integer code; the remaining values are
+  //! decomposed exactly and rounded once by `detail::from_parts`.
   template <typename Float>
-  [[nodiscard]] SKYMIZER_MINIFLOAT_CONST static Storage bits_from(Float x) noexcept {
+  [[nodiscard]] static Storage bits_from(Float x) noexcept {
     if constexpr (IS_BFLOAT && std::is_same_v<Float, double>) {
       // Normal BF values need only mantissa rounding and an exponent rebase.
       // Subnormals, overflow and special values use the general integer path.
@@ -805,42 +806,64 @@ private:
     constexpr bool SUBNORMALS_ROUND_TO_ZERO =
         MIN_EXP - MANTISSA_DIGITS >= std::numeric_limits<Float>::min_exponent;
     if constexpr (EXACT_CONVERSION && SUBNORMALS_ROUND_TO_ZERO) {
+      // Everything rounds in the source's own width.  A `std::uint64_t`
+      // shifted by an `int` count kept GCC's `float` array loop scalar: its
+      // vectorizer wants the count in lanes as wide as the operand.
       using Bits = detail::BitsOf<Float>;
-      constexpr int DIGITS = std::numeric_limits<Float>::digits;
-      constexpr int FRACTION_BITS = DIGITS - 1;
-      constexpr int RESERVED_FIELD = 2 * std::numeric_limits<Float>::max_exponent - 1;
-      constexpr Bits SIGN = Bits{1} << (std::numeric_limits<Bits>::digits - 1);
+      constexpr int WIDTH = std::numeric_limits<Bits>::digits;
+      constexpr int FRACTION_BITS = std::numeric_limits<Float>::digits - 1;
+      constexpr int SHIFT = std::numeric_limits<Float>::digits - MANTISSA_DIGITS;
+      constexpr int REBASE = MIN_EXP - std::numeric_limits<Float>::min_exponent;
+      constexpr Bits SIGN = Bits{1} << (WIDTH - 1);
+      constexpr Bits HIDDEN = Bits{1} << FRACTION_BITS;
+      constexpr Bits INF = static_cast<Bits>(2 * std::numeric_limits<Float>::max_exponent - 1)
+                           << FRACTION_BITS;
 
       const Bits bits = bit_cast<Bits>(x);
       const Bits magnitude = bits & ~SIGN;
       const auto sign = static_cast<Storage>((bits & SIGN) != 0 ? Format::SIGN_MASK : Storage{0});
-      const int field = static_cast<int>(magnitude >> FRACTION_BITS);
-      const std::uint64_t fraction = magnitude & ((Bits{1} << FRACTION_BITS) - 1U);
 
-      if (field == RESERVED_FIELD) {
-        if (fraction == 0)
-          return static_cast<Storage>(sign | Format::OVERFLOW_MAG);
-        if constexpr (Format::HAS_NAN)
+      if (magnitude > INF) {
+        if constexpr (Format::HAS_NAN) {
           return static_cast<Storage>(sign | Format::NAN_BITS);
-        else
+        } else {
+          assert(false && "this minifloat format cannot represent a NaN");
           return static_cast<Storage>(sign | Format::MAX_FINITE_MAG);
+        }
       }
 
-      // This tier's floor gate makes every source subnormal less than half the
-      // destination's true minimum.
-      if (field == 0)
-        return Format::HAS_NEG_ZERO ? sign : Storage{0};
+      // A subnormal result drops at least SHIFT + 1 bits of the significand.
+      // The gate makes REBASE at least MANTISSA_DIGITS, so a source subnormal
+      // -- given a hidden bit it lacks -- still drops more than all its digits
+      // and rounds to zero, as does anything the clamped count reaches.
+      // Branching here rather than blending two results is for the scalar
+      // loop that a live `assert` leaves GCC: blended, it threads both halves
+      // into branches on every element.  The vectorizers if-convert it anyway.
+      if (magnitude < static_cast<Bits>(REBASE + 1) << FRACTION_BITS) {
+        const int count =
+            std::min(WIDTH - 1, SHIFT + REBASE + 1 - static_cast<int>(magnitude >> FRACTION_BITS));
+        const Bits significand = (magnitude & (HIDDEN - 1U)) | HIDDEN;
+        const Bits half = Bits{1} << (count - 1);
+        const auto code = static_cast<Storage>(
+            (significand + half - 1U + ((significand >> count) & 1U)) >> count
+        );
+        return static_cast<Storage>(
+            code | ((Format::HAS_NEG_ZERO || code != 0) ? sign : Storage{0})
+        );
+      }
 
-      const int rebased = field + std::numeric_limits<Float>::min_exponent - MIN_EXP;
-      const int shift = std::min(63, DIGITS - MANTISSA_DIGITS + std::max(1 - rebased, 0));
-      const std::uint64_t unrounded =
-          (static_cast<std::uint64_t>(std::max(rebased, 1)) << FRACTION_BITS) | fraction;
-      const std::uint64_t bias =
-          shift == 0 ? 0 : (UINT64_C(1) << (shift - 1)) - 1U + ((unrounded >> shift) & 1U);
-      const std::uint64_t rounded = shift == 0 ? unrounded : (unrounded + bias) >> shift;
-      const auto code =
-          static_cast<Storage>(std::min(rounded, static_cast<std::uint64_t>(Format::OVERFLOW_MAG)));
-      return static_cast<Storage>(code | ((Format::HAS_NEG_ZERO || code != 0) ? sign : Storage{0}));
+      // A normal result drops SHIFT bits, and a carry moves into the exponent.
+      // Rebasing first puts the destination's parity in the retained low bit,
+      // which is the exponent field's where M == 0.  The source's reserved
+      // field lies above the destination's, so an infinity saturates with the
+      // overflow.
+      const Bits unrounded = magnitude - (static_cast<Bits>(REBASE) << FRACTION_BITS);
+      Bits rounded = unrounded;
+      if constexpr (SHIFT > 0)
+        rounded =
+            (unrounded + (Bits{1} << (SHIFT - 1)) - 1U + ((unrounded >> SHIFT) & 1U)) >> SHIFT;
+      const Bits code = std::min(rounded, static_cast<Bits>(Format::OVERFLOW_MAG));
+      return static_cast<Storage>(code | sign);
     }
 
     const detail::Decomposed parts = detail::decompose(x);
@@ -851,10 +874,12 @@ private:
       // else is.
       if (parts.significand == 0)
         return static_cast<Storage>(sign | Format::OVERFLOW_MAG);
-      if constexpr (Format::HAS_NAN)
+      if constexpr (Format::HAS_NAN) {
         return static_cast<Storage>(sign | Format::NAN_BITS);
-      else // Precondition violation; saturate rather than emit a wild pattern.
+      } else { // Precondition violation; saturate rather than emit a wild pattern.
+        assert(false && "this minifloat format cannot represent a NaN");
         return static_cast<Storage>(sign | Format::MAX_FINITE_MAG);
+      }
     }
 
     return detail::from_parts<Format>({parts.negative, parts.significand, parts.exponent});
@@ -948,12 +973,9 @@ public:
       storage_ = Representation::from_float(x);
     else
       storage_ = Representation::from_bits(bits_from(x));
-    assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
   }
 
-  explicit Minifloat(double x) noexcept : storage_(Representation::from_bits(bits_from(x))) {
-    assert((HAS_NAN || !(std::isnan)(x)) && "this minifloat format cannot represent a NaN");
-  }
+  explicit Minifloat(double x) noexcept : storage_(Representation::from_bits(bits_from(x))) {}
 
   //! Exact BF widening, with no conversion through a host numeric type.
   template <
