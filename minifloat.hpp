@@ -1483,9 +1483,21 @@ bf_round_subnormal(std::uint64_t magnitude) noexcept {
   // binade's exponent keeps the shift in range with a select on the
   // magnitude; clamping the shift itself compiled to a branch that random
   // operands mispredict.
+  //
+  // GCC makes a branch of the exponent select too: it threads the constant
+  // arm through the shifts.  Raising the magnitude itself to the floor stays
+  // a conditional move there.  Clang wants the opposite -- it keeps the
+  // exponent select, but from a raised magnitude it turns every conditional
+  // move of an enclosing loop into a branch -- so the spelling follows the
+  // compiler.
   constexpr auto FLOOR = static_cast<std::uint64_t>(UNIT - 63) << (DBL_MANT_DIG - 1);
+#if defined(__GNUC__) && !defined(__clang__)
+  magnitude = magnitude < FLOOR ? FLOOR : magnitude;
+  const int exponent = static_cast<int>(magnitude >> (DBL_MANT_DIG - 1));
+#else
   const int exponent =
       magnitude < FLOOR ? UNIT - 63 : static_cast<int>(magnitude >> (DBL_MANT_DIG - 1));
+#endif
   const auto significand =
       (magnitude & ((UINT64_C(1) << (DBL_MANT_DIG - 1)) - 1U)) | UINT64_C(1) << (DBL_MANT_DIG - 1);
   const int shift = UNIT - exponent;
