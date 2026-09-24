@@ -1535,10 +1535,21 @@ bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   // above `BfOp` leaves a binary64 result that is a NaN, an infinity, or
   // normal unless it is zero.  Keeping the rest out of line lets callers
   // still inline this.
+  //
+  // A sum has to look at its operands before it adds: a subnormal addend
+  // read as zero leaves a normal, wrong sum.  A product or quotient can look
+  // afterwards.  An operand read exactly gives the right result, whatever
+  // it is; one read as zero can only give zero, infinity or NaN, and no
+  // product or quotient of finite nonzero BF values is any of those.  So
+  // only such results go back to the operands, and a normal one tests
+  // nothing -- which is also what keeps the operands out of the integer
+  // registers on the way to the multiplier.
+  constexpr bool ADDITIVE = Op == BfOp::Add || Op == BfOp::Sub;
   const auto fx = bit_cast<std::uint32_t>(x.to_float());
   const auto fy = bit_cast<std::uint32_t>(y.to_float());
-  if (!(fx & UINT32_C(0x7f800000)) || !(fy & UINT32_C(0x7f800000)))
-    return bf_arithmetic_special<Op>(x, y);
+  if constexpr (ADDITIVE)
+    if (!(fx & UINT32_C(0x7f800000)) || !(fy & UINT32_C(0x7f800000)))
+      return bf_arithmetic_special<Op>(x, y);
 
   const auto bits = bit_cast<std::uint64_t>(bf_apply<Op>(
       static_cast<double>(bit_cast<float>(fx)), static_cast<double>(bit_cast<float>(fy))
@@ -1547,15 +1558,24 @@ bf_arithmetic(Minifloat<Format> x, Minifloat<Format> y) noexcept {
   const auto sign = static_cast<typename Format::Storage>(bits >> 63 ? Format::SIGN_MASK : 0U);
   constexpr auto MIN = UINT64_C(0x3810000000000000);
   constexpr auto INF = UINT64_C(0x7ff0000000000000);
-  if (magnitude - MIN <= INF - MIN)
+  // A quotient over a divisor read as zero is infinite, so division keeps
+  // infinity out of the normal arm.
+  constexpr auto TOP = Op == BfOp::Div ? INF - 1U : INF;
+  if (magnitude - MIN <= TOP - MIN)
     return T::from_bits(
         static_cast<typename Format::Storage>(bf_round_normal<Format>(magnitude) | sign)
     );
+  if constexpr (!ADDITIVE)
+    if (!(fx & UINT32_C(0x7f800000)) || !(fy & UINT32_C(0x7f800000)))
+      return bf_arithmetic_special<Op>(x, y);
   if (magnitude > INF)
     return T::quiet_NaN();
+  if constexpr (Op == BfOp::Div)
+    if (magnitude == INF)
+      return T::from_bits(static_cast<typename Format::Storage>(Format::INF_MAG | sign));
   // Nonzero addends cancel exactly to +0.  A quotient over infinity is the
   // other zero, and it takes the host's sign, which no rounding mode affects.
-  if constexpr (Op == BfOp::Add || Op == BfOp::Sub)
+  if constexpr (ADDITIVE)
     if (magnitude == 0)
       return T::from_bits(0);
   return T::from_bits(
