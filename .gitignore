@@ -40,3 +40,6 @@
 # Generated documentations
 /html/
 /latex/
+
+# Machine-local notes for agents
+/CLAUDE.local.md
