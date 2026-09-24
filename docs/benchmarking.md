@@ -427,7 +427,24 @@ byte-identical row to calibrate on, so only aggregates are quoted.  `icx`'s
 unary aggregates stand out: `load_f64` takes 1.47x GCC's time and 1.39x
 Clang's, and `store_f32` 1.59x Clang's, each a geomean over 18 shapes.  Both
 exceed the widest per-row placement effect measured on the Ryzen,
-0.701x–1.245x, which is a different box's band; the cause is not investigated.
+0.701x–1.245x, which is a different box's band.  The `load_f64` cause is not
+investigated.
+
+The `store_f32` excess is aliasing, not encoding, and it lives in the caller's
+loop.  A shape of 8 bits or fewer stores `std::uint_least8_t`, a character
+type that may alias the `float` input.  GCC and Clang guard the loop with a
+runtime overlap check and vectorize it anyway; `icx` does not, and its
+opt-report reads *vector dependence prevents vectorization* for all ten such
+shapes.  On a Ryzen 9 7950X, `taskset -c 4`, at commit `d58f37a`, 2026-09-25,
+min of 15 interleaved passes, those ten rows take `icx` 3.5–4.9x Clang
+22.1.8's time, 0.66–0.81 ns per element against 0.17–0.20.  Its scalar `from`
+rows sit within 1% of Clang's, and its wider shapes vectorize and read
+0.99–1.04x.  Declaring the loop's pointers `__restrict` takes `icx` to
+0.16–0.19 ns on those shapes and leaves GCC and Clang where they were, so the
+remedy is the caller's, not the header's.  It is also why et-toolchain's
+`study` benchmark once read minifloat's Finite FP8 encode 3.42x slower than
+its old encoder under `icx` (issue #5).  On this box, that ratio comes back,
+at 3.26x, only when the old encoder is vectorized and minifloat's is not.
 
 The Clang `add` rows carry a cost the `sub` rows do not: on this box Clang
 packs `add_parts` into vector lanes and loses 16–25% by it, and `sub` escapes
