@@ -59,6 +59,35 @@ rm -f bench && make bench CXX=icpx \
   CXXFLAGS='-std=c++17 -Wall -Wextra -Wpedantic -march=native -O3 -fp-model=precise'
 ```
 
+## A win only a downstream sees belongs downstream
+
+The header takes a change only if `benches/arith.cpp` reads it as neutral or
+better under both compilers.  A win that only one downstream workload sees, such
+as et-toolchain's, goes in that project's adapter, which can decode through its
+own table or skip a test it has already made.  It does not go into code that
+every other user of the shape also runs.
+
+This is the two-compiler rule applied to callers.  A downstream benchmark is a
+single caller's inlining context, just as one compiler is a single back end, and
+tuning the library to it can cost everyone else.  The et-toolchain parity round
+on `et-gcc11` showed both halves of that (7950X3D, GCC 11.4 and Clang 14,
+2026-09-24, cumulative ladder on `scratch/et-gcc11-ladder`, 15 passes).  Its
+decode commit (`e5bd6a0`) took ET's Finite FP8 decode to 0.54–0.60x.  It also
+ran this repository's FP4 and FP6 `to_float` rows up to 1.9x slower, and, through
+the rewritten special-value ladder that came with it, ran GCC's FNUZ array
+decode in et-toolchain 2.6x slower.  Moving the BF `from_float` NaN test to
+`std::isnan` (`010f0b8`) let et-toolchain share a comparison it had already
+made, and took its BF32 arithmetic to 0.40–0.73x.  It also cost this
+repository's scalar `from` row 1.13–1.35x under GCC.  A change that is internal
+to an operator and cannot be reached from an adapter, such as a branch hint or
+a mask, still has to clear this repository's bench before it lands.  The GCC 11
+mask on the rounded BF magnitude (`84d376a`) did not: Clang read every BF
+operator row 1.03–1.18x slower.
+
+Split such a branch into commits, and time them as a cumulative ladder through
+both benchmarks under both compilers.  Each commit then lands where its own rows
+put it.
+
 ## Interleave the builds, never run A then B
 
 Build both sides first, stash the binaries, and only then measure — alternating
