@@ -27,6 +27,14 @@ installed — go in `CLAUDE.local.md` beside it, which is not checked in.
 
 ## Standing rules
 
+**Preserve independence from the host floating-point environment.** Numeric
+results retain their documented rounding guarantees across rounding modes and
+FTZ/DAZ settings; [docs/arithmetic.md](docs/arithmetic.md) defines the contract.
+ET-specific speedups belong in et-toolchain's adapters or callers. A library
+change must also be neutral or better in this library's benchmarks under GCC
+and Clang, as [docs/benchmarking.md](docs/benchmarking.md) requires. Document and
+validate any ET runtime assumptions at the ET boundary.
+
 **Everything lives in `minifloat.hpp`.**  One installed header, no `detail/`
 directory, no second translation unit.  A helper that only the tests need goes
 in `tests/support.hpp` instead, where it is also independent of the library —
