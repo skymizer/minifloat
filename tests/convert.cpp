@@ -354,6 +354,61 @@ TEST(Convert, InexactConversionsIgnoreHostEnvironment) {
     check();
 }
 
+//! Subnormals scaled in the host stay exact in every host environment
+//!
+//! `to_exact` multiplies a subnormal's significand by a power of two only where
+//! the shape's least subnormal is a normal host float.  `AtFloat` and
+//! `AtDouble` put it exactly at `FLT_MIN` and `DBL_MIN`; the two `Past` shapes
+//! are one binade below, where a subnormal scale factor would be erased by DAZ.
+TEST(Convert, ScaledSubnormalsIgnoreHostEnvironment) {
+  const HostEnvironment saved;
+  using AtFloat = IEEE<7, 3, 124>;
+  using PastFloat = IEEE<7, 3, 125>;
+  using AtDouble = IEEE<10, 3, 1020>;
+  using PastDouble = IEEE<10, 3, 1021>;
+  static_assert(AtFloat::MIN_EXP - AtFloat::MANTISSA_DIGITS == FLT_MIN_EXP - 1);
+  static_assert(AtDouble::MIN_EXP - AtDouble::MANTISSA_DIGITS == DBL_MIN_EXP - 1);
+
+  const auto check = [] {
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<AtFloat>(0).to_float()), UINT32_C(0));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<AtFloat>(1).to_float()), UINT32_C(0x00800000));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<AtFloat>(7).to_float()), UINT32_C(0x01E00000));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<AtFloat>(0x407).to_float()), UINT32_C(0x81E00000));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<AtFloat>(0x400).to_float()), UINT32_C(0x80000000));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<AtFloat>(8).to_float()), UINT32_C(0x02000000));
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<AtFloat>(7).to_double()), UINT64_C(0x383C000000000000)
+    );
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<PastFloat>(1).to_float()), UINT32_C(0x00400000));
+    EXPECT_EQ(bit_cast<std::uint32_t>(opaque<PastFloat>(7).to_float()), UINT32_C(0x01600000));
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<AtDouble>(1).to_double()), UINT64_C(0x0010000000000000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<AtDouble>(7).to_double()), UINT64_C(0x003C000000000000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<AtDouble>(0x2000).to_double()), UINT64_C(0x8000000000000000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<PastDouble>(1).to_double()), UINT64_C(0x0008000000000000)
+    );
+    EXPECT_EQ(
+        bit_cast<std::uint64_t>(opaque<PastDouble>(7).to_double()), UINT64_C(0x002C000000000000)
+    );
+  };
+
+  for (bool flush : {false, true}) {
+    const HostEnvironment restore;
+    if (flush && !set_flush_to_zero())
+      continue;
+    for (int mode : {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO}) {
+      ASSERT_EQ(std::fesetround(mode), 0);
+      check();
+    }
+  }
+}
+
 TEST(Convert, IntegerInterop) {
   using T = E5M2;
   EXPECT_EQ(T{3}.to_float(), 3.0F);

@@ -775,6 +775,28 @@ under GCC and 0.853x–1.338x under Clang; the controls' geomeans are 1.005x and
 0.998x.  The exhaustive `BF<16>` encoder sweep checks every `float` bit pattern
 against the generic path, while the existing code sweeps referee decoding.
 
+## Exact subnormal decode with a normal scale factor
+
+For a non-BF shape, `to_exact<Float>` can decode a subnormal by converting its
+integer fraction and multiplying by `2**(MIN_EXP - MANTISSA_DIGITS)`. This route
+is used only if the scale factor is normal in the destination. Both nonzero
+factors and the result are then normal and exact, so directed rounding and
+FTZ/DAZ cannot change the decoded bits. Signed zero is restored with the host
+sign field. If the scale factor would be subnormal, the decoder continues to
+build the host fields in integers.
+
+The scaled route lets Clang vectorize array decode without synthesizing a
+vector leading-zero count. Tiny shapes keep the integer route, and GCC keeps it
+for Finite, FN and FNUZ as well. Keep their special-value and sign calculations
+in their original order: moving the sign calculation ahead of FNUZ's NaN check
+changed GCC's scalar loop even with scaling disabled. BF retains its separate
+storage and widening paths. [benchmarking.md](benchmarking.md) records the
+two-compiler measurements.
+
+`Convert.ScaledSubnormalsIgnoreHostEnvironment` checks the scale boundary at
+the least normal host float and double, the integer fallback below it, both
+signs of zero, and all four rounding modes with and without FTZ/DAZ.
+
 ## The 2*p* + 2 rule, and why the benchmark skips a shape
 
 A host float may stand in for a shape only if both operands are exact in it

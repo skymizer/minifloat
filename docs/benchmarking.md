@@ -377,6 +377,41 @@ are readable; levels are not.
 Neither box's figures transfer to the other: the ISA that `-march=native`
 selects, the core, and both compiler versions all differ between them.
 
+### Exact decode with normal scale factors (2026-10-13 UTC)
+
+On one i9-14900K P-core, CPU 4 with its SMT sibling idle and ASLR disabled,
+the exact decoder's normal scale factor was compared with `fed7370` (the
+0.3.1 header). GCC 11.5.0 and Clang 21.1.8 used C++17 with
+`-O3 -DNDEBUG -march=native`. These are min-of-15 interleaved process runs of
+`benches/arith.cpp --json`, after the correctness gate. Ratios are new time /
+0.3.1 time, and every column is a geomean over the stated rows.
+
+| Rows | Count | GCC | Clang |
+| --- | ---: | ---: | ---: |
+| scalar `f32` | 18 | 0.864x | 0.852x |
+| scalar `f64` | 18 | 0.920x | 0.929x |
+| array `load_f64` | 18 | 0.875x | 0.709x |
+| integer arithmetic control | 68 | 0.998x | 1.002x |
+| all rows | 298 | 0.966x | 0.955x |
+
+These aggregates license the general decoder change. Unchanged source rows in
+this build pair still move by 0.79-1.20x, so individual rows are not reported
+as library-wide guarantees. GCC retains the original Finite/FN/FNUZ ladder,
+including the position of its sign calculation; tiny shapes retain the integer
+route under both compilers. The first scoped candidate moved GCC's FNUZ sign
+calculation ahead of the NaN check and read 1.54-2.33x in scalar `f32`; it is
+preserved at `experiments/mr1784-scoped-scale` (`7147f4b`). The accepted ladder
+reads 1.00x on all three GCC FNUZ scalar `f32` rows.
+
+The benchmark binaries have SHA-256 digests
+`6c4e6f270c01214fd2af43651d3074ccd97e8bc0b3f2893341e022500122d674`
+(GCC) and `2a9c2536e87a75f20af268f28cf7c63cbc757c219c314b2ca5343731e6da09c3`
+(Clang). The local interleaved samples, per-row CSV and build configuration are
+in et-toolchain's ignored `.cache/regression-1784/refined-library-15` and
+`harness/library-compare.py`. [arithmetic.md](arithmetic.md) gives the exactness
+and environment argument. ET's cached BF16 product belongs in its own caller;
+it makes no change to this library's arithmetic.
+
 ### Ryzen 7 8700F, two compilers
 
 Ryzen 7 8700F, `taskset -c 2`, idle box, 2026-08-21, at commit `c045c04`.

@@ -903,21 +903,60 @@ private:
     constexpr int MANT_DIG = std::numeric_limits<Float>::digits;
     constexpr int DST_MIN_EXP = std::numeric_limits<Float>::min_exponent;
 
+#if defined(__GNUC__) && !defined(__clang__)
+    constexpr bool SCALED = E + M >= 7 && Format::HAS_INF;
+#else
+    constexpr bool SCALED = E + M >= 7;
+#endif
     const Float sign = signbit() ? Float{-1} : Float{1};
+    constexpr Bits INF_BITS = static_cast<Bits>(2 * std::numeric_limits<Float>::max_exponent - 1)
+                              << (MANT_DIG - 1);
+    constexpr Bits NAN_BITS = INF_BITS | Bits{1} << (MANT_DIG - 2);
     const auto magnitude = static_cast<Bits>(to_bits() & ABS_MASK);
-
+    constexpr int SIGN_SHIFT = std::numeric_limits<Bits>::digits - 1 - E - M;
     if constexpr (Format::HAS_NAN)
-      if (Format::is_nan(to_bits()))
-        return std::copysign(std::numeric_limits<Float>::quiet_NaN(), sign);
+      if (Format::is_nan(to_bits())) {
+        if constexpr (SCALED)
+          return bit_cast<Float>(static_cast<Bits>(
+              static_cast<Bits>(to_bits() & Format::SIGN_MASK) << SIGN_SHIFT | NAN_BITS
+          ));
+        else
+          return std::copysign(std::numeric_limits<Float>::quiet_NaN(), sign);
+      }
 
     if constexpr (Format::HAS_INF)
-      if (magnitude == Format::INF_MAG)
-        return std::copysign(std::numeric_limits<Float>::infinity(), sign);
+      if (magnitude == Format::INF_MAG) {
+        if constexpr (SCALED)
+          return bit_cast<Float>(static_cast<Bits>(
+              static_cast<Bits>(to_bits() & Format::SIGN_MASK) << SIGN_SHIFT | INF_BITS
+          ));
+        else
+          return std::copysign(std::numeric_limits<Float>::infinity(), sign);
+      }
 
     const auto sign_bit =
-        static_cast<Bits>(Bits{signbit()} << (std::numeric_limits<Bits>::digits - 1));
+        SCALED ? static_cast<Bits>(static_cast<Bits>(to_bits() & Format::SIGN_MASK) << SIGN_SHIFT)
+               : static_cast<Bits>(Bits{signbit()} << (std::numeric_limits<Bits>::digits - 1));
 
     if (magnitude < Bits{1} << M) {
+      // Where the least subnormal is a normal `Float`, the significand times
+      // that power of two has both factors and the product normal and exact,
+      // so neither the rounding mode nor FTZ/DAZ can reach it.  A conversion
+      // and a multiply replace a leading-zero count and a variable shift, and
+      // an array conversion, which evaluates every case of this ladder, can
+      // then vectorize without the vector leading-zero count x86 lacks below
+      // AVX-512.  Zero takes this route too and keeps its sign.
+      // Tiny formats already normalize in a few integer instructions. GCC
+      // also vectorizes Finite's integer route and favors it for FN/FNUZ scalar
+      // decode, so those shapes keep their existing path there.
+      if constexpr (SCALED && MIN_EXP - MANTISSA_DIGITS >= DST_MIN_EXP - 1) {
+        constexpr Bits SCALE = static_cast<Bits>(MIN_EXP - MANTISSA_DIGITS - DST_MIN_EXP + 2)
+                               << (MANT_DIG - 1);
+        const Float scaled =
+            static_cast<Float>(static_cast<std::int32_t>(magnitude)) * bit_cast<Float>(SCALE);
+        return bit_cast<Float>(static_cast<Bits>(sign_bit | bit_cast<Bits>(scaled)));
+      }
+
       if (magnitude == 0)
         return bit_cast<Float>(sign_bit);
 
