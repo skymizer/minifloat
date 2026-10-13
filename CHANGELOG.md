@@ -9,6 +9,22 @@ compatibility when `y` changes, while changes to `z` remain compatible.
 
 ## [Unreleased]
 
+### Changed
+
+- Exact non-BF decode can scale a subnormal's integer significand when the
+  scale factor is normal in the host type. Results retain their independence
+  from rounding modes and FTZ/DAZ. Tiny shapes keep integer normalization;
+  GCC also keeps the existing Finite/FN/FNUZ ladder. Scalar float decode takes
+  0.864x the time under GCC 11.5 and 0.852x under Clang 21.1, geomean over 18
+  shapes; double array decode takes 0.875x and 0.709x. These figures are from
+  an i9-14900K, min of 15 interleaved passes against 0.3.1 on 2026-10-13 UTC.
+  `docs/benchmarking.md` records the binaries, controls and placement limits.
+
+### Added
+
+- Conversion checks at the least normal host float and double and one binade
+  below, including signed zero, all four rounding modes, and FTZ/DAZ.
+
 ## [0.3.1] - 2026-09-24
 
 ### Changed
